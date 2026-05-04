@@ -1,0 +1,36 @@
+{
+  "name": "projctl",
+  "version": "0.1.0",
+  "description": "Universal project operating system for AI coding assistants",
+  "type": "module",
+  "bin": {
+    "projctl": "./bin/projctl.js",
+    "pctl": "./bin/projctl.js"
+  },
+  "main": "./src/lib/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test src/**/*.test.js",
+    "lint": "echo 'no linter configured yet'"
+  },
+  "keywords": [
+    "ai",
+    "project-management",
+    "kanban",
+    "claude-code",
+    "cursor",
+    "windsurf",
+    "copilot",
+    "aider",
+    "devin",
+    "agents",
+    "cli"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^13.1.0",
+    "chalk": "^5.4.1"
+  }
+}
