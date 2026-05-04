@@ -1,0 +1,49 @@
+# Dev/config
+.git/
+.gitignore
+.env
+.env.*
+*.env
+*.local
+
+# Secrets & credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.cert
+*.crt
+id_rsa
+id_ed25519
+credentials*
+secrets*
+token*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+
+# Test & CI
+*.test.js
+*.spec.js
+.github/
+.claude/
+.cursor/
+
+# Build artifacts & cache
+node_modules/
+dist/
+build/
+*.log
+*.tmp
+*.swp
+coverage/
+.nyc_output/
+
+# Planning & internal docs
+.claude/
+CLAUDE.md

@@ -10,6 +10,7 @@ const DEFAULTS = {
     prefix: 'PRJ',
     description: '',
     objective: '',
+    repos: [],
   },
   board: {
     statuses: ['backlog', 'doing', 'review', 'done', 'cancelled'],
@@ -27,6 +28,7 @@ const DEFAULTS = {
   targets: ['claude'],
   server: {
     port: 4242,
+    theme: 'dark',
   },
 };
 

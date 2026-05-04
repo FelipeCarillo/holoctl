@@ -1,8 +1,14 @@
 import { compileClaude } from './claude.js';
+import { compileCursor } from './cursor.js';
+import { compileWindsurf } from './windsurf.js';
+import { compileCopilot } from './copilot.js';
 import { compileGeneric } from './generic.js';
 
 const COMPILERS = {
   claude: compileClaude,
+  cursor: compileCursor,
+  windsurf: compileWindsurf,
+  copilot: compileCopilot,
   generic: compileGeneric,
 };
 
