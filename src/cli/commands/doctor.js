@@ -10,24 +10,24 @@ export function registerDoctorCommand(program) {
     .action(() => {
       const root = findProjectRoot();
       if (!root) {
-        console.error(chalk.red('No .projctl/ found. Run `projctl init` first.'));
+        console.error(chalk.red('No .holoctl/ found. Run `holoctl init` first.'));
         process.exit(1);
       }
 
-      console.log(chalk.bold('\n  projctl doctor\n'));
+      console.log(chalk.bold('\n  holoctl doctor\n'));
       let issues = 0;
 
       // Check config
       try {
         const config = loadConfig(root);
-        check('Config', '.projctl/config.json is valid', true);
+        check('Config', '.holoctl/config.json is valid', true);
       } catch (e) {
-        check('Config', `.projctl/config.json: ${e.message}`, false);
+        check('Config', `.holoctl/config.json: ${e.message}`, false);
         issues++;
       }
 
       // Check board
-      const indexPath = path.join(root, '.projctl', 'board', 'index.json');
+      const indexPath = path.join(root, '.holoctl', 'board', 'index.json');
       if (fs.existsSync(indexPath)) {
         try {
           const data = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
@@ -43,7 +43,7 @@ export function registerDoctorCommand(program) {
       }
 
       // Check agents
-      const agentsDir = path.join(root, '.projctl', 'agents');
+      const agentsDir = path.join(root, '.holoctl', 'agents');
       if (fs.existsSync(agentsDir)) {
         const agents = fs.readdirSync(agentsDir).filter(f => f.endsWith('.md'));
         check('Agents', `${agents.length} agent(s) defined`, agents.length > 0);
@@ -54,7 +54,7 @@ export function registerDoctorCommand(program) {
       }
 
       // Check commands
-      const commandsDir = path.join(root, '.projctl', 'commands');
+      const commandsDir = path.join(root, '.holoctl', 'commands');
       if (fs.existsSync(commandsDir)) {
         const commands = fs.readdirSync(commandsDir).filter(f => f.endsWith('.md'));
         check('Commands', `${commands.length} command(s) defined`, commands.length > 0);
@@ -65,12 +65,12 @@ export function registerDoctorCommand(program) {
       }
 
       // Check instructions
-      const instructionsPath = path.join(root, '.projctl', 'instructions.md');
+      const instructionsPath = path.join(root, '.holoctl', 'instructions.md');
       check('Instructions', 'instructions.md exists', fs.existsSync(instructionsPath));
       if (!fs.existsSync(instructionsPath)) issues++;
 
       // Check context
-      const contextDir = path.join(root, '.projctl', 'context');
+      const contextDir = path.join(root, '.holoctl', 'context');
       check('Context', 'context/ directory exists', fs.existsSync(contextDir));
       if (!fs.existsSync(contextDir)) issues++;
 

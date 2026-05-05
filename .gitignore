@@ -1,12 +1,54 @@
+# Dependencies
 node_modules/
-.DS_Store
-Thumbs.db
-*.log
+.venv/
+venv/
+env/
 
-# Python
+# Python build artifacts
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
-.venv/
-dist/
 build/
+dist/
+
+# Python caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+
+# Node caches
+.nyc_output/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.suo
+*.user
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Local sandbox for testing the lib (holoctl init, discovery experiments).
+# Anything inside is throwaway — never commit.
+dev-sandbox/

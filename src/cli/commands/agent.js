@@ -16,11 +16,11 @@ export function registerAgentCommand(program) {
     .action(() => {
       const root = findProjectRoot();
       if (!root) {
-        console.error(chalk.red('No .projctl/ found. Run `projctl init` first.'));
+        console.error(chalk.red('No .holoctl/ found. Run `holoctl init` first.'));
         process.exit(1);
       }
 
-      const agentsDir = path.join(root, '.projctl', 'agents');
+      const agentsDir = path.join(root, '.holoctl', 'agents');
       if (!fs.existsSync(agentsDir)) {
         console.log(chalk.dim('No agents configured.'));
         return;
@@ -46,11 +46,11 @@ export function registerAgentCommand(program) {
     .action((name, opts) => {
       const root = findProjectRoot();
       if (!root) {
-        console.error(chalk.red('No .projctl/ found. Run `projctl init` first.'));
+        console.error(chalk.red('No .holoctl/ found. Run `holoctl init` first.'));
         process.exit(1);
       }
 
-      const agentsDir = path.join(root, '.projctl', 'agents');
+      const agentsDir = path.join(root, '.holoctl', 'agents');
       const targetPath = path.join(agentsDir, `${name}.md`);
 
       if (fs.existsSync(targetPath)) {
@@ -100,6 +100,6 @@ You are the **${name}** agent. (Define identity and purpose)
 `, 'utf8');
       }
 
-      console.log(chalk.green(`Created agent: .projctl/agents/${name}.md`));
+      console.log(chalk.green(`Created agent: .holoctl/agents/${name}.md`));
     });
 }

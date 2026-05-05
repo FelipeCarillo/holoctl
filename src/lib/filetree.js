@@ -82,7 +82,7 @@ export function scanDir(absPath, opts = {}) {
   const result = [];
 
   for (const entry of entries) {
-    if (skipHidden && entry.name.startsWith('.') && entry.name !== '.projctl') continue;
+    if (skipHidden && entry.name.startsWith('.') && entry.name !== '.holoctl') continue;
 
     const entryPath = path.join(absPath, entry.name);
     const relPath = entry.name;

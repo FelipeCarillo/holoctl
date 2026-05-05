@@ -6,7 +6,7 @@ export function reposPage(repos, alias) {
       <div class="empty-state">
         <h3>No repos registered</h3>
         <p>Add sub-directories to this project with:</p>
-        <code>projctl repo add ./my-repo --name my-repo</code>
+        <code>holoctl repo add ./my-repo --name my-repo</code>
       </div>
     </div>`;
   }

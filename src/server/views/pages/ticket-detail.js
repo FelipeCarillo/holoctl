@@ -62,8 +62,8 @@ export function ticketDetailPage(ticket, rawBody, backLink = '') {
             <div class="detail-field-value">${agents.length ? agents.map(a => `<span class="chip chip-agent">${esc(a)}</span>`).join(' ') : '<span class="detail-empty">None</span>'}</div>
           </div>
           <div class="detail-field">
-            <div class="detail-field-label">Scope</div>
-            <div class="detail-field-value"><code>${esc(ticket.scope || '—')}</code></div>
+            <div class="detail-field-label">Projects</div>
+            <div class="detail-field-value">${(ticket.projects || []).length ? ticket.projects.map(p => `<code>${esc(p)}</code>`).join(' ') : '<span class="detail-empty">None</span>'}</div>
           </div>
           <div class="detail-field">
             <div class="detail-field-label">Sprint</div>

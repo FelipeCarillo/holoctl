@@ -7,16 +7,16 @@ import { getTemplates } from '../../templates/index.js';
 export function registerInitCommand(program) {
   program
     .command('init')
-    .description('Initialize .projctl/ in the current directory')
+    .description('Initialize .holoctl/ in the current directory')
     .option('--name <name>', 'Project name')
     .option('--prefix <prefix>', 'Ticket ID prefix (e.g. MP)')
     .option('--targets <targets>', 'Compile targets (comma-separated: claude,cursor,windsurf)')
     .action(async (opts) => {
       const cwd = process.cwd();
-      const projctlDir = path.join(cwd, '.projctl');
+      const holoctlDir = path.join(cwd, '.holoctl');
 
-      if (fs.existsSync(path.join(projctlDir, 'config.json'))) {
-        console.error(chalk.yellow('.projctl/ already exists in this directory.'));
+      if (fs.existsSync(path.join(holoctlDir, 'config.json'))) {
+        console.error(chalk.yellow('.holoctl/ already exists in this directory.'));
         process.exit(1);
       }
 
@@ -30,7 +30,7 @@ export function registerInitCommand(program) {
       config.project.prefix = prefix;
       config.targets = targets;
 
-      console.log(chalk.bold('\n  projctl init\n'));
+      console.log(chalk.bold('\n  holoctl init\n'));
       console.log(`  Project:  ${chalk.green(name)}`);
       console.log(`  Prefix:   ${chalk.green(prefix)} (tickets: ${prefix}-001, ${prefix}-002, ...)`);
       console.log(`  Targets:  ${chalk.green(targets.join(', '))}`);
@@ -38,14 +38,14 @@ export function registerInitCommand(program) {
 
       // Create directory structure
       const dirs = [
-        '.projctl',
-        '.projctl/board',
-        '.projctl/board/tickets',
-        '.projctl/agents',
-        '.projctl/commands',
-        '.projctl/context',
-        '.projctl/context/decisions',
-        '.projctl/context/documents',
+        '.holoctl',
+        '.holoctl/board',
+        '.holoctl/board/tickets',
+        '.holoctl/agents',
+        '.holoctl/commands',
+        '.holoctl/context',
+        '.holoctl/context/decisions',
+        '.holoctl/context/documents',
       ];
 
       for (const dir of dirs) {
@@ -69,27 +69,19 @@ export function registerInitCommand(program) {
         tickets: [],
       };
       fs.writeFileSync(
-        path.join(cwd, '.projctl', 'board', 'index.json'),
+        path.join(cwd, '.holoctl', 'board', 'index.json'),
         JSON.stringify(indexData, null, '\t') + '\n',
         'utf8'
       );
 
       // Create empty activity log
-      fs.writeFileSync(path.join(cwd, '.projctl', 'activity.jsonl'), '', 'utf8');
+      fs.writeFileSync(path.join(cwd, '.holoctl', 'activity.jsonl'), '', 'utf8');
 
-      // Register in workspace
-      try {
-        const { addToWorkspace } = await import('../../lib/workspace.js');
-        addToWorkspace(cwd, dirName);
-      } catch {
-        // workspace registration is optional
-      }
-
-      console.log(chalk.green('  ✓ .projctl/ initialized successfully.\n'));
+      console.log(chalk.green('  ✓ .holoctl/ initialized successfully.\n'));
       console.log('  Next steps:');
-      console.log(`    ${chalk.dim('$')} projctl board add '{"title":"My first ticket","agent":"developer"}'`);
-      console.log(`    ${chalk.dim('$')} projctl serve`);
-      console.log(`    ${chalk.dim('$')} projctl compile --target ${targets[0]}`);
+      console.log(`    ${chalk.dim('$')} holoctl board add '{"title":"My first ticket","agent":"developer"}'`);
+      console.log(`    ${chalk.dim('$')} holoctl serve`);
+      console.log(`    ${chalk.dim('$')} holoctl compile --target ${targets[0]}`);
       console.log('');
     });
 }

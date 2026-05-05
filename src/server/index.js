@@ -6,11 +6,18 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { serve } from '@hono/node-server';
 import { streamSSE } from 'hono/streaming';
 
-import { listWorkspace } from '../lib/workspace.js';
-import { loadConfig } from '../lib/config.js';
+import { findProjectRoot, loadConfig } from '../lib/config.js';
 import { createBoard } from '../lib/board.js';
 import { parseFrontmatter } from '../lib/markdown.js';
-import { getGitInfo } from '../lib/git.js';
+import { discoverRepos } from '../lib/discover.js';
+
+// Replaces the old global-registry-based listWorkspace(): workspace is now the
+// single dir containing .holoctl/ discovered upwards from cwd.
+function listWorkspaceCompat() {
+  const root = findProjectRoot();
+  if (!root) return [];
+  return [{ path: root, alias: path.basename(root), added: '', lastSeen: '' }];
+}
 import { layout, sidebarHtml, topbarHtml, tabsHtml, esc } from './views/layout.js';
 import { homePage } from './views/pages/home.js';
 import { boardPage } from './views/pages/board.js';
@@ -51,23 +58,21 @@ export function createServer(opts = {}) {
   // ── Helpers ──
 
   function getProjects() {
-    const workspace = listWorkspace();
+    const workspace = listWorkspaceCompat();
     return workspace.map(p => {
       try {
         const config = loadConfig(p.path);
         const board = createBoard(p.path, config);
         const stats = board.stat();
-        const agentsDir = path.join(p.path, '.projctl', 'agents');
+        const agentsDir = path.join(p.path, '.holoctl', 'agents');
         const agents = fs.existsSync(agentsDir)
           ? fs.readdirSync(agentsDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''))
           : [];
         const allTickets = board.ls();
-        const rawRepos = config.project.repos || [];
-        const enrichedRepos = rawRepos.map(r => {
-          const abs = path.join(p.path, r.path);
-          const git = getGitInfo(abs);
-          const ticketCount = allTickets.filter(t => t.scope === r.name).length;
-          return { ...r, git, ticketCount };
+        const discovered = discoverRepos(p.path, { includeManual: config.project.repos || [] });
+        const enrichedRepos = discovered.map(r => {
+          const ticketCount = allTickets.filter(t => (t.projects || []).includes(r.name)).length;
+          return { ...r, ticketCount };
         });
 
         return {
@@ -95,7 +100,7 @@ export function createServer(opts = {}) {
   }
 
   function readAgents(projectPath) {
-    const agentsDir = path.join(projectPath, '.projctl', 'agents');
+    const agentsDir = path.join(projectPath, '.holoctl', 'agents');
     if (!fs.existsSync(agentsDir)) return [];
     return fs.readdirSync(agentsDir)
       .filter(f => f.endsWith('.md'))
@@ -107,7 +112,7 @@ export function createServer(opts = {}) {
   }
 
   function readCommands(projectPath) {
-    const dir = path.join(projectPath, '.projctl', 'commands');
+    const dir = path.join(projectPath, '.holoctl', 'commands');
     if (!fs.existsSync(dir)) return [];
     return fs.readdirSync(dir)
       .filter(f => f.endsWith('.md'))
@@ -119,7 +124,7 @@ export function createServer(opts = {}) {
   }
 
   function readContextDocs(projectPath) {
-    const dir = path.join(projectPath, '.projctl', 'context');
+    const dir = path.join(projectPath, '.holoctl', 'context');
     if (!fs.existsSync(dir)) return [];
     const items = [];
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -158,7 +163,7 @@ export function createServer(opts = {}) {
     const projects = getProjects();
     const html = renderPage('Home', homePage(projects), {
       projects,
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: 'Home' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: 'Home' }],
     });
     return c.html(html);
   });
@@ -173,7 +178,7 @@ export function createServer(opts = {}) {
     const html = renderPage(project.name, boardPage(project, tickets, project.config), {
       currentAlias: project.alias,
       currentTab: 'board',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Board' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Board' }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -189,7 +194,7 @@ export function createServer(opts = {}) {
     const html = renderPage(project.name, agentsPage(agents, project.alias), {
       currentAlias: project.alias,
       currentTab: 'agents',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Agents' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Agents' }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -205,7 +210,7 @@ export function createServer(opts = {}) {
     const html = renderPage(project.name, commandsPage(commands, project.alias), {
       currentAlias: project.alias,
       currentTab: 'commands',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Commands' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Commands' }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -221,7 +226,7 @@ export function createServer(opts = {}) {
     const html = renderPage(project.name, contextPage(docs, project.alias), {
       currentAlias: project.alias,
       currentTab: 'context',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Context' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Context' }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -238,7 +243,7 @@ export function createServer(opts = {}) {
     const ticket = board.get(ticketId);
     if (!ticket) return c.html(renderPage('Not Found', '<div class="content"><div class="empty-state"><h3>Ticket not found</h3></div></div>'), 404);
 
-    const ticketFile = path.join(project.path, '.projctl', 'board', ticket.file);
+    const ticketFile = path.join(project.path, '.holoctl', 'board', ticket.file);
     const rawContent = fs.existsSync(ticketFile) ? fs.readFileSync(ticketFile, 'utf8') : '';
     const { body } = parseFrontmatter(rawContent);
 
@@ -246,7 +251,7 @@ export function createServer(opts = {}) {
     const html = renderPage(`${ticketId} — ${project.name}`, ticketDetailPage(ticket, body, backLink), {
       currentAlias: project.alias,
       currentTab: 'board',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Board', href: `/project/${project.alias}/board` }, { label: ticketId }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Board', href: `/project/${project.alias}/board` }, { label: ticketId }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -259,7 +264,7 @@ export function createServer(opts = {}) {
     if (!project) return c.html(renderPage('Not Found', '<div class="content"><div class="empty-state"><h3>Project not found</h3></div></div>'), 404);
 
     const agentName = c.req.param('name');
-    const agentFile = path.join(project.path, '.projctl', 'agents', agentName + '.md');
+    const agentFile = path.join(project.path, '.holoctl', 'agents', agentName + '.md');
     if (!fs.existsSync(agentFile)) return c.html(renderPage('Not Found', '<div class="content"><div class="empty-state"><h3>Agent not found</h3></div></div>'), 404);
 
     const rawContent = fs.readFileSync(agentFile, 'utf8');
@@ -269,7 +274,7 @@ export function createServer(opts = {}) {
     const html = renderPage(`${agentName} — ${project.name}`, agentDetailPage({ ...data, file: agentName + '.md' }, body, backLink), {
       currentAlias: project.alias,
       currentTab: 'agents',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Agents', href: `/project/${project.alias}/agents` }, { label: agentName }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Agents', href: `/project/${project.alias}/agents` }, { label: agentName }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -282,7 +287,7 @@ export function createServer(opts = {}) {
     if (!project) return c.html(renderPage('Not Found', '<div class="content"><div class="empty-state"><h3>Project not found</h3></div></div>'), 404);
 
     const cmdName = c.req.param('name');
-    const cmdFile = path.join(project.path, '.projctl', 'commands', cmdName + '.md');
+    const cmdFile = path.join(project.path, '.holoctl', 'commands', cmdName + '.md');
     if (!fs.existsSync(cmdFile)) return c.html(renderPage('Not Found', '<div class="content"><div class="empty-state"><h3>Command not found</h3></div></div>'), 404);
 
     const rawContent = fs.readFileSync(cmdFile, 'utf8');
@@ -292,7 +297,7 @@ export function createServer(opts = {}) {
     const html = renderPage(`/${cmdName} — ${project.name}`, commandDetailPage(data, body, backLink), {
       currentAlias: project.alias,
       currentTab: 'commands',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Commands', href: `/project/${project.alias}/commands` }, { label: '/' + cmdName }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Commands', href: `/project/${project.alias}/commands` }, { label: '/' + cmdName }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -305,7 +310,7 @@ export function createServer(opts = {}) {
     if (!project) return c.html(renderPage('Not Found', '<div class="content"><div class="empty-state"><h3>Project not found</h3></div></div>'), 404);
 
     const docName = c.req.param('name');
-    const docFile = path.join(project.path, '.projctl', 'context', docName);
+    const docFile = path.join(project.path, '.holoctl', 'context', docName);
     if (!fs.existsSync(docFile)) return c.html(renderPage('Not Found', '<div class="content"><div class="empty-state"><h3>Document not found</h3></div></div>'), 404);
 
     const rawContent = fs.readFileSync(docFile, 'utf8');
@@ -314,7 +319,7 @@ export function createServer(opts = {}) {
     const html = renderPage(`${docName} — ${project.name}`, contextDetailPage(docName, rawContent, backLink), {
       currentAlias: project.alias,
       currentTab: 'context',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Context', href: `/project/${project.alias}/context` }, { label: docName }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Context', href: `/project/${project.alias}/context` }, { label: docName }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -330,7 +335,7 @@ export function createServer(opts = {}) {
     const html = renderPage(project.name, filesPage(project.alias, entries), {
       currentAlias: project.alias,
       currentTab: 'files',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Files' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Files' }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -360,7 +365,7 @@ export function createServer(opts = {}) {
     const html = renderPage(project.name, reposPage(project.repos || [], project.alias), {
       currentAlias: project.alias,
       currentTab: 'repos',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Repos' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: project.name, href: `/project/${project.alias}/board` }, { label: 'Repos' }],
       tabs: PROJECT_TABS,
       tabBase: `/project/${project.alias}`,
     });
@@ -384,7 +389,7 @@ export function createServer(opts = {}) {
     }
     const html = renderPage('Agent Registry', agentsPage(allAgents), {
       currentTab: 'agents-global',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: 'Agent Registry' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: 'Agent Registry' }],
     });
     return c.html(html);
   });
@@ -398,7 +403,7 @@ export function createServer(opts = {}) {
       </div>
     </div>`, {
       currentTab: 'activity-global',
-      breadcrumbs: [{ label: 'projctl', href: '/' }, { label: 'Activity' }],
+      breadcrumbs: [{ label: 'holoctl', href: '/' }, { label: 'Activity' }],
     });
     return c.html(html);
   });
@@ -413,7 +418,7 @@ export function createServer(opts = {}) {
     const project = getProject(c.req.param('alias'));
     if (!project) return c.json({ error: 'Not found' }, 404);
     const board = createBoard(project.path, project.config);
-    const indexPath = path.join(project.path, '.projctl', 'board', 'index.json');
+    const indexPath = path.join(project.path, '.holoctl', 'board', 'index.json');
     const data = fs.existsSync(indexPath) ? JSON.parse(fs.readFileSync(indexPath, 'utf8')) : { meta: {}, tickets: [] };
     return c.json(data);
   });
@@ -424,7 +429,7 @@ export function createServer(opts = {}) {
     if (!project) return c.json({ error: 'Not found' }, 404);
 
     return streamSSE(c, async (stream) => {
-      const indexPath = path.join(project.path, '.projctl', 'board', 'index.json');
+      const indexPath = path.join(project.path, '.holoctl', 'board', 'index.json');
 
       const sendUpdate = () => {
         try {
@@ -454,6 +459,6 @@ export function startServer(port = 4242) {
   const app = createServer();
 
   serve({ fetch: app.fetch, port }, (info) => {
-    console.log(`\n  projctl dashboard  →  http://localhost:${info.port}\n`);
+    console.log(`\n  holoctl dashboard  →  http://localhost:${info.port}\n`);
   });
 }

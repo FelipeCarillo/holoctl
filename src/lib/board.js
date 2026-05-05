@@ -3,7 +3,7 @@ import path from 'node:path';
 import { parseFrontmatter, serializeFrontmatter } from './markdown.js';
 
 export function createBoard(projectRoot, config) {
-  const boardDir = path.join(projectRoot, '.projctl', 'board');
+  const boardDir = path.join(projectRoot, '.holoctl', 'board');
   const indexPath = path.join(boardDir, 'index.json');
   const ticketsDir = path.join(boardDir, 'tickets');
   const today = new Date().toISOString().slice(0, 10);
@@ -77,7 +77,7 @@ export function createBoard(projectRoot, config) {
       if (filters.agent) tickets = tickets.filter(t => (t.agent || []).includes(filters.agent));
       if (filters.tag) tickets = tickets.filter(t => (t.tags || []).includes(filters.tag));
       if (filters.priority) tickets = tickets.filter(t => t.priority === filters.priority);
-      if (filters.scope) tickets = tickets.filter(t => t.scope === filters.scope);
+      if (filters.project) tickets = tickets.filter(t => (t.projects || []).includes(filters.project));
 
       return tickets;
     },
@@ -134,11 +134,15 @@ export function createBoard(projectRoot, config) {
       const id = generateId(nextNum);
       const slug = slugify(patch.title || '');
 
+      // Accept new `projects` (array) or legacy `scope` (string).
+      let projects = patch.projects;
+      if (projects == null && patch.scope) projects = [patch.scope];
+
       const ticket = {
         id,
         title: patch.title || '',
         agent: patch.agent || [],
-        scope: patch.scope || 'src',
+        projects: projects || [],
         status: patch.status || 'backlog',
         priority: patch.priority || 'p2',
         sprint: patch.sprint || null,
@@ -152,7 +156,10 @@ export function createBoard(projectRoot, config) {
         id,
         created: today,
         updated: today,
+        // Re-apply after spread so legacy `scope` in patch doesn't shadow projects.
+        projects: normalizeArray(projects),
       };
+      delete ticket.scope;
 
       if (typeof ticket.agent === 'string') ticket.agent = [ticket.agent];
       if (typeof ticket.tags === 'string') ticket.tags = ticket.tags.split(',').map(s => s.trim());
@@ -185,11 +192,15 @@ export function createBoard(projectRoot, config) {
         const { data } = parseFrontmatter(content);
         if (!data.id) continue;
 
+        // Migration: legacy `scope: "X"` → `projects: ["X"]`.
+        let projectsFm = data.projects;
+        if (projectsFm == null && data.scope) projectsFm = data.scope;
+
         tickets.push({
           id: data.id,
           title: data.title || '',
           agent: normalizeArray(data.agent),
-          scope: data.scope || 'src',
+          projects: normalizeArray(projectsFm),
           status: data.status || 'backlog',
           priority: data.priority || 'p2',
           sprint: data.sprint || null,
@@ -240,11 +251,12 @@ export function createBoard(projectRoot, config) {
       body = `\n# Start\n\n(Current state before starting)\n\n# Goal — Definition of Done\n\n- [ ] (criteria)\n\n# Context\n\n(Why this ticket exists)\n\n# Out of scope\n\n(What NOT to do)\n\n# Execution notes\n\n(Agent fills during work)\n`;
     }
 
+    const projects = ticket.projects || [];
     const frontmatter = {
       id: ticket.id,
       title: ticket.title,
       agent: ticket.agent.join(', ') || 'null',
-      scope: ticket.scope,
+      projects: projects.length ? projects.join(', ') : 'null',
       status: ticket.status,
       priority: ticket.priority,
       sprint: ticket.sprint,
@@ -267,7 +279,7 @@ function normalizeArray(val) {
 }
 
 function logActivity(projectRoot, event) {
-  const logPath = path.join(projectRoot, '.projctl', 'activity.jsonl');
+  const logPath = path.join(projectRoot, '.holoctl', 'activity.jsonl');
   const entry = { ts: new Date().toISOString(), ...event };
   fs.appendFileSync(logPath, JSON.stringify(entry) + '\n', 'utf8');
 }

@@ -7,7 +7,7 @@ import { getGitInfo } from '../../lib/git.js';
 function getProjectContext() {
   const root = findProjectRoot();
   if (!root) {
-    console.error(chalk.red('No .projctl/ found. Run `projctl init` first.'));
+    console.error(chalk.red('No .holoctl/ found. Run `holoctl init` first.'));
     process.exit(1);
   }
   const config = loadConfig(root);
@@ -73,7 +73,7 @@ export function registerRepoCommand(program) {
       const { root, config } = getProjectContext();
       const repos = config.project.repos;
       if (repos.length === 0) {
-        console.log(chalk.dim('No repos registered. Run `projctl repo add <path>`.'));
+        console.log(chalk.dim('No repos registered. Run `holoctl repo add <path>`.'));
         return;
       }
       for (const r of repos) {

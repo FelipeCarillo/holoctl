@@ -17,11 +17,11 @@ export function layout(title, bodyContent, { sidebar, topbar } = {}) {
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${esc(title)} — projctl</title>
+<title>${esc(title)} — holoctl</title>
 <script>
-(function(){var t=localStorage.getItem('projctl-theme')||'dark';document.documentElement.setAttribute('data-theme',t)})();
+(function(){var t=localStorage.getItem('holoctl-theme')||'dark';document.documentElement.setAttribute('data-theme',t)})();
 </script>
-<link rel="stylesheet" href="/static/projctl.css"/>
+<link rel="stylesheet" href="/static/holoctl.css"/>
 </head>
 <body>
 <div class="app">
@@ -31,7 +31,7 @@ export function layout(title, bodyContent, { sidebar, topbar } = {}) {
     ${bodyContent}
   </div>
 </div>
-<script src="/static/projctl-ui.js"></script>
+<script src="/static/holoctl-ui.js"></script>
 </body>
 </html>`;
 }
@@ -54,7 +54,7 @@ export function sidebarHtml(projects, currentAlias, currentTab) {
     <div class="sidebar-header">
       <div class="sidebar-brand">
         <div class="logo">P</div>
-        projctl
+        holoctl
       </div>
       <button class="theme-toggle" onclick="window.__toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
         <span class="theme-icon-dark">${SVG.sun}</span>

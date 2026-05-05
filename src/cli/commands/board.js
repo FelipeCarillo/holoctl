@@ -5,7 +5,7 @@ import { createBoard } from '../../lib/board.js';
 function getBoard() {
   const root = findProjectRoot();
   if (!root) {
-    console.error(chalk.red('No .projctl/ found. Run `projctl init` first.'));
+    console.error(chalk.red('No .holoctl/ found. Run `holoctl init` first.'));
     process.exit(1);
   }
   const config = loadConfig(root);
@@ -47,7 +47,7 @@ export function registerBoardCommand(program) {
     .option('--status <status>', 'Filter by status')
     .option('--agent <agent>', 'Filter by agent')
     .option('--tag <tag>', 'Filter by tag')
-    .option('--scope <scope>', 'Filter by scope')
+    .option('--project <name>', 'Filter by project (subdir name discovered in workspace)')
     .argument('[priority]', 'Filter by priority (p0, p1, p2, p3)')
     .action((priority, opts) => {
       const { board: b } = getBoard();

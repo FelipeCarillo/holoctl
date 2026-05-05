@@ -1,230 +1,197 @@
-# projhub
+# holoctl
 
-> Universal project operating system for AI coding assistants.
+> Project structure for AI coding agents — board, tickets, agents, decisions, dossier — version-controlled in `.holoctl/` next to your code.
 
-<p>
-  <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue?style=flat-square" alt="English"/></a>
-  <a href="./README.pt-br.md"><img src="https://img.shields.io/badge/lang-Português-green?style=flat-square" alt="Português"/></a>
+<p align="center">
+  🇺🇸 <a href="README.md">English</a> |
+  🇧🇷 <a href="README.pt-br.md">Português</a>
 </p>
 
-[![PyPI version](https://img.shields.io/pypi/v/projhub.svg)](https://pypi.org/project/projhub/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/projhub.svg)](https://pypi.org/project/projhub/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg)](https://www.python.org)
+<p align="center">
+  <a href="https://pypi.org/project/holoctl/"><img src="https://img.shields.io/pypi/v/holoctl?color=blue" alt="PyPI"/></a>
+  <a href="https://pepy.tech/project/holoctl"><img src="https://static.pepy.tech/badge/holoctl" alt="Downloads"/></a>
+  <a href="https://github.com/FelipeCarillo/holoctl/actions/workflows/ci.yml"><img src="https://github.com/FelipeCarillo/holoctl/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT"/></a>
+  <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-≥3.11-brightgreen" alt="Python"/></a>
+</p>
 
----
+Type `/holoctl` in your AI coding assistant and your project gets a Kanban board, named agents, slash commands, decision log, and a live web dashboard — all checked into git as plain Markdown + JSON.
 
-## What is projhub?
+Works in **Claude Code**, **Cursor**, **Windsurf**, **GitHub Copilot**, **Devin**, **Aider**, and any agent that reads `AGENTS.md` / `CLAUDE.md`.
 
-**projhub** is a CLI tool that turns any directory into a fully structured AI-ready project. It gives you a Kanban board, agent definitions, slash commands, and a live web dashboard — all version-controlled in `.projhub/` alongside your code.
+```bash
+holoctl init
+```
 
-One project root. Any number of sub-repos and directories underneath. One `/projhub` slash command to set it all up inside Claude Code.
+That's it. You get:
 
 ```
-my-project/              ← project root (projhub init here)
-├── backend/             [git · Node]
-├── frontend/            [git · React]
-├── mobile/              [git · React Native]
-├── infra/               [Terraform]
-├── .projhub/            ← all project state lives here
+your-project/
+├── .holoctl/                  ← single source of truth, committed to git
 │   ├── config.json
 │   ├── board/
+│   │   ├── index.json         ← auto-rebuilt from ticket .md files
 │   │   └── tickets/
-│   ├── agents/
-│   ├── commands/
-│   └── context/
-└── README.md
+│   │       └── PRJ-001-add-auth.md
+│   ├── agents/                ← developer.md, reviewer.md, architect.md, researcher.md
+│   ├── commands/              ← /board, /ticket, /sprint, /close, /decision, /status
+│   ├── context/
+│   │   ├── decisions/         ← ADR-style hard locks
+│   │   └── documents/
+│   └── activity.jsonl         ← append-only event log
+├── CLAUDE.md                  ← compiled from .holoctl/, read by Claude Code
+├── AGENTS.md                  ← compiled, read by Devin/Cursor/Aider
+├── .claude/commands/          ← /board, /ticket, /holoctl etc. for Claude Code
+└── …your code
 ```
 
 ---
 
 ## Install
 
-Recommended (handles PATH automatically):
+**Requires Python ≥ 3.11.**
 
 ```bash
-uv tool install projhub
+uv tool install holoctl       # recommended — handles PATH automatically
+# or
+pipx install holoctl
+# or
+pip install holoctl
 ```
 
-Or with pip:
-
-```bash
-pip install projhub
-```
-
-After install, set up the global `/projhub` slash command:
-
-```bash
-projhub setup-global
-```
-
-This places a `/projhub` command in `~/.claude/commands/projhub.md` so you can run it from any project in Claude Code.
-
-> Cursor, Windsurf, and GitHub Copilot don't support globally-installed slash commands. For those tools, use `projhub compile` inside each project to generate the project-level integration files (see **AI Tool Integration** below).
+> **`holoctl: command not found`?** `uv tool` and `pipx` put the CLI on PATH for you. With plain `pip`, add `~/.local/bin` (Linux/Mac) or `~/AppData/Roaming/Python/Scripts` (Windows) to your PATH, or call `python -m holoctl`.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Go to your project root
-cd ~/my-project
-
-# 2. Initialize
-projhub init
-
-# 3. Open the dashboard
-projhub serve
-# → http://127.0.0.1:4242
-
-# 4. Compile for your AI tool(s)
-projhub compile --target claude    # CLAUDE.md + .claude/commands/
-projhub compile --target cursor    # .cursor/commands/ + .cursor/rules/
-projhub compile --target windsurf  # .windsurfrules
-projhub compile --target copilot   # .github/copilot-instructions.md
-projhub compile --target devin     # AGENTS.md + .devin/skills/
+cd your-project              # any directory with code in it
+holoctl init                 # creates .holoctl/ — writes nothing to $HOME
+holoctl compile              # generates CLAUDE.md / AGENTS.md / .claude/commands/
+holoctl serve                # http://127.0.0.1:4242 — live kanban dashboard
 ```
 
-Or just type `/projhub` in Claude Code — it detects, initializes, and compiles automatically.
+Then open Claude Code (or Cursor, or Devin…) inside that directory and type `/holoctl`. The agent picks up the board, the ticket templates, and the agent definitions automatically.
+
+> **No global state.** holoctl writes nothing to `$HOME`, keeps no machine-wide registry of projects. The workspace IS the directory you `init`ed in. Everything else — slash commands, AGENTS.md, the dashboard — is generated per-workspace by `holoctl compile`. Safe to run on shared machines, CI, devcontainers.
 
 ---
 
-## Features
+## Pick your AI tool
 
-### 📋 Kanban Board
+`holoctl compile` translates `.holoctl/` into the native format of each tool. Run it once per workspace; re-run after edits to regenerate.
 
-Ticket management built for AI agents. Every ticket is a Markdown file with frontmatter — readable by humans and machines.
-
-```bash
-projhub board add '{"title":"Add auth flow","agent":"developer","scope":"backend"}'
-projhub board ls
-projhub board ls --scope backend --status doing
-projhub board move PRJ-001 doing
-projhub board set PRJ-001 priority p0
-projhub board stat
-```
-
-### 📁 Multi-Repo Projects
-
-A project root can contain any number of sub-directories and git repos. Register them and they appear in the dashboard's **Repos** tab with live git info.
-
-```bash
-projhub repo add ./backend  --name backend
-projhub repo add ./frontend --name frontend
-projhub repo list
-projhub repo info backend
-```
-
-### 🌐 Web Dashboard
-
-```bash
-projhub serve              # http://127.0.0.1:4242 (localhost only)
-projhub serve --host 0.0.0.0  # expose on local network
-```
-
-| Tab | Description |
-|---|---|
-| **Board** | Kanban view with real-time SSE updates |
-| **Repos** | Git status per sub-repo: branch, last commit, remote link |
-| **Files** | Full file tree with tech-stack badges |
-| **Agents** | AI agent definitions |
-| **Commands** | Slash commands library |
-| **Context** | Project knowledge base |
-
-**File tree badges:** Git, Node, React, Vue, React Native, Python, Go, Rust, Flutter, Docker, Terraform, iOS, Java, PHP.
-
-### 🤖 AI Tool Integration
-
-`projhub compile` translates `.projhub/` into the native format of each AI tool:
-
-| Tool | Slash Command | Context File |
+| Tool | Compile target | Generated files |
 |---|---|---|
-| Claude Code | `.claude/commands/*.md` | `CLAUDE.md` |
-| Cursor | `.cursor/commands/*.md` | `.cursor/rules/projhub.md` |
-| Windsurf | (n/a) | `.windsurfrules` |
-| GitHub Copilot | (n/a) | `.github/copilot-instructions.md` |
-| Devin CLI | `.devin/skills/*/SKILL.md` | `AGENTS.md` |
-
-### 🔧 Global Setup
+| Claude Code | `--target claude` | `CLAUDE.md`, `.claude/commands/*.md`, `.claude/agents/*.md` |
+| Cursor | `--target cursor` | `.cursor/rules/holoctl.md`, `.cursor/commands/*.md` |
+| Windsurf | `--target windsurf` | `.windsurfrules`, `.windsurf/workflows/*.md` |
+| GitHub Copilot | `--target copilot` | `.github/copilot-instructions.md`, `.github/prompts/*.md` |
+| Devin | `--target devin` | `AGENTS.md`, `.devin/skills/*/SKILL.md` |
+| Generic (Aider, etc.) | `--target generic` | `AGENTS.md` |
 
 ```bash
-projhub setup-global
-# Installs /projhub in Claude Code globally (~/.claude/commands/projhub.md)
-# Works in any directory, even before projhub init
+holoctl compile --target claude
+holoctl compile                       # all targets in config.targets[]
 ```
 
 ---
 
-## Commands
+## What you get
 
+### 📋 Kanban board with ticket files
+
+Tickets are Markdown files with frontmatter. The board index (`index.json`) is auto-rebuilt from them, so you can edit either side and they stay in sync. Every ticket can link to one or more **discovered subprojects** (see below).
+
+```bash
+holoctl board add '{"title":"Add auth flow","agent":"developer","projects":["backend"]}'
+holoctl board add '{"title":"Wire SSE","agent":"developer","projects":["backend","frontend"]}'
+holoctl board ls --project backend --status doing
+holoctl board move PRJ-001 doing
+holoctl board set PRJ-001 priority p0
+holoctl board stat
 ```
-projhub init               Initialize .projhub/ in the current directory
-projhub overview           One-screen project snapshot (board, repos, agents, suggested next)
-projhub board <cmd>        Manage tickets (add, ls, move, set, stat, get)
-projhub repo <cmd>         Manage sub-repos (add, remove, list, info)
-projhub compile            Compile to tool-specific files
-projhub serve              Start the web dashboard
-projhub setup-global       Install /projhub globally for Claude Code
-projhub workspace <cmd>    Manage registered projects
-projhub agent <cmd>        Manage agent definitions
-projhub doctor             Check project health
-```
-
----
-
-## .projhub/ Structure
-
-```
-.projhub/
-├── config.json          ← project settings (name, prefix, board config, repos)
-├── activity.jsonl       ← append-only event log
-├── board/
-│   ├── index.json       ← ticket index (auto-rebuilt from .md files)
-│   └── tickets/
-│       └── PRJ-001-my-ticket.md
-├── agents/
-│   └── developer.md
-├── commands/
-│   └── review.md
-└── context/
-    ├── decisions/
-    └── documents/
-```
-
----
-
-## Ticket Format
 
 ```markdown
 ---
 id: PRJ-001
 title: Add authentication
 agent: developer
-scope: backend
+projects: backend, shared
 status: doing
 priority: p1
 sprint: sprint-1
-created: 2026-05-04
-updated: 2026-05-04
-completed: null
-depends: null
-tags: auth, security
 ---
-
 # Start
-(Current state before starting)
-
+…files this will touch, current state…
 # Goal — Definition of Done
 - [ ] JWT auth implemented
 - [ ] Tests passing
-
 # Context
-Why this ticket exists.
+…why this exists, decisions made…
 ```
+
+### 📁 Auto-discovered multi-project workspace
+
+The directory where you `init` is the workspace. Direct subdirectories with project markers (`.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `composer.json`, `Gemfile`, `pubspec.yaml`, `mix.exs`, `build.gradle`, `pom.xml`, `CMakeLists.txt`) are surfaced **automatically** in the dashboard's **Projects** view and as filters on the board — no `repo add` required.
+
+```bash
+holoctl repo list                          # see what was discovered
+holoctl repo add ./infra --name infra      # optional: register a subdir without markers
+holoctl repo info backend                  # git branch, dirty state, remote
+```
+
+### 🤖 Named agents with explicit roles
+
+`.holoctl/agents/*.md` define personas: `developer`, `reviewer`, `architect`, `researcher`. Each has identity, scope, guard rails, and a report format. When a ticket is assigned to an agent, the slash commands route to the matching definition. You edit the personas like any other file in the repo.
+
+### 🌐 Live web dashboard
+
+```bash
+holoctl serve                  # http://127.0.0.1:4242 (localhost only)
+holoctl serve --host 0.0.0.0   # expose on local network
+```
+
+| Tab | What's there |
+|---|---|
+| **Board** | Kanban with real-time SSE updates, filter by project / agent / sprint |
+| **Projects** | Auto-discovered subdirs with git branch, dirty state, ticket count |
+| **Files** | File tree with tech-stack badges (Git, Node, React, Vue, Python, Go, Rust, Flutter, Docker, Terraform, iOS, Java, PHP) |
+| **Agents** | Personas as cards |
+| **Commands** | Slash command library |
+| **Context** | Decisions log, free-form documents |
+
+### 🔒 No global state, no surprise installs
+
+- `holoctl init` writes nothing to `$HOME`. No `~/.holoctl/`, no machine-wide project registry.
+- `holoctl install` doesn't exist. There's no postinstall hook either.
+- The `/holoctl` slash command is a **per-workspace artifact** generated by `holoctl compile --target claude`. Want it in another workspace? Run compile there too.
+- Safe to run on shared machines, CI runners, and devcontainers without leaking state.
+
+---
+
+## Commands
+
+```
+holoctl init               Initialize .holoctl/ in the current workspace
+holoctl overview           One-screen workspace snapshot
+holoctl board <cmd>        Tickets — add, ls, move, set, stat, get, rebuild-index
+holoctl repo <cmd>         Discovered subprojects — list, add (override), info
+holoctl compile            Generate AI-tool integration files (CLAUDE.md, etc.)
+holoctl serve              Start the web dashboard
+holoctl agent <cmd>        Manage agent definitions
+holoctl sync               Refresh template-managed files after a holoctl upgrade
+holoctl doctor             Health check
+```
+
+Run `holoctl <cmd> --help` for any of them.
 
 ---
 
 ## Configuration
+
+Defaults live in code; only override what you need in `.holoctl/config.json`:
 
 ```json
 {
@@ -232,8 +199,7 @@ Why this ticket exists.
     "name": "My Project",
     "prefix": "MP",
     "repos": [
-      { "name": "backend",  "path": "./backend",  "description": "Node API" },
-      { "name": "frontend", "path": "./frontend", "description": "React app" }
+      { "name": "backend",  "path": "./backend",  "description": "Node API" }
     ]
   },
   "board": {
@@ -241,15 +207,27 @@ Why this ticket exists.
     "priorities": ["p0", "p1", "p2", "p3"],
     "idPadding": 3
   },
-  "targets": ["claude", "cursor"]
+  "targets": ["claude", "cursor"],
+  "server": { "port": 4242, "theme": "dark" }
 }
 ```
 
+`project.repos` is **optional** — only needed to register subdirs the auto-scan misses or to override their display name. Auto-discovered subdirs already appear without it.
+
 ---
 
-## Requirements
+## Migrating from `projctl` / `projhub`
 
-- Python ≥ 3.11
+Earlier names of this project. holoctl reads `.projctl/` and `.projhub/` directories and auto-renames them to `.holoctl/` on the next save. Tickets that used `scope: X` are read as `projects: [X]` and rewritten on the next `board set` or `rebuild-index`.
+
+---
+
+## Documentation
+
+- [CHANGELOG.md](CHANGELOG.md) — release notes
+- [ARCHITECTURE.md](ARCHITECTURE.md) — internal design, dual-stack Node + Python implementation, compile pipeline
+- [SECURITY.md](SECURITY.md) — vulnerability reporting + threat model
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, conventions, how to add a compile target
 
 ---
 

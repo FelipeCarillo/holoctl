@@ -4,30 +4,30 @@ export function getTemplates(config) {
 
   return {
     // Board
-    '.projctl/board/WORKFLOW.md': workflowMd(config),
-    '.projctl/board/tickets/_template.md': ticketTemplateMd(config),
+    '.holoctl/board/WORKFLOW.md': workflowMd(config),
+    '.holoctl/board/tickets/_template.md': ticketTemplateMd(config),
 
     // Agents
-    '.projctl/agents/developer.md': agentDeveloperMd(p),
-    '.projctl/agents/reviewer.md': agentReviewerMd(p),
-    '.projctl/agents/architect.md': agentArchitectMd(p),
-    '.projctl/agents/researcher.md': agentResearcherMd(p),
+    '.holoctl/agents/developer.md': agentDeveloperMd(p),
+    '.holoctl/agents/reviewer.md': agentReviewerMd(p),
+    '.holoctl/agents/architect.md': agentArchitectMd(p),
+    '.holoctl/agents/researcher.md': agentResearcherMd(p),
 
     // Commands
-    '.projctl/commands/status.md': cmdStatusMd(cli, p),
-    '.projctl/commands/ticket.md': cmdTicketMd(cli, p),
-    '.projctl/commands/board.md': cmdBoardMd(cli, p),
-    '.projctl/commands/sprint.md': cmdSprintMd(cli, p),
-    '.projctl/commands/decision.md': cmdDecisionMd(),
-    '.projctl/commands/close.md': cmdCloseMd(cli, p),
+    '.holoctl/commands/status.md': cmdStatusMd(cli, p),
+    '.holoctl/commands/ticket.md': cmdTicketMd(cli, p),
+    '.holoctl/commands/board.md': cmdBoardMd(cli, p),
+    '.holoctl/commands/sprint.md': cmdSprintMd(cli, p),
+    '.holoctl/commands/decision.md': cmdDecisionMd(),
+    '.holoctl/commands/close.md': cmdCloseMd(cli, p),
 
     // Context
-    '.projctl/context/objective.md': contextObjectiveMd(p),
-    '.projctl/context/architecture.md': contextArchitectureMd(p),
-    '.projctl/context/conventions.md': contextConventionsMd(p),
+    '.holoctl/context/objective.md': contextObjectiveMd(p),
+    '.holoctl/context/architecture.md': contextArchitectureMd(p),
+    '.holoctl/context/conventions.md': contextConventionsMd(p),
 
     // Instructions
-    '.projctl/instructions.md': instructionsMd(config),
+    '.holoctl/instructions.md': instructionsMd(config),
   };
 }
 
@@ -48,7 +48,7 @@ You are the **Developer** for ${p.name}. You implement features from tickets wit
 
 # Guard Rail
 
-You only begin work if you receive a ticket from \`.projctl/board/tickets/${p.prefix}-XXX-*.md\` with **Start** and **Goal (Definition of Done)** sections filled in. If the ticket is missing or the Goal is vague, REFUSE and ask the orchestrator to complete the ticket first.
+You only begin work if you receive a ticket from \`.holoctl/board/tickets/${p.prefix}-XXX-*.md\` with **Start** and **Goal (Definition of Done)** sections filled in. If the ticket is missing or the Goal is vague, REFUSE and ask the orchestrator to complete the ticket first.
 
 Before any action:
 1. Read the entire ticket.
@@ -231,7 +231,7 @@ arguments: "<title>"
 2. Fill in:
    - **title**: from the user's argument (verb + object)
    - **agent**: infer from the type of work, or ask
-   - **scope**: infer from context
+   - **projects**: list of subdir names this ticket touches (\`${cli.replace(' board', '')} repo list\` to see them); empty if workspace-wide
    - **priority**: infer or ask (p0|p1|p2|p3)
    - **Start**: fill if enough context, otherwise ask
    - **Goal (DoD)**: derive from title + context, each item as \`[ ]\`
@@ -266,7 +266,7 @@ arguments: "[<ID> | @agent | #tag | sprint:<name> | p0..p3 | move <ID> <status> 
 ## /board \`<ID>\` → inspect ticket
 
 1. Run \`${cli} get <ID>\` for metadata (status, priority, agent, sprint, deps).
-2. Read the ticket file \`.projctl/board/tickets/<ID>-*.md\` for full body.
+2. Read the ticket file \`.holoctl/board/tickets/<ID>-*.md\` for full body.
 3. Show all sections: Start, Goal (Definition of Done), Context, Out of scope, Execution notes.
 
 ## Filters: \`@agent\` | \`#tag\` | \`sprint:<name>\` | \`p0\`–\`p3\`
@@ -329,8 +329,8 @@ arguments: "<description>"
 
 # /decision — Record a decision
 
-1. Read \`.projctl/context/decisions/\` to check for duplicates.
-2. Create a new file \`.projctl/context/decisions/YYYY-MM-DD-<slug>.md\` with:
+1. Read \`.holoctl/context/decisions/\` to check for duplicates.
+2. Create a new file \`.holoctl/context/decisions/YYYY-MM-DD-<slug>.md\` with:
 
 \`\`\`markdown
 ---
@@ -379,13 +379,13 @@ If git is unavailable: skip this step and proceed from conversation memory only.
 
 Run \`${cli} ls --status doing\` and \`${cli} ls --status review\`.
 
-For each open ticket, check whether the files listed in its **Scope** field appear in the git diff.
+For each open ticket, check whether the files listed in its **Start** section appear in the git diff (and that they belong to one of the ticket's \`projects\`).
 
 ## Step 3 — Update tickets
 
-For each ticket where the work is verifiably done (DoD items met OR files changed match scope):
+For each ticket where the work is verifiably done (DoD items met OR files changed match the ticket's projects/Start section):
 
-1. Open the ticket file \`.projctl/board/tickets/<ID>-*.md\`.
+1. Open the ticket file \`.holoctl/board/tickets/<ID>-*.md\`.
 2. Mark completed DoD items: \`[ ]\` → \`[x]\`.
 3. Append to **Execution notes**: a bullet summarizing what was done and any key decisions made.
 4. Move status:
@@ -400,7 +400,7 @@ For work done without a ticket (files changed, no ticket covers them):
 
 For each non-obvious decision made this session (architecture, trade-off, direction change):
 
-Create \`.projctl/context/decisions/YYYY-MM-DD-<slug>.md\`:
+Create \`.holoctl/context/decisions/YYYY-MM-DD-<slug>.md\`:
 
 \`\`\`markdown
 ---
@@ -523,7 +523,7 @@ Rules for how the board operates and how agents interact with it.
 ## Architecture
 
 \`\`\`
-.projctl/board/
+.holoctl/board/
   index.json          <- computed index (fast reads, filters)
   WORKFLOW.md          <- this file (rules)
   tickets/
@@ -601,7 +601,7 @@ function ticketTemplateMd(config) {
 id: ${p.prefix}-XXX
 title: <verb + object>
 agent: <developer | reviewer | architect | researcher>
-scope: src
+projects: null
 status: backlog
 priority: <p0 | p1 | p2 | p3>
 sprint: null
@@ -648,7 +648,7 @@ function instructionsMd(config) {
 
   return `# ${p.name} — Project Context
 
-This file is the source of truth for AI assistant instructions. It compiles to tool-specific formats via \`projctl compile\`.
+This file is the source of truth for AI assistant instructions. It compiles to tool-specific formats via \`holoctl compile\`.
 
 ## Identity
 
@@ -656,7 +656,7 @@ ${p.description || `${p.name} is a software project.`}
 
 ## Board — mandatory CLI access
 
-**NEVER read \`.projctl/board/index.json\` directly.** All board interaction goes through the CLI:
+**NEVER read \`.holoctl/board/index.json\` directly.** All board interaction goes through the CLI:
 
 \`\`\`bash
 ${cli} stat                              # counts by status
@@ -671,7 +671,7 @@ ${cli} next-id                           # next available ID
 
 ## Available agents
 
-See \`.projctl/agents/\` for full definitions:
+See \`.holoctl/agents/\` for full definitions:
 
 - \`developer\` (standard): General-purpose code implementation
 - \`reviewer\` (reasoning): Code review for correctness and security

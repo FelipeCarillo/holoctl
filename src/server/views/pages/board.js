@@ -30,10 +30,10 @@ export function boardPage(project, tickets, config) {
     </div>`;
   });
 
-  const scopeFilter = repos.length > 0
+  const projectFilter = repos.length > 0
     ? `<div class="scope-filter" id="scope-filter">
-        <button class="scope-btn active" data-scope="" onclick="window.__filterScope(this,'')">All</button>
-        ${repos.map(r => `<button class="scope-btn" data-scope="${esc(r.name)}" onclick="window.__filterScope(this,'${esc(r.name)}')">${esc(r.name)}</button>`).join('')}
+        <button class="scope-btn active" data-project="" onclick="window.__filterProject(this,'')">All</button>
+        ${repos.map(r => `<button class="scope-btn" data-project="${esc(r.name)}" onclick="window.__filterProject(this,'${esc(r.name)}')">${esc(r.name)}</button>`).join('')}
       </div>`
     : '';
 
@@ -43,7 +43,7 @@ export function boardPage(project, tickets, config) {
       <div class="board-path" title="${esc(shortPath)}">${esc(shortPath)}</div>
       <span class="board-count">${tickets.length} ticket${tickets.length !== 1 ? 's' : ''}</span>
     </div>
-    ${scopeFilter}
+    ${projectFilter}
     <div class="kanban" id="kanban">
       ${columns.join('\n')}
     </div>
@@ -59,7 +59,10 @@ function ticketCard(t, alias) {
     : '';
   const date = t.completed || t.updated || t.created;
 
-  return `<a class="kanban-card" data-p="${t.priority || 'p2'}" data-id="${esc(t.id)}" data-scope="${esc(t.scope || '')}" href="/project/${esc(alias)}/board/${esc(t.id)}">
+  const projects = t.projects || [];
+  const projectsAttr = projects.join(',');
+  const projectsLabel = projects.join(', ');
+  return `<a class="kanban-card" data-p="${t.priority || 'p2'}" data-id="${esc(t.id)}" data-projects="${esc(projectsAttr)}" href="/project/${esc(alias)}/board/${esc(t.id)}">
     <div class="kanban-card-top">
       <span class="kanban-card-id">${esc(t.id)}</span>
       <span class="kanban-card-title">${esc(t.title)}</span>
@@ -68,7 +71,7 @@ function ticketCard(t, alias) {
     <div class="kanban-card-meta">${agents}${sprint}${tags}${deps}</div>
     <div class="kanban-card-dates">
       <span>${date || ''}</span>
-      <span>${esc(t.scope || '')}</span>
+      <span>${esc(projectsLabel)}</span>
     </div>
   </a>`;
 }

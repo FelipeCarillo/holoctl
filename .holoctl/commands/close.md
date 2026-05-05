@@ -1,0 +1,75 @@
+---
+name: close
+description: "End-of-session persistence — verify all work done, update tickets, record decisions, ready for context clear"
+arguments: ""
+---
+
+# /close — Session close
+
+Run this command before clearing the context. It ensures nothing is lost.
+
+## Step 1 — Verify actual work via git
+
+Run `git status` and `git diff HEAD` to list files actually changed this session.
+
+If git is unavailable: skip this step and proceed from conversation memory only.
+
+## Step 2 — Cross-reference with open tickets
+
+Run `holoctl board ls --status doing` and `holoctl board ls --status review`.
+
+For each open ticket, check whether the files listed in its **Start** section appear in the git diff (and that they belong to one of the ticket's `projects`).
+
+## Step 3 — Update tickets
+
+For each ticket where the work is verifiably done (DoD items met OR files changed match the ticket's projects/Start section):
+
+1. Open the ticket file `.holoctl/board/tickets/<ID>-*.md`.
+2. Mark completed DoD items: `[ ]` → `[x]`.
+3. Append to **Execution notes**: a bullet summarizing what was done and any key decisions made.
+4. Move status:
+   - All DoD `[x]` → `holoctl board move <ID> done`
+   - Partially done → keep in `doing`, note what remains
+
+For work done without a ticket (files changed, no ticket covers them):
+- If substantial (feature, fix, refactor): `holoctl board add '{"title":"...","status":"done","agent":"...",...}'`
+- If trivial (typo, config): skip
+
+## Step 4 — Record decisions
+
+For each non-obvious decision made this session (architecture, trade-off, direction change):
+
+Create `.holoctl/context/decisions/YYYY-MM-DD-<slug>.md`:
+
+```markdown
+---
+date: YYYY-MM-DD
+title: One-line summary
+status: accepted
+---
+
+## Context
+Why this decision was needed.
+
+## Decision
+What was decided.
+
+## Implications
+What changes in practice.
+```
+
+## Step 5 — Final report
+
+```
+## TestProject — Session close YYYY-MM-DD
+
+Tickets closed:    TST-001, TST-002  (or "none")
+Tickets updated:   TST-003 (execution notes)  (or "none")
+New tickets:       TST-004 (untracked work)    (or "none")
+Decisions:         YYYY-MM-DD-foo.md                  (or "none")
+Uncovered files:   (files changed with no ticket)      (or "none")
+
+Ready for /clear.
+```
+
+If the session had no substantial work: output "Session trivial — nothing to save. Ready for /clear."

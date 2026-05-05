@@ -1,16 +1,43 @@
 # Changelog
 
-All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [0.5.1] — 2026-05-05
+
+### Fixed
+
+- `holoctl overview` now actually lists discovered subprojects under the **📁 Projects** section. The 0.5.0 release shipped with stale code that read `config.project.repos` (manual list) instead of calling `discover_repos`, so the section was always empty in real workspaces.
+- Web dashboard ticket detail page replaces the old `Scope` field with `Projects` (array), matching the schema migration.
+
+## [0.5.0] — 2026-05-05
+
+### Changed
+
+- **Renamed package to `holoctl`** (was `projctl` on npm and `projhub` on PyPI). New CLI binaries: `holoctl` and the short alias `hctl`. Folder marker is now `.holoctl/`. Existing `.projctl/` and `.projhub/` directories are auto-renamed to `.holoctl/` on first read.
+- **Workspace = the directory where `holoctl init` was run.** No more global registry of projects in `$HOME` and no more global slash-command installer. `holoctl init` writes only inside the workspace; `~/.holoctl/`, `~/.projctl/`, `~/.projhub/` are never touched.
+- **Auto-discovery of subprojects.** Every command (overview, board, dashboard) scans the workspace's direct subdirectories for project markers (`.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `composer.json`, `Gemfile`, `pubspec.yaml`, `mix.exs`, `build.gradle`, `pom.xml`, `CMakeLists.txt`) and surfaces matches as projects — no `repo add` required. Skip-list excludes `node_modules`, `.venv`, `dist`, `build`, etc.
+- **Tickets now reference one or more projects.** New field `projects: string[]` replaces the old `scope: string`. CLI: `--project <name>` filter on `board ls`; create with `'{"projects":["app","api"]}'`. Legacy tickets with `scope: X` are read as `projects: [X]` automatically on first reindex.
+
+### Removed
+
+- `holoctl setup-global` command and its associated `npm postinstall` hook. The `/holoctl` slash command is now generated **per workspace** by `holoctl compile --target claude` (writes `.claude/commands/holoctl.md` inside the workspace).
+- `holoctl workspace` subcommands (`add`/`list`/`remove`) and the `~/.holoctl/workspace.json` global registry.
+
+### Migration
+
+- Existing projects with `.projctl/` or `.projhub/` keep working — the directory is auto-renamed to `.holoctl/` on the next read of config.
+- Existing tickets with `scope: X` keep working — they're served as `projects: [X]` and rewritten with the new field on the next index rebuild or set.
+- Users who relied on a global `/holoctl` slash command should run `holoctl compile --target claude` once per workspace to wire it up locally.
 
 ## [0.4.4] — 2026-05-05
 
 ### Added
-- **Devin CLI compile target.** `projhub compile --target devin` writes:
+- **Devin CLI compile target.** `holoctl compile --target devin` writes:
   - `AGENTS.md` at the project root (Devin's primary always-active rules file, equivalent to `CLAUDE.md`).
   - `.devin/skills/<name>/SKILL.md` per slash command, with YAML frontmatter (`name`, `description`, `arguments`). Devin invokes them as `/<name>`.
-- **`projhub overview` command.** One-screen project snapshot: name, prefix, version, objective, board counts (backlog/doing/review/done/cancelled), repos with branch + dirty + ticket count, agents, slash commands, dashboard URL, and a context-aware suggested next action (stalled tickets, next p1, or "create your first").
-- The `/projhub` slash command now ends every invocation with `projhub overview` so the user sees the canonical snapshot — same template applied to claude/cursor/windsurf/copilot/devin variants.
-- `projhub doctor` recognises the `devin` target and verifies that `AGENTS.md` and `.devin/skills` exist when devin is in `config.targets`.
+- **`holoctl overview` command.** One-screen project snapshot: name, prefix, version, objective, board counts (backlog/doing/review/done/cancelled), repos with branch + dirty + ticket count, agents, slash commands, dashboard URL, and a context-aware suggested next action (stalled tickets, next p1, or "create your first").
+- The `/holoctl` slash command now ends every invocation with `holoctl overview` so the user sees the canonical snapshot — same template applied to claude/cursor/windsurf/copilot/devin variants.
+- `holoctl doctor` recognises the `devin` target and verifies that `AGENTS.md` and `.devin/skills` exist when devin is in `config.targets`.
 
 ## [0.4.3] — 2026-05-05
 
@@ -19,7 +46,7 @@ All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.
 - **Sidebar collapsed view now usable.** Each nav item gained a small avatar (project prefix initials, ★ for Agents) that stays visible when collapsed; theme + collapse buttons stack vertically; brand shrinks to just the "P" logo. Width 64px.
 
 ### Changed
-- **`/projhub` slash command: execute by default, ask only at 3 checkpoints.** The previous version paused after every context file, which was friction for the simple case. Now the agent reads the codebase and writes `objective.md`, `architecture.md`, `conventions.md`, `instructions.md` directly. It only stops to ask the user when (a) `.projhub/` already exists (conflict), (b) sub-repos are detected (one aggregated question listing all candidates, not one per repo), or (c) the codebase is genuinely ambiguous and the objective can't be inferred from the README. Same flow applied to cursor/windsurf/copilot variants.
+- **`/holoctl` slash command: execute by default, ask only at 3 checkpoints.** The previous version paused after every context file, which was friction for the simple case. Now the agent reads the codebase and writes `objective.md`, `architecture.md`, `conventions.md`, `instructions.md` directly. It only stops to ask the user when (a) `.holoctl/` already exists (conflict), (b) sub-repos are detected (one aggregated question listing all candidates, not one per repo), or (c) the codebase is genuinely ambiguous and the objective can't be inferred from the README. Same flow applied to cursor/windsurf/copilot variants.
 
 ## [0.4.2] — 2026-05-05
 
@@ -32,7 +59,7 @@ All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.
 
 ### Changed
 - Removed the **Files** tab from the project view. The dashboard now focuses on tickets, agents, commands, context, and repos.
-- `/projhub` slash command rewritten to be **interactive** with confirmation gates. The previous version asked the agent to "populate context files" but didn't enforce checkpoints, so agents skipped repos and wrote thin/wrong content. The new version requires the agent to:
+- `/holoctl` slash command rewritten to be **interactive** with confirmation gates. The previous version asked the agent to "populate context files" but didn't enforce checkpoints, so agents skipped repos and wrote thin/wrong content. The new version requires the agent to:
   1. Ask the user for project name + prefix before init.
   2. Read the codebase first (read-only).
   3. Propose each context file (`objective.md`, `architecture.md`, `conventions.md`, `instructions.md`) **one at a time**, show the draft, wait for approval/edits, then write.
@@ -47,19 +74,19 @@ All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.
 - Web dashboard: clicking an agent / command / context document no longer 404s. Added detail routes `/project/{alias}/agents/{slug}`, `/.../commands/{slug}`, `/.../context/{filename}` that render the file contents as Markdown.
 
 ### Changed
-- `/projhub` slash command rewritten. Previously it just ran `projhub init` and stopped — leaving `objective.md`, `architecture.md`, `conventions.md`, and `instructions.md` as bare placeholders. Now it instructs the agent to actually read the codebase (README, package files, top-level dirs, lint configs) and POPULATE those files with real content; register sub-repos when multi-package; then recompile. Same change applied to the Cursor / Windsurf / Copilot variants.
+- `/holoctl` slash command rewritten. Previously it just ran `holoctl init` and stopped — leaving `objective.md`, `architecture.md`, `conventions.md`, and `instructions.md` as bare placeholders. Now it instructs the agent to actually read the codebase (README, package files, top-level dirs, lint configs) and POPULATE those files with real content; register sub-repos when multi-package; then recompile. Same change applied to the Cursor / Windsurf / Copilot variants.
 
 ## [0.4.0] — 2026-05-05
 
 ### Changed (breaking)
-- **`projhub serve` now binds to `127.0.0.1` by default** (was `0.0.0.0`). Use `--host 0.0.0.0` to expose on the network — a warning is printed when you do.
-- **`setup-global` simplified to install only the Claude Code slash command.** Cursor / Windsurf / Copilot don't support globally-installed slash commands; their previous paths (`~/.codeium/.../memories/`, `~/.copilot/prompts/`) didn't exist on disk. Use `projhub compile` per-project for those tools.
+- **`holoctl serve` now binds to `127.0.0.1` by default** (was `0.0.0.0`). Use `--host 0.0.0.0` to expose on the network — a warning is printed when you do.
+- **`setup-global` simplified to install only the Claude Code slash command.** Cursor / Windsurf / Copilot don't support globally-installed slash commands; their previous paths (`~/.codeium/.../memories/`, `~/.copilot/prompts/`) didn't exist on disk. Use `holoctl compile` per-project for those tools.
 
 ### Changed
-- `projhub init` now auto-runs `compile` for every configured target and `setup-global` for Claude Code. Use `--skip-compile` / `--skip-global` to opt out.
+- `holoctl init` now auto-runs `compile` for every configured target and `setup-global` for Claude Code. Use `--skip-compile` / `--skip-global` to opt out.
 
 ### Added
-- `projhub doctor` now detects drift between `tickets/*.md` and `index.json`, verifies that compile targets are up to date, and flags a stale global slash command.
+- `holoctl doctor` now detects drift between `tickets/*.md` and `index.json`, verifies that compile targets are up to date, and flags a stale global slash command.
 - Web dashboard renders ticket Markdown bodies (headings, checklists, lists, inline code).
 - Sidebar in the web dashboard is collapsible with persistent state.
 - Theme toggle (dark/light) persists across reloads.
@@ -73,16 +100,16 @@ All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.
 ## [0.3.0] — 2026-05-05
 
 ### Changed
-- **Renamed package from `projctl` to `projhub`.** PyPI distribution now lives at <https://pypi.org/project/projhub>.
-- **Migrated from Node.js to Python + uv.** Install via `uv tool install projhub`. The CLI binary is now `projhub` (with `phub` as a shorter alias).
+- **Renamed package from `projctl`/`projhub` to `holoctl`.** PyPI distribution now lives at <https://pypi.org/project/holoctl>.
+- **Migrated from Node.js to Python + uv.** Install via `uv tool install holoctl`. The CLI binary is now `holoctl` (with `hctl` as a shorter alias).
 - Web dashboard rebuilt on FastAPI + Uvicorn (was Hono).
 
 ### Fixed
 - Windows: `sys.stdout.reconfigure(encoding="utf-8")` so Rich can render `✓` / `✗` characters on `cp1252` consoles.
 
-[0.4.4]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.4
-[0.4.3]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.3
-[0.4.2]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.2
-[0.4.1]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.1
-[0.4.0]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.0
-[0.3.0]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.3.0
+[0.4.4]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.4.4
+[0.4.3]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.4.3
+[0.4.2]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.4.2
+[0.4.1]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.4.1
+[0.4.0]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.4.0
+[0.3.0]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.3.0

@@ -7,25 +7,26 @@ import { getTemplates } from '../../templates/index.js';
 // Files owned by the template engine — safe to overwrite on sync.
 // User-owned files (context docs, tickets, instructions.md, agents) are NOT touched.
 const SYNC_TARGETS = new Set([
-  '.projctl/commands/status.md',
-  '.projctl/commands/ticket.md',
-  '.projctl/commands/board.md',
-  '.projctl/commands/sprint.md',
-  '.projctl/commands/decision.md',
-  '.projctl/commands/close.md',
-  '.projctl/board/WORKFLOW.md',
+  '.holoctl/commands/status.md',
+  '.holoctl/commands/ticket.md',
+  '.holoctl/commands/board.md',
+  '.holoctl/commands/sprint.md',
+  '.holoctl/commands/decision.md',
+  '.holoctl/commands/close.md',
+  '.holoctl/board/WORKFLOW.md',
+  '.holoctl/board/tickets/_template.md',
 ]);
 
 export function registerSyncCommand(program) {
   program
     .command('sync')
-    .description('Update template-managed files in .projctl/ after a projctl upgrade')
+    .description('Update template-managed files in .holoctl/ after a holoctl upgrade')
     .option('--agents', 'Also regenerate agent templates (overwrites customizations)')
     .option('--dry-run', 'Preview changes without writing files')
     .action((opts) => {
       const root = findProjectRoot();
       if (!root) {
-        console.error(chalk.red('No .projctl/ found. Run `projctl init` first.'));
+        console.error(chalk.red('No .holoctl/ found. Run `holoctl init` first.'));
         process.exit(1);
       }
 
@@ -35,11 +36,11 @@ export function registerSyncCommand(program) {
       const targets = new Set(SYNC_TARGETS);
       if (opts.agents) {
         for (const key of Object.keys(templates)) {
-          if (key.startsWith('.projctl/agents/')) targets.add(key);
+          if (key.startsWith('.holoctl/agents/')) targets.add(key);
         }
       }
 
-      console.log(chalk.bold('\n  projctl sync\n'));
+      console.log(chalk.bold('\n  holoctl sync\n'));
 
       const updated = [];
       const added = [];
@@ -82,7 +83,7 @@ export function registerSyncCommand(program) {
       console.log('');
       if (!opts.dryRun) {
         console.log(chalk.green(`  ✓ Synced ${added.length + updated.length} file(s).\n`));
-        console.log(`  Run ${chalk.dim('projctl compile')} to push changes to your AI tool.\n`);
+        console.log(`  Run ${chalk.dim('holoctl compile')} to push changes to your AI tool.\n`);
       } else {
         console.log(chalk.dim(`  ${added.length + updated.length} file(s) would be updated.\n`));
       }

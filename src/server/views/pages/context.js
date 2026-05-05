@@ -13,7 +13,7 @@ export function contextPage(docs, alias) {
     return `<div class="content">
       <div class="empty-state">
         <h3>No context documents</h3>
-        <p>Add files to <code>.projctl/context/</code> to define project context.</p>
+        <p>Add files to <code>.holoctl/context/</code> to define project context.</p>
       </div>
     </div>`;
   }

@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Smoke test — CLI loads
+        run: |
+          uv run holoctl --version
+          uv run holoctl --help
+
+      - name: Smoke test — init + discovery + ticket
+        shell: bash
+        run: |
+          set -e
+          mkdir -p _ci_smoke && cd _ci_smoke
+          uv run --project .. holoctl init --name ci --prefix CI --skip-compile
+          mkdir app api infra
+          echo '{}' > app/package.json
+          echo '[project]' > api/pyproject.toml
+          # Should list app + api but NOT infra (no marker)
+          uv run --project .. holoctl overview | tee overview.txt
+          grep -q "app" overview.txt
+          grep -q "api" overview.txt
+          if grep -q "^.*infra" overview.txt; then
+            echo "ERROR: infra (no marker) should NOT appear"; exit 1
+          fi
+          # Multi-project ticket
+          uv run --project .. holoctl board add '{"title":"smoke","agent":"developer","projects":["app","api"]}'
+          uv run --project .. holoctl board ls --project app | grep -q "CI-001"
+          uv run --project .. holoctl board ls --project api | grep -q "CI-001"
+
+      - name: Run pytest if tests/ exists
+        shell: bash
+        run: |
+          if [ -d tests ] && [ -n "$(ls tests/*.py 2>/dev/null)" ]; then
+            uv run pytest tests/ -q
+          else
+            echo "No tests/ yet — skipping pytest"
+          fi
+
+  node:
+    name: Node ${{ matrix.node-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: ["18", "20", "22"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Smoke test — CLI loads
+        run: |
+          node bin/holoctl.js --version
+          node bin/holoctl.js --help
+
+      - name: Run tests if any exist
+        shell: bash
+        run: |
+          if ls src/**/*.test.js >/dev/null 2>&1; then
+            npm test
+          else
+            echo "No *.test.js yet — skipping"
+          fi
+
+  build:
+    name: Build wheel + sdist
+    runs-on: ubuntu-latest
+    needs: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv build
+      - run: uv tool run twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7

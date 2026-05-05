@@ -7,7 +7,7 @@ export function commandsPage(commands, alias) {
     return `<div class="content">
       <div class="empty-state">
         <h3>No commands defined</h3>
-        <p>Run <code>projctl cmd add &lt;name&gt;</code> to create a command.</p>
+        <p>Run <code>holoctl cmd add &lt;name&gt;</code> to create a command.</p>
       </div>
     </div>`;
   }

@@ -1,11 +1,11 @@
 {
-  "name": "projctl",
-  "version": "0.2.0",
+  "name": "holoctl",
+  "version": "0.5.1",
   "description": "Universal project operating system for AI coding assistants",
   "type": "module",
   "bin": {
-    "projctl": "bin/projctl.js",
-    "pctl": "bin/projctl.js"
+    "holoctl": "bin/holoctl.js",
+    "hctl": "bin/holoctl.js"
   },
   "main": "./src/lib/index.js",
   "engines": {
@@ -13,8 +13,7 @@
   },
   "scripts": {
     "test": "node --test src/**/*.test.js",
-    "lint": "echo 'no linter configured yet'",
-    "postinstall": "node scripts/postinstall.js || true"
+    "lint": "echo 'no linter configured yet'"
   },
   "keywords": [
     "ai",
@@ -32,8 +31,9 @@
   "files": [
     "bin/",
     "src/",
-    "scripts/",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "license": "MIT",
   "dependencies": {

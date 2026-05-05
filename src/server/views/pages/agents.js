@@ -5,7 +5,7 @@ export function agentsPage(agents, alias) {
     return `<div class="content">
       <div class="empty-state">
         <h3>No agents defined</h3>
-        <p>Run <code>projctl agent add &lt;name&gt;</code> to create an agent.</p>
+        <p>Run <code>holoctl agent add &lt;name&gt;</code> to create an agent.</p>
       </div>
     </div>`;
   }

@@ -5,7 +5,7 @@ export function homePage(projects) {
     return `<div class="content">
       <div class="empty-state">
         <h3>No projects yet</h3>
-        <p>Run <code>projctl init</code> in any project directory to get started.</p>
+        <p>Run <code>holoctl init</code> in any project directory to get started.</p>
       </div>
     </div>`;
   }

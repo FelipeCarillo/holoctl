@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "projhub"
-version = "0.4.4"
+name = "holoctl"
+version = "0.5.1"
 description = "Universal project operating system for AI coding assistants"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -36,22 +36,32 @@ dependencies = [
 ]
 
 [project.scripts]
-projhub = "projhub.__main__:app"
-phub = "projhub.__main__:app"
+holoctl = "holoctl.__main__:app"
+hctl = "holoctl.__main__:app"
 
 [project.urls]
-Homepage = "https://github.com/FelipeCarillo/projhub"
-Repository = "https://github.com/FelipeCarillo/projhub"
+Homepage = "https://github.com/FelipeCarillo/holoctl"
+Repository = "https://github.com/FelipeCarillo/holoctl"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["projhub*"]
+include = ["holoctl*"]
 
 [tool.setuptools.package-data]
-projhub = [
+holoctl = [
     "templates/commands/*.md",
     "server/static/*",
 ]
 
 [tool.uv]
 package = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

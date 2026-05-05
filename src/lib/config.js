@@ -1,7 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const CONFIG_FILE = '.projctl/config.json';
+// Markers checked when locating a project root. `.holoctl` is canonical;
+// `.projctl` and `.projhub` are accepted for backwards compatibility with
+// pre-rename installs and are auto-renamed to `.holoctl` on the next save.
+const PROJECT_DIR_MARKERS = ['.holoctl', '.projctl', '.projhub'];
+
+function existingMarker(root) {
+  for (const marker of PROJECT_DIR_MARKERS) {
+    if (fs.existsSync(path.join(root, marker, 'config.json'))) return marker;
+  }
+  return null;
+}
 
 const DEFAULTS = {
   version: 1,
@@ -23,7 +33,7 @@ const DEFAULTS = {
     requireTicket: true,
   },
   commands: {
-    boardCli: 'npx projctl board',
+    boardCli: 'npx holoctl board',
   },
   targets: ['claude'],
   server: {
@@ -35,26 +45,37 @@ const DEFAULTS = {
 export function findProjectRoot(from = process.cwd()) {
   let dir = path.resolve(from);
   while (true) {
-    if (fs.existsSync(path.join(dir, '.projctl', 'config.json'))) return dir;
+    if (existingMarker(dir)) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;
   }
 }
 
-export function loadConfig(projectRoot) {
-  const configPath = path.join(projectRoot, CONFIG_FILE);
-  if (!fs.existsSync(configPath)) {
-    throw new Error(`No .projctl/config.json found at ${projectRoot}`);
+function migrateLegacyMarker(projectRoot) {
+  const canonical = path.join(projectRoot, '.holoctl');
+  const legacy = existingMarker(projectRoot);
+  if (legacy && legacy !== '.holoctl' && !fs.existsSync(canonical)) {
+    fs.renameSync(path.join(projectRoot, legacy), canonical);
   }
+}
+
+export function loadConfig(projectRoot) {
+  // Migrate legacy `.projctl/` or `.projhub/` BEFORE reading so downstream
+  // consumers (board, server) that hardcode `.holoctl/` don't get confused.
+  migrateLegacyMarker(projectRoot);
+  const marker = existingMarker(projectRoot);
+  if (!marker) throw new Error(`No .holoctl/config.json found at ${projectRoot}`);
+  const configPath = path.join(projectRoot, marker, 'config.json');
   const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   return deepMerge(structuredClone(DEFAULTS), raw);
 }
 
 export function saveConfig(projectRoot, config) {
-  const configPath = path.join(projectRoot, CONFIG_FILE);
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  migrateLegacyMarker(projectRoot);
+  const canonical = path.join(projectRoot, '.holoctl');
+  fs.mkdirSync(canonical, { recursive: true });
+  fs.writeFileSync(path.join(canonical, 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf8');
 }
 
 export function getDefaults() {
