@@ -16,10 +16,10 @@ export function getTemplates(config) {
     // Commands
     '.projctl/commands/status.md': cmdStatusMd(cli, p),
     '.projctl/commands/ticket.md': cmdTicketMd(cli, p),
-    '.projctl/commands/kanban.md': cmdKanbanMd(cli, p),
+    '.projctl/commands/board.md': cmdBoardMd(cli, p),
     '.projctl/commands/sprint.md': cmdSprintMd(cli, p),
     '.projctl/commands/decision.md': cmdDecisionMd(),
-    '.projctl/commands/handoff.md': cmdHandoffMd(cli),
+    '.projctl/commands/close.md': cmdCloseMd(cli, p),
 
     // Context
     '.projctl/context/objective.md': contextObjectiveMd(p),
@@ -242,46 +242,50 @@ If the user gave enough context, don't ask — fill and confirm.
 `;
 }
 
-function cmdKanbanMd(cli) {
+function cmdBoardMd(cli, p) {
   return `---
-name: kanban
-description: "View and manage the project board"
-arguments: "[filter|move|archive]"
+name: board
+description: "View and manage the project board — kanban view, filters, ticket inspect, move"
+arguments: "[<ID> | @agent | #tag | sprint:<name> | p0..p3 | move <ID> <status> | new <title>]"
 ---
 
-# /kanban — View and manage the board
+# /board — Project board
 
-## No argument (view)
+## No argument → kanban view
 
-1. Run \`${cli} stat\` for counts.
+1. Run \`${cli} stat\` for counts by status.
 2. Run \`${cli} ls --status backlog\`, \`--status doing\`, \`--status review\`, \`--status done\` to group by column.
 3. Format as compact table:
    \`\`\`
-   Backlog (12)      | Doing (1)          | Review (0)       | Done (18)
-   PRJ-019 p1 tokens | PRJ-018 contracts  |                  | PRJ-016 feature
-   PRJ-020 p1 fix    |                    |                  | (+ 16 more)
+   Backlog (N)          | Doing (N)             | Review (N)       | Done (N)
+   ${p.prefix}-019 p1 title   | ${p.prefix}-018 title       |                  | ${p.prefix}-016 title
+   ${p.prefix}-020 p1 fix     |                       |                  | (+ N more)
    \`\`\`
-4. For \`doing\` tickets stalled >5 days, warn.
+4. Any ticket in \`doing\` with \`updated\` >5 days ago → prefix with \`⚠ stalled\`.
 
-## With filter
+## /board \`<ID>\` → inspect ticket
 
-- \`@agent\`: \`${cli} ls --agent <name>\`
-- \`#tag\`: \`${cli} ls --tag <name>\`
-- \`sprint:X\`: \`${cli} ls --sprint <name>\`
-- \`p0\`-\`p3\`: \`${cli} ls <pN>\`
+1. Run \`${cli} get <ID>\` for metadata (status, priority, agent, sprint, deps).
+2. Read the ticket file \`.projctl/board/tickets/<ID>-*.md\` for full body.
+3. Show all sections: Start, Goal (Definition of Done), Context, Out of scope, Execution notes.
 
-Filters can be combined.
+## Filters: \`@agent\` | \`#tag\` | \`sprint:<name>\` | \`p0\`–\`p3\`
 
-## Move ticket
+- \`@developer\` → \`${cli} ls --agent developer\`
+- \`#tag\` → \`${cli} ls --tag tag\`
+- \`sprint:s1\` → \`${cli} ls --sprint s1\`
+- \`p0\`–\`p3\` → \`${cli} ls <pN>\`
 
-1. Run \`${cli} move <ID> <status>\`.
-2. Confirm: "<ID> moved to {status}."
+Multiple filters can be combined, e.g. \`/board @developer p1\`.
 
-## Archive
+## /board move \`<ID>\` \`<status>\` → move ticket
 
-1. Run \`${cli} ls --status done\` to list done tickets.
-2. Tickets completed >30 days ago are candidates.
-3. Move .md files to \`tickets/_done/YYYY-MM/\`.
+Run \`${cli} move <ID> <status>\`.
+Confirm: "<ID>: from → to"
+
+## /board new \`<title>\` → create ticket
+
+Follow the same flow as \`/ticket\`. See /ticket for full spec.
 `;
 }
 
@@ -354,37 +358,82 @@ Decisions are **immutable** by default. To reverse, create a new decision that s
 `;
 }
 
-function cmdHandoffMd(cli) {
+function cmdCloseMd(cli, p) {
   return `---
-name: handoff
-description: "Close the session — save all work state before clearing context"
+name: close
+description: "End-of-session persistence — verify all work done, update tickets, record decisions, ready for context clear"
 arguments: ""
 ---
 
-# /handoff — Session handoff
+# /close — Session close
 
-Scan the entire conversation and extract:
+Run this command before clearing the context. It ensures nothing is lost.
 
-1. **Code implemented** — features, fixes, refactors with files changed
-2. **Tickets completed** — which IDs were closed this session
-3. **Untracked work** — work done without a corresponding ticket
-4. **Decisions made** — non-obvious choices that change direction
-5. **Open items** — work started but not finished, next steps mentioned
+## Step 1 — Verify actual work via git
 
-Then:
+Run \`git status\` and \`git diff HEAD\` to list files actually changed this session.
 
-1. Close completed tickets: \`${cli} move <ID> done\`
-2. Create tickets for untracked substantial work (already done): \`${cli} add '...'\`
-3. Record decisions in \`.projctl/context/decisions/\`
+If git is unavailable: skip this step and proceed from conversation memory only.
 
-Report:
+## Step 2 — Cross-reference with open tickets
+
+Run \`${cli} ls --status doing\` and \`${cli} ls --status review\`.
+
+For each open ticket, check whether the files listed in its **Scope** field appear in the git diff.
+
+## Step 3 — Update tickets
+
+For each ticket where the work is verifiably done (DoD items met OR files changed match scope):
+
+1. Open the ticket file \`.projctl/board/tickets/<ID>-*.md\`.
+2. Mark completed DoD items: \`[ ]\` → \`[x]\`.
+3. Append to **Execution notes**: a bullet summarizing what was done and any key decisions made.
+4. Move status:
+   - All DoD \`[x]\` → \`${cli} move <ID> done\`
+   - Partially done → keep in \`doing\`, note what remains
+
+For work done without a ticket (files changed, no ticket covers them):
+- If substantial (feature, fix, refactor): \`${cli} add '{"title":"...","status":"done","agent":"...",...}'\`
+- If trivial (typo, config): skip
+
+## Step 4 — Record decisions
+
+For each non-obvious decision made this session (architecture, trade-off, direction change):
+
+Create \`.projctl/context/decisions/YYYY-MM-DD-<slug>.md\`:
+
+\`\`\`markdown
+---
+date: YYYY-MM-DD
+title: One-line summary
+status: accepted
+---
+
+## Context
+Why this decision was needed.
+
+## Decision
+What was decided.
+
+## Implications
+What changes in practice.
 \`\`\`
-Tickets closed: ID-001, ID-002, ...
-Decisions recorded: (list)
-Open items: (list)
 
-Ready for context clear.
+## Step 5 — Final report
+
 \`\`\`
+## ${p.name} — Session close YYYY-MM-DD
+
+Tickets closed:    ${p.prefix}-001, ${p.prefix}-002  (or "none")
+Tickets updated:   ${p.prefix}-003 (execution notes)  (or "none")
+New tickets:       ${p.prefix}-004 (untracked work)    (or "none")
+Decisions:         YYYY-MM-DD-foo.md                  (or "none")
+Uncovered files:   (files changed with no ticket)      (or "none")
+
+Ready for /clear.
+\`\`\`
+
+If the session had no substantial work: output "Session trivial — nothing to save. Ready for /clear."
 `;
 }
 
@@ -633,10 +682,10 @@ See \`.projctl/agents/\` for full definitions:
 
 - \`/status\` — Quick project overview
 - \`/ticket <title>\` — Create a new ticket
-- \`/kanban [filter]\` — View/manage the board
+- \`/board [ID|filter|move|new]\` — View and manage the board (kanban, inspect, filter, move)
 - \`/sprint [plan|review]\` — Sprint management
 - \`/decision <description>\` — Record a hard-locked decision
-- \`/handoff\` — Close session, save all state
+- \`/close\` — End-of-session persistence: verify work, update tickets, ready for /clear
 
 ## Decisions
 

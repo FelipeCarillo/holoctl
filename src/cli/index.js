@@ -8,6 +8,7 @@ import { registerCompileCommand } from './commands/compile.js';
 import { registerServeCommand } from './commands/serve.js';
 import { registerRepoCommand } from './commands/repo.js';
 import { registerSetupGlobalCommand } from './commands/setup-global.js';
+import { registerSyncCommand } from './commands/sync.js';
 
 export function createCli() {
   const program = new Command();
@@ -23,6 +24,7 @@ export function createCli() {
   registerWorkspaceCommand(program);
   registerAgentCommand(program);
   registerCompileCommand(program);
+  registerSyncCommand(program);
   registerServeCommand(program);
   registerSetupGlobalCommand(program);
   registerDoctorCommand(program);
