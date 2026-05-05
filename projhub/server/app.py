@@ -578,6 +578,104 @@ def project_ticket(alias: str, ticket_id: str):
     )
 
 
+def _doc_detail_page(title: str, body: str, alias: str, kind: str, meta: dict | None = None) -> str:
+    back = f'<a class="back-link" href="/project/{alias}/{kind}"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to {kind.capitalize()}</a>'
+    body_html = _render_markdown(body)
+    sidebar = ""
+    if meta:
+        rows = "".join(
+            f'<div><div class="detail-field-label">{k}</div><div class="detail-field-value mono">{v}</div></div>'
+            for k, v in meta.items() if v is not None and v != ""
+        )
+        if rows:
+            sidebar = f'<div class="detail-sidebar">{rows}</div>'
+    grid_template = "1fr 240px" if sidebar else "1fr"
+    return f"""{back}
+<div class="detail-page">
+  <div class="detail-header">
+    <div class="detail-title">{title}</div>
+  </div>
+  <div class="detail-grid" style="grid-template-columns:{grid_template}">
+    <div class="detail-main">
+      <div class="detail-section">
+        <div class="detail-section-body">{body_html}</div>
+      </div>
+    </div>
+    {sidebar}
+  </div>
+</div>"""
+
+
+@app.get("/project/{alias}/agents/{slug}", response_class=HTMLResponse)
+def project_agent_detail(alias: str, slug: str):
+    project = _get_project(alias)
+    if not project:
+        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
+    f = Path(project["path"]) / ".projhub" / "agents" / f"{slug}.md"
+    if not f.exists():
+        return HTMLResponse(_render("Not Found", _not_found_html("Agent not found")), status_code=404)
+    fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
+    title = fm.get("name", slug)
+    meta = {
+        "Model": fm.get("model"),
+        "Trigger": fm.get("trigger"),
+        "Tools": ", ".join(fm.get("tools", [])) if isinstance(fm.get("tools"), list) else fm.get("tools"),
+        "Description": fm.get("description"),
+    }
+    return _render(
+        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "agents", meta),
+        current_alias=alias, current_tab="agents",
+        breadcrumbs=[{"label": "projhub", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Agents", "href": f"/project/{alias}/agents"}, {"label": title}],
+        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
+    )
+
+
+@app.get("/project/{alias}/commands/{slug}", response_class=HTMLResponse)
+def project_command_detail(alias: str, slug: str):
+    project = _get_project(alias)
+    if not project:
+        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
+    f = Path(project["path"]) / ".projhub" / "commands" / f"{slug}.md"
+    if not f.exists():
+        return HTMLResponse(_render("Not Found", _not_found_html("Command not found")), status_code=404)
+    fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
+    title = f"/{fm.get('name', slug)}"
+    meta = {
+        "Description": fm.get("description"),
+        "Arguments": fm.get("arguments"),
+    }
+    return _render(
+        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "commands", meta),
+        current_alias=alias, current_tab="commands",
+        breadcrumbs=[{"label": "projhub", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Commands", "href": f"/project/{alias}/commands"}, {"label": title}],
+        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
+    )
+
+
+@app.get("/project/{alias}/context/{filename}", response_class=HTMLResponse)
+def project_context_detail(alias: str, filename: str):
+    project = _get_project(alias)
+    if not project:
+        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
+    safe = filename.replace("..", "").lstrip("/\\")
+    f = Path(project["path"]) / ".projhub" / "context" / safe
+    if not f.exists() or not f.is_file():
+        return HTMLResponse(_render("Not Found", _not_found_html("Context document not found")), status_code=404)
+    raw = f.read_text(encoding="utf-8")
+    if f.suffix == ".md":
+        fm, body = parse_frontmatter(raw)
+    else:
+        fm, body = {}, raw
+    title = fm.get("title", f.name)
+    meta = {k.capitalize(): v for k, v in fm.items() if k not in ("title",) and v is not None}
+    return _render(
+        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "context", meta),
+        current_alias=alias, current_tab="context",
+        breadcrumbs=[{"label": "projhub", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Context", "href": f"/project/{alias}/context"}, {"label": title}],
+        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
+    )
+
+
 @app.get("/project/{alias}/repos", response_class=HTMLResponse)
 def project_repos(alias: str):
     project = _get_project(alias)

@@ -2,6 +2,14 @@
 
 All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1] — 2026-05-05
+
+### Fixed
+- Web dashboard: clicking an agent / command / context document no longer 404s. Added detail routes `/project/{alias}/agents/{slug}`, `/.../commands/{slug}`, `/.../context/{filename}` that render the file contents as Markdown.
+
+### Changed
+- `/projhub` slash command rewritten. Previously it just ran `projhub init` and stopped — leaving `objective.md`, `architecture.md`, `conventions.md`, and `instructions.md` as bare placeholders. Now it instructs the agent to actually read the codebase (README, package files, top-level dirs, lint configs) and POPULATE those files with real content; register sub-repos when multi-package; then recompile. Same change applied to the Cursor / Windsurf / Copilot variants.
+
 ## [0.4.0] — 2026-05-05
 
 ### Changed (breaking)
@@ -33,5 +41,6 @@ All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.
 ### Fixed
 - Windows: `sys.stdout.reconfigure(encoding="utf-8")` so Rich can render `✓` / `✗` characters on `cp1252` consoles.
 
+[0.4.1]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.1
 [0.4.0]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.0
 [0.3.0]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.3.0
