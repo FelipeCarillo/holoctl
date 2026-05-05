@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "projctl"
+name = "projhub"
 version = "0.3.0"
 description = "Universal project operating system for AI coding assistants"
 readme = "README.md"
@@ -21,19 +21,19 @@ dependencies = [
 ]
 
 [project.scripts]
-projctl = "projctl.__main__:app"
-pctl = "projctl.__main__:app"
+projhub = "projhub.__main__:app"
+phub = "projhub.__main__:app"
 
 [project.urls]
-Homepage = "https://github.com/FelipeCarillo/projctl"
-Repository = "https://github.com/FelipeCarillo/projctl"
+Homepage = "https://github.com/FelipeCarillo/projhub"
+Repository = "https://github.com/FelipeCarillo/projhub"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["projctl*"]
+include = ["projhub*"]
 
 [tool.setuptools.package-data]
-projctl = [
+projhub = [
     "templates/commands/*.md",
     "server/static/*",
 ]
