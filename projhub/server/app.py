@@ -19,19 +19,37 @@ _STATIC_DIR = Path(__file__).parent / "static"
 app = FastAPI(title="projhub dashboard", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
+# Cache for _get_projects() — git_info subprocess is slow with many repos.
+# TTL is short so the dashboard still feels live.
+_PROJECTS_CACHE: dict = {"data": None, "ts": 0.0}
+_PROJECTS_CACHE_TTL = 5.0  # seconds
+
 # ── SVG icons ─────────────────────────────────────────────────────────────────
 
-_ICON_FOLDER = '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>'
-_ICON_DOC = '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
-_ICON_CMD = '<svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>'
-_ICON_REPO = '<svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>'
-_ICON_SUN = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
-_ICON_MOON = '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>'
-_ICON_MENU = '<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>'
+_SVG_ATTRS = 'width="16" height="16" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'
+
+_ICON_FOLDER = f'<svg viewBox="0 0 24 24" {_SVG_ATTRS}><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>'
+_ICON_DOC = f'<svg viewBox="0 0 24 24" {_SVG_ATTRS}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+_ICON_CMD = f'<svg viewBox="0 0 24 24" {_SVG_ATTRS}><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>'
+_ICON_REPO = f'<svg viewBox="0 0 24 24" {_SVG_ATTRS}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>'
+_ICON_SUN = f'<svg viewBox="0 0 24 24" {_SVG_ATTRS}><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
+_ICON_MOON = f'<svg viewBox="0 0 24 24" {_SVG_ATTRS}><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>'
+_ICON_MENU = f'<svg viewBox="0 0 24 24" {_SVG_ATTRS}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>'
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def _get_projects() -> list[dict]:
+def _get_projects(*, with_git: bool = True) -> list[dict]:
+    """List all workspace projects with their config and stats.
+
+    Setting `with_git=False` skips the git_info subprocess for each repo, which
+    is the dominant cost when projects have many sub-repos. The 5-second cache
+    above absorbs back-to-back requests for the same data.
+    """
+    import time
+    now = time.monotonic()
+    if with_git and _PROJECTS_CACHE["data"] is not None and now - _PROJECTS_CACHE["ts"] < _PROJECTS_CACHE_TTL:
+        return _PROJECTS_CACHE["data"]
+
     projects = []
     for p in list_workspace():
         try:
@@ -45,7 +63,7 @@ def _get_projects() -> list[dict]:
             enriched_repos = []
             for r in raw_repos:
                 abs_r = Path(p["path"]) / r["path"]
-                git = get_git_info(abs_r)
+                git = get_git_info(abs_r) if with_git else {"isGit": False}
                 ticket_count = sum(1 for t in all_tickets if t.get("scope") == r["name"])
                 enriched_repos.append({**r, "git": git, "ticketCount": ticket_count})
 
@@ -65,7 +83,12 @@ def _get_projects() -> list[dict]:
             })
         except Exception:
             projects.append({**p, "valid": False, "counts": {}, "ticketCount": 0, "agents": [], "targets": []})
-    return [p for p in projects if p["valid"]]
+
+    result = [p for p in projects if p["valid"]]
+    if with_git:
+        _PROJECTS_CACHE["data"] = result
+        _PROJECTS_CACHE["ts"] = now
+    return result
 
 
 def _get_project(alias: str) -> dict | None:
@@ -141,11 +164,11 @@ def _sidebar(projects: list[dict], current_alias: str = "") -> str:
         badge = f'<span class="badge">{doing}</span>' if doing > 0 else ""
         links += f'<a href="/project/{p["alias"]}/board" class="nav-item {active}"><span class="nav-item-text">{p["name"]}</span>{badge}</a>'
 
-    theme_btn = f"""<button class="theme-toggle" onclick="__toggleTheme()" title="Toggle theme">
+    theme_btn = f"""<button class="icon-btn" onclick="__toggleTheme()" title="Toggle theme">
       <span class="theme-icon-dark">{_ICON_MOON}</span>
       <span class="theme-icon-light">{_ICON_SUN}</span>
     </button>"""
-    collapse_btn = f'<button class="theme-toggle" onclick="__toggleSidebar()" title="Toggle sidebar">{_ICON_MENU}</button>'
+    collapse_btn = f'<button class="icon-btn" onclick="__toggleSidebar()" title="Toggle sidebar">{_ICON_MENU}</button>'
 
     return f"""
 <div class="sidebar-header">
@@ -188,7 +211,6 @@ def _tabs(tabs: list[dict], current: str, base: str) -> str:
 _PROJECT_TABS = [
     {"id": "board", "label": "Board"},
     {"id": "repos", "label": "Repos"},
-    {"id": "files", "label": "Files"},
     {"id": "agents", "label": "Agents"},
     {"id": "commands", "label": "Commands"},
     {"id": "context", "label": "Context"},
@@ -581,28 +603,26 @@ def project_ticket(alias: str, ticket_id: str):
 def _doc_detail_page(title: str, body: str, alias: str, kind: str, meta: dict | None = None) -> str:
     back = f'<a class="back-link" href="/project/{alias}/{kind}"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to {kind.capitalize()}</a>'
     body_html = _render_markdown(body)
-    sidebar = ""
+    sidebar_html = ""
     if meta:
         rows = "".join(
             f'<div><div class="detail-field-label">{k}</div><div class="detail-field-value mono">{v}</div></div>'
             for k, v in meta.items() if v is not None and v != ""
         )
         if rows:
-            sidebar = f'<div class="detail-sidebar">{rows}</div>'
-    grid_template = "1fr 240px" if sidebar else "1fr"
+            sidebar_html = f'<div class="detail-sidebar">{rows}</div>'
+
+    if sidebar_html:
+        grid = f'<div class="detail-grid"><div class="detail-main"><div class="detail-section"><div class="detail-section-body">{body_html}</div></div></div>{sidebar_html}</div>'
+    else:
+        grid = f'<div class="detail-main"><div class="detail-section"><div class="detail-section-body">{body_html}</div></div></div>'
+
     return f"""{back}
 <div class="detail-page">
   <div class="detail-header">
     <div class="detail-title">{title}</div>
   </div>
-  <div class="detail-grid" style="grid-template-columns:{grid_template}">
-    <div class="detail-main">
-      <div class="detail-section">
-        <div class="detail-section-body">{body_html}</div>
-      </div>
-    </div>
-    {sidebar}
-  </div>
+  {grid}
 </div>"""
 
 

@@ -1,77 +1,59 @@
-Initialize, inspect, or onboard projhub in the current project directory. **You are responsible for actually populating the project context — `projhub init` only creates skeleton files.**
+Onboard, configure or inspect projhub for the current project. **This command requires interaction — never write context files or register repos without explicit user confirmation.**
 
 # Step 1 — Detect state
 
 Run `projhub doctor`.
+- "No .projhub/ found" → go to Step 2.
+- Returns checks → go to Step 5.
 
-- If "No .projhub/ found": treat as **uninitialized**.
-- Otherwise: treat as **initialized** (skip to Step 4).
+# Step 2 — Confirm before init
 
-# Step 2 — Initialize (only if uninitialized)
+ASK: "Nome do projeto e prefix dos tickets (ex: MP → MP-001)? Ou prefere que eu infira do diretório?"
 
-Run `projhub init`. This creates `.projhub/` and auto-runs `projhub compile --target cursor`.
+Then `projhub init --name "<name>" --prefix "<PREFIX>"` (auto-compiles cursor target).
 
-# Step 3 — Onboard the project (CRITICAL)
+# Step 3 — Discover (read-only)
 
-The skeleton files are placeholders. Read the codebase and POPULATE the real context.
+Read in parallel: README, package files (package.json/pyproject.toml/Cargo.toml/etc.), top-level dirs, existing AI rules (`.cursor/rules/*`, `CLAUDE.md`, `.windsurfrules`), lint configs. **Do not overwrite existing AI instructions.**
 
-## 3.1 — Read the codebase
+# Step 4 — Configure with confirmation gates
 
-In parallel:
-- **Top-level files**: README, package.json / pyproject.toml / Cargo.toml / go.mod / etc.
-- **Top-level directories**: identify sub-projects vs config dirs.
-- **Existing AI instructions**: `.cursor/rules/*`, `CLAUDE.md`, `.windsurfrules`. Read for context, don't overwrite.
-- **Linters/formatters**: .eslintrc, .prettierrc, ruff.toml, .editorconfig.
+For each sub-step: propose → show → confirm → write. One at a time.
 
-## 3.2 — Populate `.projhub/context/objective.md`
+## 4.1 — Sub-repos
 
-Replace placeholders. 3 sections:
-- **What**: 1-2 sentences on what the project does.
-- **Why**: target audience / problem.
-- **Success criteria**: 2-4 concrete `[ ]` derived from README/code.
+If multi-project, list candidates and ASK which to register. Then `projhub repo add ./<path> --name <name> --description "<one-line>"`.
 
-## 3.3 — Populate `.projhub/context/architecture.md`
+## 4.2 — `objective.md`
 
-- **Tech stack**: actual languages/frameworks from package files.
-- **Structure**: real directory layout with one-line descriptions.
-- **Key patterns**: only patterns visible in code.
-- **Boundaries**: in scope vs out of scope.
+Draft What/Why/Success criteria from README. Show, confirm, write.
 
-## 3.4 — Populate `.projhub/context/conventions.md`
+## 4.3 — `architecture.md`
 
-Derive from real configs:
-- **Naming**: from existing file names.
-- **Style**: from prettier/eslint/ruff configs.
-- **Imports**: from tsconfig / eslint import-order.
-- **Testing**: framework from devDependencies + convention.
+Tech stack, Structure, Key patterns, Boundaries. Use only patterns visible in code; mark unclear items `(TBD with team)`. Show, confirm, write.
 
-Write `(not enforced)` rather than guessing.
+## 4.4 — `conventions.md`
 
-## 3.5 — Register sub-repos (multi-package only)
+Derive from real configs. Mark dimensions without config `(not enforced)`. Don't invent.
 
-```bash
-projhub repo add ./backend  --name backend  --description "(one-line)"
-projhub repo add ./frontend --name frontend --description "(one-line)"
-```
+## 4.5 — `instructions.md`
 
-## 3.6 — Update `.projhub/instructions.md`
+Fill Identity + Folder map. Leave Decisions empty unless user dictates one now.
 
-Fill Identity, Folder map. Leave Decisions empty unless explicit ADRs exist.
+## 4.6 — Recompile
 
-## 3.7 — Recompile
+`projhub compile --target cursor`.
 
-Run `projhub compile --target cursor` to regenerate `.cursor/commands/*` and `.cursor/rules/projhub.md`.
+# Step 5 — Inspect (already initialized)
 
-# Step 4 — Inspect (when already initialized)
+`projhub board stat`, `projhub board ls --status doing`, `projhub repo list`, `projhub agent list`. Suggest next action.
 
-1. `projhub board stat`
-2. `projhub board ls --status doing`
-3. `projhub agent list`
-4. `projhub repo list`
-5. Suggest next action.
+# Step 6 — Final report
 
-# Step 5 — Final report
+✅ what was set up · 🌐 dashboard at http://127.0.0.1:4242 via `projhub serve` · 🎯 next action.
 
-- ✅ what was set up
-- 🌐 dashboard: `http://127.0.0.1:4242` via `projhub serve`
-- 🎯 suggested next action (1 line)
+# Hard rules
+- Show command output.
+- Never write context files without confirmation.
+- Never register repos silently.
+- Never overwrite existing AI rules — read for context only.

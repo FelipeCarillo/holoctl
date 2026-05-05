@@ -1,87 +1,110 @@
-Initialize, inspect, or onboard projhub in the current project directory. **You are responsible for actually populating the project context — `projhub init` only creates skeleton files.**
+Onboard, configure or inspect projhub for the current project.
+
+**This command requires interaction.** You will pause and ask the user for confirmation at each gate. Never write context files or register repos without explicit user approval — these decisions stick around and a wrong guess wastes time later.
 
 # Step 1 — Detect state
 
 Run `projhub doctor`.
 
-- If it errors with "No .projhub/ found", treat as **uninitialized**.
-- If it returns checks, treat as **initialized** (proceed to Step 4).
+- **Errors with "No .projhub/ found"** → uninitialized. Go to Step 2.
+- **Returns checks** → already initialized. Go to Step 5 (Inspect mode).
 
-# Step 2 — Initialize (only if uninitialized)
+# Step 2 — Confirm before initializing
 
-Run `projhub init`. This creates `.projhub/` with skeleton templates. Note that `init` also auto-runs `projhub compile --target claude` and `projhub setup-global`.
+ASK the user:
 
-# Step 3 — Onboard the project (CRITICAL — do not skip)
+> "Quero criar o `.projhub/` aqui. Qual o **nome do projeto** e o **prefix dos tickets** (ex: `MP` → `MP-001`)? Se quiser, posso inferir do nome do diretório."
 
-The skeleton files are placeholders. You must now READ THE CODEBASE and POPULATE the real context. Spend the time it takes to do this well — this is the entire point of `/projhub`.
-
-## 3.1 — Read the codebase
-
-In parallel, gather:
-- **Top-level files**: README, package.json / pyproject.toml / Cargo.toml / go.mod / pom.xml / Gemfile / etc.
-- **Top-level directories**: list them and identify which are sub-projects vs config (e.g. `backend/`, `frontend/`, `docs/`, `.github/`).
-- **Existing AI instructions**: `CLAUDE.md`, `.cursor/rules/*`, `.windsurfrules`, `.github/copilot-instructions.md`, `AGENTS.md`. Do NOT overwrite these — read them for context.
-- **Linters/formatters configs** (.eslintrc, .prettierrc, ruff.toml, .editorconfig) — these reveal real conventions.
-
-## 3.2 — Populate `.projhub/context/objective.md`
-
-Open the file, replace the placeholders. Write 3 sections:
-- **What**: 1-2 sentences. What does this project actually do?
-- **Why**: who it's for / what problem it solves.
-- **Success criteria**: 2-4 concrete `[ ]` checkboxes derived from the README/code, not generic.
-
-## 3.3 — Populate `.projhub/context/architecture.md`
-
-Replace placeholders with real info:
-- **Tech stack**: list languages, frameworks, key libraries actually used (from package files).
-- **Structure**: real top-level directory layout with one-line descriptions.
-- **Key patterns**: only patterns that show up in the code (feature folders, layered, monorepo, event-driven). Don't speculate.
-- **Boundaries**: what's in scope vs explicitly out of scope (often in README or CONTRIBUTING).
-
-## 3.4 — Populate `.projhub/context/conventions.md`
-
-Derive from real configs:
-- **Naming**: from existing file names (kebab-case files? PascalCase components?)
-- **Style**: from prettier/eslint/ruff config (indent size, quotes, semicolons)
-- **Imports**: from tsconfig paths, eslint import-order rules, etc.
-- **Testing**: detect framework from devDependencies; note convention (co-located vs `__tests__/`).
-
-If a config doesn't exist for a given dimension, write `(not enforced)` rather than guessing.
-
-## 3.5 — Register sub-repos (only if multi-package)
-
-If the project has multiple top-level directories that are sub-projects (each with its own package file or `.git`), register them:
+Wait for their answer. Then run:
 
 ```bash
-projhub repo add ./backend  --name backend  --description "(one-line)"
-projhub repo add ./frontend --name frontend --description "(one-line)"
+projhub init --name "<name>" --prefix "<PREFIX>"
 ```
 
-Skip if it's a single flat project.
+(Or `projhub init` with no flags if they said "infer".)
 
-## 3.6 — Update `.projhub/instructions.md`
+This auto-runs `projhub compile --target claude` and `projhub setup-global`. Show the output.
 
-Open `.projhub/instructions.md`. The sections "Identity", "Decisions", and "Folder map" have placeholders. Fill them:
-- **Identity**: same 1-2 sentences from objective.md "What".
-- **Folder map**: real top-level folder list with descriptions.
-- **Decisions**: leave empty unless you found explicit decisions in README/ADR files.
+# Step 3 — Discover project structure (read-only)
 
-## 3.7 — Recompile
+Read in parallel — **don't write yet**:
+- `README.md` (and `README.pt-br.md` if present)
+- Package files: `package.json` / `pyproject.toml` / `Cargo.toml` / `go.mod` / `pom.xml` / `Gemfile`
+- Top-level directories (use `Glob` with `*/` pattern). Note which look like sub-projects (have their own package file or `.git`).
+- Existing AI instructions: `CLAUDE.md`, `.cursor/rules/*`, `.windsurfrules`, `.github/copilot-instructions.md`, `AGENTS.md`. **Read for context only — never overwrite.**
+- Lint/format configs: `.eslintrc*`, `.prettierrc*`, `ruff.toml`, `pyproject.toml [tool.ruff]`, `.editorconfig`
 
-Run `projhub compile --target claude` to regenerate `CLAUDE.md` and `.claude/commands/*` from the now-populated `.projhub/`.
+# Step 4 — Configure with confirmation gates
 
-# Step 4 — Inspect (when already initialized)
+For each of the 4 sub-steps below, **propose** the content, **show it** to the user, **wait for approval or edits**, then write. Don't batch — one at a time so the user can correct course.
 
-Show the current state:
-1. `projhub board stat` — counts by status
-2. `projhub board ls --status doing` — what's in progress
-3. List configured agents with `projhub agent list`
-4. List configured repos with `projhub repo list`
-5. Suggest next steps based on state (e.g. "no tickets yet — create one with `/ticket`", "stale tickets in doing", etc).
+## 4.1 — Sub-repos
 
-# Step 5 — Final report
+If you found multiple sub-projects in Step 3, list them and ASK:
 
-End with a short summary:
+> "Encontrei estes sub-projetos: `backend/`, `frontend/`, `mobile/`. Quer que eu registre todos como repos? Pode escolher um subset, ou adicionar uma descrição customizada para cada um."
+
+For each one the user approves:
+```bash
+projhub repo add ./<path> --name <name> --description "<one-line>"
+```
+
+If they say "single project", skip.
+
+## 4.2 — `objective.md`
+
+Draft the content based on what you read. Show the proposed text and ASK:
+
+> "Proposta para `objective.md`:
+>
+> ```
+> <show full draft>
+> ```
+>
+> Aprova, edita, ou prefere reescrever?"
+
+Then write the file with `Edit` tool (it already exists from `init`).
+
+## 4.3 — `architecture.md`
+
+Same flow: draft → show → confirm → write. Sections: Tech stack, Structure, Key patterns, Boundaries. Use only patterns visible in the code; mark unclear items as `(TBD with team)`.
+
+## 4.4 — `conventions.md`
+
+Same flow. Derive from real configs. Mark dimensions without config as `(not enforced)`. Don't invent style rules.
+
+## 4.5 — `instructions.md`
+
+Same flow. Fill **Identity** (1-2 sentences) and **Folder map** (real top-level dirs). Leave **Decisions** empty unless the user dictates one now.
+
+# Step 4.6 — Recompile
+
+After all the above, run:
+```bash
+projhub compile --target claude
+```
+
+This regenerates `CLAUDE.md` and `.claude/commands/*` from the now-populated `.projhub/`.
+
+# Step 5 — Inspect mode (when already initialized)
+
+1. `projhub board stat`
+2. `projhub board ls --status doing`
+3. `projhub repo list`
+4. `projhub agent list`
+5. Suggest the next concrete action (e.g. "no tickets yet — type `/ticket <title>` to create one", or "TST-003 has been in `doing` for 6 days — review or unblock?").
+
+# Step 6 — Final report
+
+End with:
 - ✅ what was set up (or what's already configured)
-- 🌐 dashboard URL: `http://127.0.0.1:4242` (run `projhub serve` to start)
-- 🎯 suggested next action (1 line)
+- 🌐 dashboard URL: `http://127.0.0.1:4242` — run `projhub serve` to start
+- 🎯 single-line suggested next action
+
+# Hard rules
+
+- **Always show command output** to the user — they should see what happened.
+- **Never write context files without confirmation** — the user often has tribal knowledge that won't be in the README.
+- **Never register repos silently** — wrong path or name is a pain to clean up.
+- **Never overwrite an existing `CLAUDE.md`** — read it as context, but recompile only via `projhub compile`.
+- **If something fails** (e.g. `projhub init` errors because the directory already has `.projhub/`), report it and ask before retrying.

@@ -1,35 +1,42 @@
 ---
-description: Initialize, inspect, or onboard projhub in the current project directory
+description: Onboard, configure or inspect projhub for the current project
 ---
 
-**You are responsible for actually populating the project context — `projhub init` only creates skeleton files.**
+**This command requires interaction — never write context files or register repos without explicit user confirmation.**
 
 # Step 1 — Detect state
 
-Run `projhub doctor`. If it errors with "No .projhub/ found", treat as **uninitialized**.
+Run `projhub doctor`. "No .projhub/ found" → Step 2. Otherwise → Step 5.
 
-# Step 2 — Initialize (if uninitialized)
+# Step 2 — Confirm before init
 
-Run `projhub init`. This auto-runs `projhub compile --target windsurf`.
+ASK: "Nome do projeto e prefix dos tickets? Ou inferir do diretório?" Then `projhub init --name "<n>" --prefix "<P>"` (auto-compiles windsurf).
 
-# Step 3 — Onboard (CRITICAL)
+# Step 3 — Discover (read-only)
 
-Read the codebase (README, package files, top-level dirs, existing AI rules) and POPULATE:
+Read README, package files, top-level dirs, existing AI rules (`.windsurfrules`, `CLAUDE.md`), lint configs. **Don't overwrite existing AI rules.**
 
-- `.projhub/context/objective.md` — What/Why/Success criteria, derived from real README and code
-- `.projhub/context/architecture.md` — real tech stack, real folder structure, real patterns
-- `.projhub/context/conventions.md` — derived from .eslintrc / ruff.toml / .editorconfig (write `(not enforced)` instead of guessing)
-- `.projhub/instructions.md` — fill Identity and Folder map
-- Register sub-repos with `projhub repo add` if multi-package
+# Step 4 — Configure with confirmation gates
 
-Then run `projhub compile --target windsurf` to regenerate `.windsurfrules`.
+For each sub-step: propose → show → confirm → write. One at a time.
 
-# Step 4 — Inspect (if already initialized)
+- **4.1 Sub-repos**: list candidates, ASK which to register, then `projhub repo add ./<path> --name <n> --description "<one-line>"`.
+- **4.2 `objective.md`**: What/Why/Success criteria from README.
+- **4.3 `architecture.md`**: Tech stack, Structure, Patterns, Boundaries. Mark unclear `(TBD with team)`.
+- **4.4 `conventions.md`**: From real configs. Mark missing dimensions `(not enforced)`.
+- **4.5 `instructions.md`**: Identity + Folder map.
+- **4.6** `projhub compile --target windsurf`.
 
-`projhub board stat`, `projhub board ls --status doing`, `projhub agent list`, `projhub repo list`. Suggest next action.
+# Step 5 — Inspect (already initialized)
 
-# Step 5 — Final report
+`projhub board stat`, `board ls --status doing`, `repo list`, `agent list`. Suggest next action.
 
-- ✅ what was set up
-- 🌐 dashboard: `http://127.0.0.1:4242` via `projhub serve`
-- 🎯 suggested next action
+# Step 6 — Final report
+
+✅ what was set up · 🌐 http://127.0.0.1:4242 via `projhub serve` · 🎯 next action.
+
+# Hard rules
+- Show command output.
+- Never write context files without confirmation.
+- Never register repos silently.
+- Never overwrite existing AI rules.

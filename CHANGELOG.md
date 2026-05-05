@@ -2,6 +2,26 @@
 
 All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.2] — 2026-05-05
+
+### Fixed
+- **UI bugs in the web dashboard**:
+  - Theme toggle and sidebar collapse buttons: SVG icons were missing `width`/`height`/`stroke` attributes and were therefore invisible. Now ship with `width="16" height="16" stroke="currentColor"` baked in.
+  - Theme toggle no longer rotates on hover (the rotation was applied to the menu button too, which felt buggy). Hover now changes background only.
+  - Command/agent/context detail pages: when there's no metadata sidebar, the page no longer renders with a broken `grid-template-columns` inline style that made the whole content area look "dark".
+- **Performance**: when many repos are registered, the dashboard called `git status` per repo on every request. Added a 5-second in-memory cache for the project list (the SSE board updates still feel live).
+
+### Changed
+- Removed the **Files** tab from the project view. The dashboard now focuses on tickets, agents, commands, context, and repos.
+- `/projhub` slash command rewritten to be **interactive** with confirmation gates. The previous version asked the agent to "populate context files" but didn't enforce checkpoints, so agents skipped repos and wrote thin/wrong content. The new version requires the agent to:
+  1. Ask the user for project name + prefix before init.
+  2. Read the codebase first (read-only).
+  3. Propose each context file (`objective.md`, `architecture.md`, `conventions.md`, `instructions.md`) **one at a time**, show the draft, wait for approval/edits, then write.
+  4. Propose sub-repos to register and ask which to keep.
+  5. Recompile.
+
+  Same flow applied to the Cursor / Windsurf / Copilot variants.
+
 ## [0.4.1] — 2026-05-05
 
 ### Fixed
@@ -41,6 +61,7 @@ All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.
 ### Fixed
 - Windows: `sys.stdout.reconfigure(encoding="utf-8")` so Rich can render `✓` / `✗` characters on `cp1252` consoles.
 
+[0.4.2]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.2
 [0.4.1]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.1
 [0.4.0]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.0
 [0.3.0]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.3.0

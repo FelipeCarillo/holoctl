@@ -199,6 +199,7 @@ code {
   box-shadow: 0 2px 8px var(--accent-glow);
 }
 
+.icon-btn,
 .theme-toggle {
   width: 30px; height: 30px;
   border: 1px solid var(--border);
@@ -209,15 +210,19 @@ code {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s var(--ease);
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease);
+  flex-shrink: 0;
 }
 
+.icon-btn:hover,
 .theme-toggle:hover {
   background: var(--bg-hover);
   border-color: var(--border-hover);
   color: var(--text-0);
-  transform: rotate(15deg);
 }
+
+.icon-btn svg,
+.theme-toggle svg { width: 16px; height: 16px; }
 
 .sidebar-nav {
   padding: 14px 12px;
