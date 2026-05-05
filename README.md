@@ -23,7 +23,7 @@ Works in **Claude Code**, **Cursor**, **Windsurf**, **GitHub Copilot**, **Devin*
 holoctl init
 ```
 
-That's it. You get:
+That's it. `holoctl init` creates a single committed directory:
 
 ```
 your-project/
@@ -39,11 +39,10 @@ your-project/
 │   │   ├── decisions/         ← ADR-style hard locks
 │   │   └── documents/
 │   └── activity.jsonl         ← append-only event log
-├── CLAUDE.md                  ← compiled from .holoctl/, read by Claude Code
-├── AGENTS.md                  ← compiled, read by Devin/Cursor/Aider
-├── .claude/commands/          ← /board, /ticket, /holoctl etc. for Claude Code
 └── …your code
 ```
+
+Then `holoctl compile` translates that into whatever AI tool you use — `CLAUDE.md`, `AGENTS.md`, `.claude/commands/`, `.cursor/rules/`, `.windsurf/workflows/`, etc. Those outputs are **regenerated on demand**, so most users `.gitignore` them and let each clone run `holoctl compile` itself.
 
 ---
 
