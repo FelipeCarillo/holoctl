@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
@@ -18,6 +18,16 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="projhub dashboard", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+# ── SVG icons ─────────────────────────────────────────────────────────────────
+
+_ICON_FOLDER = '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>'
+_ICON_DOC = '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+_ICON_CMD = '<svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>'
+_ICON_REPO = '<svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>'
+_ICON_SUN = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
+_ICON_MOON = '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>'
+_ICON_MENU = '<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>'
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -91,7 +101,7 @@ def _read_context_docs(project_path: Path) -> list[dict]:
     items = []
     for entry in sorted(d.iterdir()):
         if entry.is_dir():
-            items.append({"name": entry.name + "/", "isDir": True, "description": f"{entry.name} folder"})
+            items.append({"name": entry.name, "isDir": True, "description": f"{entry.name}/ folder"})
         elif entry.suffix == ".md":
             content = entry.read_text(encoding="utf-8")
             first_h1 = next((l.removeprefix("# ") for l in content.splitlines() if l.startswith("# ")), "")
@@ -103,7 +113,7 @@ def _read_context_docs(project_path: Path) -> list[dict]:
 
 def _layout(title: str, body: str, *, sidebar: str = "", topbar: str = "") -> str:
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -111,8 +121,8 @@ def _layout(title: str, body: str, *, sidebar: str = "", topbar: str = "") -> st
   <link rel="stylesheet" href="/static/projhub.css">
 </head>
 <body>
-  <div class="layout">
-    <aside class="sidebar">{sidebar}</aside>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">{sidebar}</aside>
     <div class="main">
       <div class="topbar">{topbar}</div>
       <div class="content-wrap">{body}</div>
@@ -123,16 +133,36 @@ def _layout(title: str, body: str, *, sidebar: str = "", topbar: str = "") -> st
 </html>"""
 
 
-def _sidebar(projects: list[dict], current_alias: str = "", current_tab: str = "") -> str:
+def _sidebar(projects: list[dict], current_alias: str = "") -> str:
     links = ""
     for p in projects:
         active = "active" if p["alias"] == current_alias else ""
-        links += f'<a href="/project/{p["alias"]}/board" class="sidebar-project {active}">{p["name"]}</a>'
+        doing = p.get("counts", {}).get("doing", 0)
+        badge = f'<span class="badge">{doing}</span>' if doing > 0 else ""
+        links += f'<a href="/project/{p["alias"]}/board" class="nav-item {active}"><span class="nav-item-text">{p["name"]}</span>{badge}</a>'
+
+    theme_btn = f"""<button class="theme-toggle" onclick="__toggleTheme()" title="Toggle theme">
+      <span class="theme-icon-dark">{_ICON_MOON}</span>
+      <span class="theme-icon-light">{_ICON_SUN}</span>
+    </button>"""
+    collapse_btn = f'<button class="theme-toggle" onclick="__toggleSidebar()" title="Toggle sidebar">{_ICON_MENU}</button>'
+
     return f"""
-<div class="sidebar-header"><a href="/" class="sidebar-logo">projhub</a></div>
-<nav class="sidebar-nav">{links}</nav>
-<div class="sidebar-footer">
-  <a href="/agents">Agents</a>
+<div class="sidebar-header">
+  <a href="/" class="sidebar-brand">
+    <span class="logo">P</span>
+    <span class="sidebar-brand-name">projhub</span>
+  </a>
+  <div style="display:flex;gap:4px">{theme_btn}{collapse_btn}</div>
+</div>
+<nav class="sidebar-nav">
+  <div class="nav-group">
+    <div class="nav-group-label">Projects</div>
+    {links if links else '<div class="nav-item" style="opacity:.5">No projects</div>'}
+  </div>
+</nav>
+<div style="padding:12px">
+  <a href="/agents" class="nav-item"><span class="nav-item-text">Agents</span></a>
 </div>"""
 
 
@@ -143,14 +173,14 @@ def _topbar(title: str, breadcrumbs: list[dict] = None, actions: str = "") -> st
             crumbs += f'<a href="{b["href"]}">{b["label"]}</a><span class="sep">/</span>'
         else:
             crumbs += f'<span>{b["label"]}</span>'
-    return f'<div class="breadcrumbs">{crumbs}</div><div class="topbar-actions">{actions}</div>'
+    return f'<div class="topbar-breadcrumb">{crumbs}</div><div class="topbar-actions">{actions}</div>'
 
 
 def _tabs(tabs: list[dict], current: str, base: str) -> str:
     html = '<div class="tabs">'
     for t in tabs:
         active = "active" if t["id"] == current else ""
-        html += f'<a href="{base}/{t["id"]}" class="tab {active}">{t.get("icon","")}{t["label"]}</a>'
+        html += f'<a href="{base}/{t["id"]}" class="tab {active}">{t["label"]}</a>'
     html += "</div>"
     return html
 
@@ -171,42 +201,58 @@ def _render(title: str, content: str, *, projects: list[dict] | None = None,
             tabs: list[dict] | None = None, tab_base: str = "",
             actions: str = "") -> str:
     all_projects = projects if projects is not None else _get_projects()
-    sidebar = _sidebar(all_projects, current_alias, current_tab)
+    sidebar = _sidebar(all_projects, current_alias)
     topbar = _topbar(title, breadcrumbs or [], actions)
     tabs_html = _tabs(tabs, current_tab, tab_base) if tabs else ""
-    return _layout(title, tabs_html + content, sidebar=sidebar, topbar=topbar)
+    return _layout(title, tabs_html + f'<div class="content">{content}</div>', sidebar=sidebar, topbar=topbar)
 
 
 def _not_found_html(msg: str = "Not found") -> str:
-    return f'<div class="content"><div class="empty-state"><h3>{msg}</h3></div></div>'
+    return f'<div class="empty-state"><h3>{msg}</h3></div>'
 
 
-# ── pages ────────────────────────────────────────────────────────────────────
+# ── page generators ───────────────────────────────────────────────────────────
 
 def _home_page(projects: list[dict]) -> str:
+    if not projects:
+        return '<div class="empty-state"><h3>No projects yet</h3><p>Run <code>projhub init</code> in a directory to get started.</p></div>'
     cards = ""
     for p in projects:
         counts = p.get("counts", {})
         doing = counts.get("doing", 0)
         backlog = counts.get("backlog", 0)
         done = counts.get("done", 0)
-        cards += f"""
-<a href="/project/{p['alias']}/board" class="project-card">
-  <div class="project-card-name">{p['name']}</div>
-  <div class="project-card-stats">
-    <span>{backlog} backlog</span>
-    <span class="doing">{doing} doing</span>
-    <span>{done} done</span>
+        total = max(p.get("ticketCount", 0), 1)
+        prefix = p.get("prefix", "")
+        targets = "".join(f'<span class="chip chip-target">{t}</span>' for t in p.get("targets", []))
+        progress = f"""<div class="progress-bar">
+  <div class="progress-segment done" style="width:{done/total*100:.0f}%"></div>
+  <div class="progress-segment doing" style="width:{doing/total*100:.0f}%"></div>
+  <div class="progress-segment backlog" style="width:{backlog/total*100:.0f}%"></div>
+</div>"""
+        cards += f"""<a href="/project/{p['alias']}/board" class="project-card">
+  <div class="project-card-header">
+    <div class="project-card-icon">{prefix[:2]}</div>
+    <div>
+      <div class="project-card-name">{p['name']}</div>
+      <div class="project-card-sub">{p['alias']}</div>
+    </div>
   </div>
-  <div class="project-card-targets">{' '.join(p.get('targets', []))}</div>
+  {progress}
+  <div class="project-card-stats">
+    <span class="stat-mini"><span class="stat-dot backlog"></span>{backlog} backlog</span>
+    <span class="stat-mini"><span class="stat-dot doing"></span>{doing} doing</span>
+    <span class="stat-mini"><span class="stat-dot done"></span>{done} done</span>
+  </div>
+  <div class="project-card-meta">{targets}</div>
 </a>"""
-    if not projects:
-        cards = '<div class="empty-state"><h3>No projects yet</h3><p>Run <code>projhub init</code> in a directory to get started.</p></div>'
-    return f'<div class="content"><div class="project-grid">{cards}</div></div>'
+    return f'<div class="project-grid">{cards}</div>'
 
 
 def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
     statuses = config["board"]["statuses"]
+    alias = project["alias"]
+    path_display = project.get("path", "")
     cols = ""
     for status in statuses:
         col_tickets = [t for t in tickets if t["status"] == status]
@@ -214,93 +260,126 @@ def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
         for t in col_tickets:
             agents = ", ".join(t.get("agent") or []) or "—"
             prio = t.get("priority", "p2")
-            cards += f"""
-<a href="/project/{project['alias']}/board/{t['id']}" class="ticket-card priority-{prio}">
-  <div class="ticket-id">{t['id']} <span class="prio">{prio}</span></div>
-  <div class="ticket-title">{t['title'][:60]}</div>
-  <div class="ticket-meta">{agents}</div>
+            sprint = t.get("sprint") or ""
+            sprint_chip = f'<span class="chip chip-sprint">{sprint}</span>' if sprint else ""
+            cards += f"""<a href="/project/{alias}/board/{t['id']}" class="kanban-card" data-p="{prio}" data-scope="{t.get('scope','src')}">
+  <div class="kanban-card-top">
+    <span class="kanban-card-id">{t['id']}</span>
+    <span class="p-badge {prio}">{prio}</span>
+  </div>
+  <div class="kanban-card-title">{t['title'][:60]}</div>
+  <div class="kanban-card-meta">
+    <span class="chip chip-agent">{agents}</span>{sprint_chip}
+  </div>
 </a>"""
-        cols += f"""
-<div class="board-col">
-  <div class="board-col-header">{status.upper()} <span class="count">{len(col_tickets)}</span></div>
-  <div class="board-col-cards">{cards}</div>
+        if not cards:
+            cards = '<div class="kanban-empty">No tickets</div>'
+        cols += f"""<div class="kanban-col" data-status="{status}">
+  <div class="kanban-col-header">
+    <span class="col-label">{status.upper()}</span>
+    <span class="count">{len(col_tickets)}</span>
+  </div>
+  <div class="kanban-cards">{cards}</div>
 </div>"""
-    return f'<div class="content"><div class="board">{cols}</div></div>'
+
+    live = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
+    path_el = f'<span class="board-path">{path_display}</span>'
+    header = f'<div class="board-header">{live}{path_el}</div>'
+    return f'{header}<div class="kanban" id="kanban">{cols}</div>'
 
 
 def _agents_page(agents: list[dict], alias: str = "") -> str:
-    rows = ""
+    if not agents:
+        return '<div class="empty-state"><p>No agents defined.</p></div>'
+    cards = ""
     for a in agents:
-        name = a.get("name", a.get("file", "?"))
+        name = a.get("name", a.get("file", "?").replace(".md", ""))
         model = a.get("model", "standard")
         trigger = a.get("trigger", "ticket")
         desc = a.get("description", "")
+        tools = a.get("tools", [])
+        if isinstance(tools, str):
+            tools = [t.strip() for t in tools.split(",")]
+        tool_chips = "".join(f'<span class="tool-chip">{t}</span>' for t in tools)
         link = f"/project/{alias}/agents/{a.get('file','').replace('.md','')}" if alias else "#"
-        rows += f'<a href="{link}" class="list-row"><span class="name">{name}</span><span class="badge">{model}</span><span class="dim">{trigger}</span><span>{desc}</span></a>'
-    if not rows:
-        rows = '<div class="empty-state"><p>No agents defined.</p></div>'
-    return f'<div class="content"><div class="list">{rows}</div></div>'
+        cards += f"""<a href="{link}" class="agent-card">
+  <div class="agent-card-header">
+    <span class="agent-card-name">{name}</span>
+    <span class="trigger-badge">{trigger}</span>
+    <span class="model-badge {model}">{model}</span>
+  </div>
+  <div class="agent-card-desc">{desc}</div>
+  <div class="agent-card-meta">{tool_chips}</div>
+</a>"""
+    return f'<div class="agent-grid">{cards}</div>'
 
 
 def _commands_page(commands: list[dict], alias: str) -> str:
-    rows = ""
+    if not commands:
+        return '<div class="empty-state"><p>No commands defined.</p></div>'
+    items = ""
     for c in commands:
         name = c.get("name", c.get("file", "?").replace(".md", ""))
         desc = c.get("description", "")
         link = f"/project/{alias}/commands/{c.get('file','').replace('.md','')}"
-        rows += f'<a href="{link}" class="list-row"><span class="name">/{name}</span><span>{desc}</span></a>'
-    if not rows:
-        rows = '<div class="empty-state"><p>No commands defined.</p></div>'
-    return f'<div class="content"><div class="list">{rows}</div></div>'
+        items += f"""<a href="{link}" class="context-item">
+  <div class="context-item-icon command">{_ICON_CMD}</div>
+  <div>
+    <div class="context-item-name">/{name}</div>
+    <div class="context-item-desc">{desc}</div>
+  </div>
+</a>"""
+    return f'<div class="context-list">{items}</div>'
 
 
 def _context_page(docs: list[dict], alias: str) -> str:
-    rows = ""
+    if not docs:
+        return '<div class="empty-state"><p>No context documents.</p></div>'
+    _icon_map = {
+        "objective": "objective", "architecture": "architecture",
+        "conventions": "conventions", "decisions": "folder",
+        "documents": "folder",
+    }
+    items = ""
     for d in docs:
-        icon = "📁" if d["isDir"] else "📄"
+        stem = d["name"].replace(".md", "").lower()
+        if d["isDir"]:
+            icon_cls = _icon_map.get(stem, "folder")
+            icon_svg = _ICON_FOLDER
+        else:
+            icon_cls = _icon_map.get(stem, "doc")
+            icon_svg = _ICON_DOC
         link = f"/project/{alias}/context/{d['name']}" if not d["isDir"] else "#"
-        rows += f'<a href="{link}" class="list-row"><span>{icon} {d["name"]}</span><span class="dim">{d["description"]}</span></a>'
-    if not rows:
-        rows = '<div class="empty-state"><p>No context documents.</p></div>'
-    return f'<div class="content"><div class="list">{rows}</div></div>'
-
-
-def _ticket_detail_page(ticket: dict, body: str, back_link: str) -> str:
-    agents = ", ".join(ticket.get("agent") or []) or "—"
-    import html as _html
-    safe_body = _html.escape(body)
-    return f"""
-<div class="content">
-  {back_link}
-  <div class="detail-header">
-    <h1>{ticket['id']}: {ticket['title']}</h1>
-    <div class="meta-row">
-      <span class="badge priority-{ticket.get('priority','p2')}">{ticket.get('priority','p2')}</span>
-      <span class="badge status-{ticket.get('status','backlog')}">{ticket.get('status','backlog')}</span>
-      <span>Agent: {agents}</span>
-      <span>Sprint: {ticket.get('sprint') or '—'}</span>
-    </div>
+        items += f"""<a href="{link}" class="context-item">
+  <div class="context-item-icon {icon_cls}">{icon_svg}</div>
+  <div>
+    <div class="context-item-name">{d['name']}</div>
+    <div class="context-item-desc">{d['description']}</div>
   </div>
-  <pre class="ticket-body">{safe_body}</pre>
-</div>"""
+</a>"""
+    return f'<div class="context-list">{items}</div>'
 
 
 def _repos_page(repos: list[dict], alias: str) -> str:
-    rows = ""
+    if not repos:
+        return '<div class="empty-state"><p>No repos registered. Run <code>projhub repo add &lt;path&gt;</code>.</p></div>'
+    items = ""
     for r in repos:
         git = r.get("git", {})
         branch = git.get("branch", "—") if git.get("isGit") else "no git"
         dirty = " *" if git.get("dirty") else ""
-        rows += f"""
-<div class="list-row">
-  <span class="name">{r['name']}</span>
-  <span class="dim">{r.get('path','')}</span>
-  <span class="badge">{branch}{dirty}</span>
-  <span>{r.get('ticketCount',0)} tickets</span>
+        items += f"""<div class="context-item">
+  <div class="context-item-icon doc">{_ICON_REPO}</div>
+  <div style="flex:1">
+    <div class="context-item-name">{r['name']}</div>
+    <div class="context-item-desc">{r.get('path','')}</div>
+  </div>
+  <div style="display:flex;gap:6px;align-items:center">
+    <span class="chip chip-agent">{branch}{dirty}</span>
+    <span class="chip chip-sprint">{r.get('ticketCount',0)} tickets</span>
+  </div>
 </div>"""
-    if not rows:
-        rows = '<div class="empty-state"><p>No repos registered.</p></div>'
-    return f'<div class="content"><div class="list">{rows}</div></div>'
+    return f'<div class="context-list">{items}</div>'
 
 
 def _files_page(alias: str, entries: list[dict]) -> str:
@@ -308,13 +387,110 @@ def _files_page(alias: str, entries: list[dict]) -> str:
         html = ""
         for e in items:
             if e["type"] == "dir":
-                badges = " ".join(f'<span class="badge">{b["label"]}</span>' for b in e.get("badges", []))
-                html += f'<div class="file-dir" data-alias="{alias}" data-path="{e["path"]}">📁 {e["name"]} {badges}</div>'
+                badges = "".join(f'<span class="tree-badge" style="color:{b.get("color","var(--text-2)")}">{b["label"]}</span>' for b in e.get("badges", []))
+                html += f'<details class="tree-dir"><summary class="tree-row tree-dir-row" data-path="{e["path"]}"><span class="tree-chevron">▶</span><span class="tree-icon">📁</span><span class="tree-name">{e["name"]}</span>{badges}</summary><div class="tree-children tree-lazy" id="children-{e["path"].replace("/","-")}" data-path="{e["path"]}" data-loaded="false" style="display:none"></div></details>'
             else:
-                html += f'<div class="file-file">📄 {e["name"]}</div>'
+                html += f'<div class="tree-row tree-file-row"><span class="tree-icon">📄</span><span class="tree-name tree-file-name" data-path="{e.get("path",e["name"])}">{e["name"]}</span></div>'
         return html
+    return f'<div class="file-tree" id="file-tree" data-alias="{alias}">{render_entries(entries)}</div>'
 
-    return f'<div class="content"><div class="file-tree" id="file-tree">{render_entries(entries)}</div></div>'
+
+def _render_markdown(body: str) -> str:
+    """Minimal markdown renderer for ticket bodies. Handles h1-h3, ul, ol, [ ]/[x], code, bold."""
+    import html as _html
+    import re
+    if not body.strip():
+        return '<span class="detail-empty">No description</span>'
+
+    lines = body.splitlines()
+    out: list[str] = []
+    in_ul = False
+    in_ol = False
+
+    def close_lists():
+        nonlocal in_ul, in_ol
+        if in_ul:
+            out.append("</ul>"); in_ul = False
+        if in_ol:
+            out.append("</ol>"); in_ol = False
+
+    def inline(s: str) -> str:
+        s = _html.escape(s)
+        s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+        s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+        return s
+
+    for raw in lines:
+        line = raw.rstrip()
+        if not line.strip():
+            close_lists()
+            continue
+        if m := re.match(r"^### (.+)$", line):
+            close_lists(); out.append(f"<h3>{inline(m.group(1))}</h3>"); continue
+        if m := re.match(r"^## (.+)$", line):
+            close_lists(); out.append(f"<h3>{inline(m.group(1))}</h3>"); continue
+        if m := re.match(r"^# (.+)$", line):
+            close_lists(); out.append(f'<div class="detail-section-title" style="margin-top:18px">{inline(m.group(1))}</div>'); continue
+        if m := re.match(r"^[-*] \[([ xX])\] (.+)$", line):
+            close_lists()
+            done = m.group(1).lower() == "x"
+            check_class = "check done" if done else "check"
+            box = "✓" if done else ""
+            out.append(f'<div class="{check_class}"><span class="check-box">{box}</span><span>{inline(m.group(2))}</span></div>')
+            continue
+        if m := re.match(r"^[-*] (.+)$", line):
+            if not in_ul:
+                close_lists(); out.append("<ul>"); in_ul = True
+            out.append(f'<li class="md-li">{inline(m.group(1))}</li>')
+            continue
+        if m := re.match(r"^\d+\. (.+)$", line):
+            if not in_ol:
+                close_lists(); out.append("<ol>"); in_ol = True
+            out.append(f'<li class="md-li md-ol">{inline(m.group(1))}</li>')
+            continue
+        close_lists()
+        out.append(f"<p>{inline(line)}</p>")
+    close_lists()
+    return "\n".join(out)
+
+
+def _ticket_detail_page(ticket: dict, body: str, alias: str) -> str:
+    agents = ", ".join(ticket.get("agent") or []) or "—"
+    status = ticket.get("status", "backlog")
+    status_color = {"doing": "blue", "done": "green", "review": "yellow", "cancelled": "red"}.get(status, "muted")
+    prio = ticket.get("priority", "p2")
+    sprint = ticket.get("sprint") or "—"
+    created = ticket.get("created", "—")
+    updated = ticket.get("updated", "—")
+    back = f'<a class="back-link" href="/project/{alias}/board"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to Board</a>'
+    body_html = _render_markdown(body)
+    return f"""{back}
+<div class="detail-page">
+  <div class="detail-header">
+    <div class="detail-header-top">
+      <span class="detail-id">{ticket['id']}</span>
+      <span class="status-badge {status_color}">{status}</span>
+      <span class="p-badge {prio}">{prio}</span>
+    </div>
+    <div class="detail-title">{ticket['title']}</div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-main">
+      <div class="detail-section">
+        <div class="detail-section-title">Description</div>
+        <div class="detail-section-body">{body_html}</div>
+      </div>
+    </div>
+    <div class="detail-sidebar">
+      <div><div class="detail-field-label">Agent</div><div class="detail-field-value">{agents}</div></div>
+      <hr class="detail-divider">
+      <div><div class="detail-field-label">Sprint</div><div class="detail-field-value mono">{sprint}</div></div>
+      <hr class="detail-divider">
+      <div><div class="detail-field-label">Created</div><div class="detail-field-value mono">{created}</div></div>
+      <div><div class="detail-field-label">Updated</div><div class="detail-field-value mono">{updated}</div></div>
+    </div>
+  </div>
+</div>"""
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
@@ -394,9 +570,8 @@ def project_ticket(alias: str, ticket_id: str):
         return HTMLResponse(_render("Not Found", _not_found_html("Ticket not found")), status_code=404)
     ticket_file = Path(project["path"]) / ".projhub" / "board" / ticket["file"]
     _, body = parse_frontmatter(ticket_file.read_text(encoding="utf-8")) if ticket_file.exists() else ({}, "")
-    back = f'<a class="back-link" href="/project/{alias}/board">← Back to Board</a>'
     return _render(
-        f"{ticket_id} — {project['name']}", _ticket_detail_page(ticket, body, back),
+        f"{ticket_id} — {project['name']}", _ticket_detail_page(ticket, body, alias),
         current_alias=alias, current_tab="board",
         breadcrumbs=[{"label": "projhub", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board", "href": f"/project/{alias}/board"}, {"label": ticket_id}],
         tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",

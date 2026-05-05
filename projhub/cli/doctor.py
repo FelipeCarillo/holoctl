@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import json
 
 import typer
@@ -7,6 +7,14 @@ from ._console import console
 from ..lib.config import find_project_root, load_config
 
 app = typer.Typer()
+
+
+_TARGET_OUTPUTS = {
+    "claude": ["CLAUDE.md", ".claude/commands"],
+    "cursor": [".cursor/commands", ".cursor/rules/projhub.md"],
+    "windsurf": [".windsurfrules"],
+    "copilot": [".github/copilot-instructions.md"],
+}
 
 
 @app.command("doctor")
@@ -19,20 +27,37 @@ def doctor_cmd():
 
     console.print("\n  [bold]projhub doctor[/bold]\n")
     issues = 0
+    config = None
 
     try:
-        load_config(root)
+        config = load_config(root)
         _check("Config", ".projhub/config.json is valid", True)
     except Exception as e:
         _check("Config", f".projhub/config.json: {e}", False)
         issues += 1
 
+    # Index <-> .md sync
     index_path = root / ".projhub" / "board" / "index.json"
+    tickets_dir = root / ".projhub" / "board" / "tickets"
     if index_path.exists():
         try:
             data = json.loads(index_path.read_text(encoding="utf-8"))
-            count = len(data.get("tickets", []))
-            _check("Board", f"index.json valid ({count} tickets)", True)
+            indexed = {t["id"] for t in data.get("tickets", [])}
+            on_disk = set()
+            if tickets_dir.exists():
+                from ..lib.markdown import parse_frontmatter
+                for f in tickets_dir.glob("*.md"):
+                    if f.name.startswith("_"):
+                        continue
+                    fm, _ = parse_frontmatter(f.read_text(encoding="utf-8"))
+                    if fm.get("id"):
+                        on_disk.add(fm["id"])
+            drift = indexed.symmetric_difference(on_disk)
+            if drift:
+                _check("Board", f"index.json out of sync ({len(drift)} drift) — run `projhub board rebuild-index`", False)
+                issues += 1
+            else:
+                _check("Board", f"index.json valid ({len(indexed)} tickets, in sync)", True)
         except Exception as e:
             _check("Board", f"index.json parse error: {e}", False)
             issues += 1
@@ -40,6 +65,7 @@ def doctor_cmd():
         _check("Board", "index.json exists", False)
         issues += 1
 
+    # Agents
     agents_dir = root / ".projhub" / "agents"
     if agents_dir.exists():
         agent_count = len(list(agents_dir.glob("*.md")))
@@ -51,6 +77,7 @@ def doctor_cmd():
         _check("Agents", "agents/ directory exists", False)
         issues += 1
 
+    # Commands
     commands_dir = root / ".projhub" / "commands"
     if commands_dir.exists():
         cmd_count = len(list(commands_dir.glob("*.md")))
@@ -62,17 +89,42 @@ def doctor_cmd():
         _check("Commands", "commands/ directory exists", False)
         issues += 1
 
-    instructions_path = root / ".projhub" / "instructions.md"
-    ok = instructions_path.exists()
+    # Instructions
+    ok = (root / ".projhub" / "instructions.md").exists()
     _check("Instructions", "instructions.md exists", ok)
     if not ok:
         issues += 1
 
-    context_dir = root / ".projhub" / "context"
-    ok = context_dir.exists()
+    # Context
+    ok = (root / ".projhub" / "context").exists()
     _check("Context", "context/ directory exists", ok)
     if not ok:
         issues += 1
+
+    # Compile targets
+    if config:
+        targets = config.get("targets", [])
+        for tgt in targets:
+            outputs = _TARGET_OUTPUTS.get(tgt, [])
+            missing = [o for o in outputs if not (root / o).exists()]
+            if missing:
+                _check("Compile", f"target '{tgt}' missing: {', '.join(missing)} — run `projhub compile`", False)
+                issues += 1
+            else:
+                _check("Compile", f"target '{tgt}' compiled", True)
+
+    # Global slash command
+    try:
+        from .setup_global import check_installed_versions
+        for v in check_installed_versions():
+            stale = v["installed"] and v["installed"] != v["current"]
+            if stale:
+                _check("Global", f"{v['label']}: v{v['installed']} → upgrade to v{v['current']} (run `projhub setup-global`)", False)
+                issues += 1
+            else:
+                _check("Global", f"{v['label']} v{v['installed'] or 'unknown'}", True)
+    except Exception:
+        pass
 
     console.print("")
     if issues == 0:

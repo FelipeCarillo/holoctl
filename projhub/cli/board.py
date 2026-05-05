@@ -106,8 +106,9 @@ def set_cmd(
     try:
         result = board.set(ticket_id, field, " ".join(value))
         console.print(f"{result['id']}.{result['field']} = {json.dumps(result['value'])}")
-    except KeyError as e:
-        console.print(f"[red]{e}[/red]")
+    except (KeyError, ValueError) as e:
+        msg = str(e).strip("'")
+        console.print(f"[red]{msg}[/red]")
         raise typer.Exit(1)
 
 

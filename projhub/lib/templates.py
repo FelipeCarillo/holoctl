@@ -30,7 +30,7 @@ def _agent_developer_md(p: dict) -> str:
 name: developer
 description: "General-purpose code implementation agent. Takes tickets with clear specs and produces working code following project conventions."
 model: standard
-tools: [read, search, edit, write, shell]
+tools: [filesystem, search, shell]
 trigger: ticket
 ---
 
@@ -53,7 +53,7 @@ Before any action:
 - Follow coding conventions defined in the project instruction file
 - Run linter and build checks after changes
 
-**Does not**: create new architectural abstractions (that's `architect`), write test data (that's `mock-data-curator`), do QA (that's `qa`).
+**Does not**: create new architectural abstractions (that's `architect`), do code review (that's `reviewer`), do research (that's `researcher`).
 
 # Work Order
 
@@ -77,7 +77,7 @@ def _agent_reviewer_md(p: dict) -> str:
 name: reviewer
 description: "Code review agent. Reviews changes for correctness, conventions, security, and performance."
 model: reasoning
-tools: [read, search, shell]
+tools: [filesystem, search, shell]
 trigger: ticket
 ---
 
@@ -114,7 +114,7 @@ def _agent_architect_md(p: dict) -> str:
 name: architect
 description: "Architecture and design agent. Defines contracts, interfaces, boundaries, and resolves coupling."
 model: reasoning
-tools: [read, search, edit, write]
+tools: [filesystem, search]
 trigger: ticket
 ---
 
@@ -133,7 +133,7 @@ You only begin work if you receive a ticket with **Start** and **Goal** filled i
 - Refactor when coupling is detected
 - Document architectural decisions
 
-**Does not**: implement full UI (delegates to `developer`), write test data, do QA.
+**Does not**: implement full features (delegates to `developer`), do code review (that's `reviewer`).
 
 # Work Order
 
@@ -155,13 +155,17 @@ def _agent_researcher_md(p: dict) -> str:
 name: researcher
 description: "Research agent. Investigates topics, competitors, regulations, and synthesizes findings."
 model: reasoning
-tools: [read, search, browser]
-trigger: natural-language
+tools: [filesystem, search, browser]
+trigger: ticket
 ---
 
 # Identity
 
 You are the **Researcher** for {p['name']}. You investigate topics in depth and return structured, sourced findings. You do not write code.
+
+# Guard Rail
+
+You begin work when given a ticket OR a clear research question. If the question is ambiguous, ask one clarifying question before searching.
 
 # Scope
 
@@ -169,6 +173,8 @@ You are the **Researcher** for {p['name']}. You investigate topics in depth and 
 - Regulatory and compliance research
 - Technology evaluation and comparison
 - Domain-specific knowledge gathering
+
+**Does not**: write production code (that's `developer`), define architecture (that's `architect`).
 
 # Report Format
 

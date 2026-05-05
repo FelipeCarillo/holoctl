@@ -21,24 +21,6 @@ _PLATFORM_CONFIG: dict[str, dict] = {
         "file_name": "projhub.md",
         "label": "Claude Code",
     },
-    "cursor": {
-        "template": "projhub-cursor.md",
-        "dest_dir": Path.home() / ".cursor" / "commands",
-        "file_name": "projhub.md",
-        "label": "Cursor",
-    },
-    "windsurf": {
-        "template": "projhub-windsurf.md",
-        "dest_dir": Path.home() / ".codeium" / "windsurf" / "memories",
-        "file_name": "projhub.md",
-        "label": "Windsurf",
-    },
-    "copilot": {
-        "template": "projhub-copilot.prompt.md",
-        "dest_dir": Path.home() / ".copilot" / "prompts",
-        "file_name": "projhub.prompt.md",
-        "label": "GitHub Copilot",
-    },
 }
 
 
@@ -114,11 +96,15 @@ def setup_global(targets: list[str], dry_run: bool = False) -> list[dict]:
 
 @app.command("setup-global")
 def setup_global_cmd(
-    targets: str = typer.Option("claude,cursor", "--targets", help="Comma-separated targets"),
+    targets: str = typer.Option("claude", "--targets", help="Comma-separated targets (only 'claude' supported globally)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files"),
     check: bool = typer.Option(False, "--check", help="Show installed versions without installing"),
 ):
-    """Install /projhub slash command globally for AI coding assistants."""
+    """Install /projhub slash command globally for Claude Code.
+
+    Note: Cursor, Windsurf, and Copilot don't support globally-installed slash
+    commands. Use `projhub compile` per-project to generate their integration files.
+    """
     if check:
         versions = check_installed_versions()
         if not versions:

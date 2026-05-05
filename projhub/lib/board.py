@@ -55,10 +55,10 @@ class Board:
             return
         content = full_path.read_text(encoding="utf-8")
         for key, val in patches.items():
-            str_val = "null" if val is None else str(val)
+            str_val = _yaml_format(val)
             content = re.sub(
                 rf"^({re.escape(key)}:\s*)(.*)$",
-                rf"\g<1>{str_val}",
+                lambda m, v=str_val: f"{m.group(1)}{v}",
                 content,
                 flags=re.MULTILINE,
             )
@@ -121,31 +121,40 @@ class Board:
 
         return {"id": ticket_id, "from": old_status, "to": new_status}
 
+    _EDITABLE_FIELDS = {
+        "title", "agent", "scope", "status", "priority",
+        "sprint", "depends", "tags", "completed",
+    }
+
     def set(self, ticket_id: str, field: str, value: str) -> dict:
+        if field not in self._EDITABLE_FIELDS:
+            allowed = ", ".join(sorted(self._EDITABLE_FIELDS))
+            raise ValueError(f"Field '{field}' is not editable. Allowed: {allowed}")
+
+        if field == "status":
+            valid = self._config["board"]["statuses"]
+            if value not in valid:
+                raise ValueError(f"Invalid status: {value}. Valid: {'|'.join(valid)}")
+
         data = self._load()
         ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
         if not ticket:
             raise KeyError(f"Ticket {ticket_id} not found")
 
-        if value == "null":
-            parsed: object = None
-        elif value == "true":
-            parsed = True
-        elif value == "false":
-            parsed = False
-        elif value.startswith("["):
-            parsed = json.loads(value)
-        else:
-            parsed = value
+        parsed = _parse_set_value(value)
+        if field in ("agent", "depends", "tags"):
+            parsed = _normalize_array(parsed if isinstance(parsed, (list, str)) else value)
 
         today = _today()
         ticket[field] = parsed
         ticket["updated"] = today
         data["meta"]["updated"] = today
+        if field == "status":
+            data["meta"]["counts"] = self._recount(data["tickets"])
         self._save(data)
 
         if ticket.get("file"):
-            self._patch_ticket_md(ticket["file"], {field: value, "updated": today})
+            self._patch_ticket_md(ticket["file"], {field: parsed, "updated": today})
 
         return {"id": ticket_id, "field": field, "value": parsed}
 
@@ -283,6 +292,33 @@ def _normalize_array(val) -> list:
     if isinstance(val, list):
         return val
     return [s.strip() for s in str(val).split(",") if s.strip()]
+
+
+def _yaml_format(val) -> str:
+    """Format a Python value as a YAML scalar for ticket frontmatter."""
+    if val is None:
+        return "null"
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, list):
+        return ", ".join(str(v) for v in val) if val else "null"
+    return str(val)
+
+
+def _parse_set_value(value: str):
+    """Parse a CLI-supplied value into a Python type. Falls back to string."""
+    if value == "null":
+        return None
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
 
 
 def _log_activity(project_root: Path, event: dict) -> None:

@@ -142,7 +142,30 @@ code {
   position: fixed;
   top: 0; left: 0; bottom: 0;
   z-index: 10;
+  transition: width 0.25s var(--ease);
+  overflow: hidden;
 }
+
+/* ── Sidebar collapsed ── */
+.app.sidebar-collapsed .sidebar { width: 60px; }
+.app.sidebar-collapsed .main { margin-left: 60px; }
+.app.sidebar-collapsed .nav-item-text,
+.app.sidebar-collapsed .sidebar-brand-name,
+.app.sidebar-collapsed .nav-item .badge,
+.app.sidebar-collapsed .nav-group-label,
+.app.sidebar-collapsed .project-path { display: none; }
+.app.sidebar-collapsed .nav-item { justify-content: center; padding: 10px; }
+.app.sidebar-collapsed .sidebar-header { justify-content: center; padding: 14px 0; }
+.app.sidebar-collapsed .sidebar-brand { gap: 0; }
+.app.sidebar-collapsed .sidebar-brand > div { display: none; }
+
+.sidebar-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.main { transition: margin-left 0.25s var(--ease); }
 
 .sidebar-header {
   padding: 18px 20px;

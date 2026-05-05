@@ -27,6 +27,21 @@
     updateThemeIcons(next);
   };
 
+  // ── Sidebar collapse ──
+
+  function initSidebar() {
+    if (localStorage.getItem('projhub-sidebar') === 'collapsed') {
+      document.getElementById('app')?.classList.add('sidebar-collapsed');
+    }
+  }
+
+  window.__toggleSidebar = function () {
+    const app = document.getElementById('app');
+    if (!app) return;
+    const collapsed = app.classList.toggle('sidebar-collapsed');
+    localStorage.setItem('projhub-sidebar', collapsed ? 'collapsed' : 'open');
+  };
+
   // ── Toast Notifications ──
 
   function showToast(message) {
@@ -190,6 +205,7 @@
   // ── Init ──
 
   initTheme();
+  initSidebar();
 
   document.addEventListener('DOMContentLoaded', () => {
     initSSE();

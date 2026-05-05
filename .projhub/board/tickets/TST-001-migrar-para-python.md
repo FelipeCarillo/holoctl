@@ -4,7 +4,7 @@ title: Migrar para Python
 agent: developer
 scope: src
 status: doing
-priority: p1
+priority: p2
 sprint: null
 created: 2026-05-05
 updated: 2026-05-05

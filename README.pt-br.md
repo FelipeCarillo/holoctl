@@ -1,4 +1,4 @@
-# projctl
+# projhub
 
 > Sistema operacional de projetos para assistentes de IA.
 
@@ -7,26 +7,26 @@
   <a href="./README.pt-br.md"><img src="https://img.shields.io/badge/lang-Português-green?style=flat-square" alt="Português"/></a>
 </p>
 
-[![npm version](https://img.shields.io/npm/v/projctl.svg)](https://www.npmjs.com/package/projctl)
-[![npm downloads](https://img.shields.io/npm/dm/projctl.svg)](https://www.npmjs.com/package/projctl)
+[![PyPI version](https://img.shields.io/pypi/v/projhub.svg)](https://pypi.org/project/projhub/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/projhub.svg)](https://pypi.org/project/projhub/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.11-brightgreen.svg)](https://www.python.org)
 
 ---
 
-## O que é o projctl?
+## O que é o projhub?
 
-**projctl** é uma ferramenta CLI que transforma qualquer diretório em um projeto estruturado e pronto para IA. Ele oferece um board Kanban, definições de agentes, slash commands e um dashboard web ao vivo — tudo versionado em `.projctl/` junto com o seu código.
+O **projhub** é uma CLI que transforma qualquer diretório em um projeto totalmente estruturado e pronto para IA. Ele te dá um quadro Kanban, definições de agentes, slash commands e um dashboard web ao vivo — tudo versionado em `.projhub/` ao lado do seu código.
 
-Um projeto root. Qualquer número de sub-repos e diretórios abaixo. Um comando `/projctl` para configurar tudo dentro de qualquer ferramenta de IA.
+Uma raiz de projeto. Quantos sub-repos e diretórios você quiser. Um único `/projhub` para configurar tudo dentro do Claude Code.
 
 ```
-meu-projeto/             ← root do projeto (projctl init aqui)
+meu-projeto/             ← raiz do projeto (rode projhub init aqui)
 ├── backend/             [git · Node]
 ├── frontend/            [git · React]
 ├── mobile/              [git · React Native]
 ├── infra/               [Terraform]
-├── .projctl/            ← todo o estado do projeto fica aqui
+├── .projhub/            ← todo o estado do projeto vive aqui
 │   ├── config.json
 │   ├── board/
 │   │   └── tickets/
@@ -40,100 +40,115 @@ meu-projeto/             ← root do projeto (projctl init aqui)
 
 ## Instalação
 
+Recomendado (resolve PATH automaticamente):
+
 ```bash
-npm install -g projctl
+uv tool install projhub
 ```
 
-Na instalação, o projctl coloca automaticamente um slash command `/projctl` em:
-- `~/.claude/commands/projctl.md` — Claude Code
-- `~/.cursor/commands/projctl.md` — Cursor
+Ou com pip:
+
+```bash
+pip install projhub
+```
+
+Após instalar, configure o slash command global `/projhub`:
+
+```bash
+projhub setup-global
+```
+
+Isso coloca o comando `/projhub` em `~/.claude/commands/projhub.md` para você usar em qualquer projeto no Claude Code.
+
+> Cursor, Windsurf e GitHub Copilot não suportam slash commands instalados globalmente. Para eles, use `projhub compile` dentro de cada projeto e os arquivos de integração são gerados no formato nativo de cada ferramenta (veja **Integração com IA** abaixo).
 
 ---
 
-## Início Rápido
+## Quick Start
 
 ```bash
-# 1. Vá para o root do seu projeto
+# 1. Vá para a raiz do projeto
 cd ~/meu-projeto
 
 # 2. Inicialize
-projctl init
+projhub init
 
 # 3. Abra o dashboard
-projctl serve
-# → http://localhost:4242
+projhub serve
+# → http://127.0.0.1:4242
 
-# 4. Compile para sua ferramenta de IA
-projctl compile --target claude    # CLAUDE.md + .claude/commands/
-projctl compile --target cursor    # .cursor/commands/ + .cursor/rules/
-projctl compile --target windsurf  # .windsurf/workflows/ + .windsurfrules
-projctl compile --target copilot   # .github/prompts/ + .github/copilot-instructions.md
+# 4. Compile para sua ferramenta
+projhub compile --target claude    # CLAUDE.md + .claude/commands/
+projhub compile --target cursor    # .cursor/commands/ + .cursor/rules/
+projhub compile --target windsurf  # .windsurfrules
+projhub compile --target copilot   # .github/copilot-instructions.md
 ```
 
-Ou simplesmente digite `/projctl` no Claude Code ou Cursor — ele detecta, inicializa e compila automaticamente.
+Ou apenas digite `/projhub` no Claude Code — ele detecta, inicializa e compila automaticamente.
 
 ---
 
-## Funcionalidades
+## Recursos
 
-### 📋 Board Kanban
+### 📋 Kanban Board
 
-Gerenciamento de tickets construído para agentes de IA. Cada ticket é um arquivo Markdown com frontmatter — legível por humanos e máquinas.
+Gestão de tickets feita pra agentes de IA. Cada ticket é um Markdown com frontmatter — legível por humanos e máquinas.
 
 ```bash
-projctl board add '{"title":"Implementar auth","agent":"developer","scope":"backend"}'
-projctl board ls
-projctl board ls --scope backend --status doing
-projctl board move PRJ-001 doing
-projctl board set PRJ-001 priority p0
-projctl board stat
+projhub board add '{"title":"Adicionar auth","agent":"developer","scope":"backend"}'
+projhub board ls
+projhub board ls --scope backend --status doing
+projhub board move PRJ-001 doing
+projhub board set PRJ-001 priority p0
+projhub board stat
 ```
 
-### 📁 Projetos Multi-Repo
+### 📁 Projetos multi-repo
 
-Um projeto root pode ter qualquer número de sub-diretórios e git repos. Registre-os e eles aparecem na aba **Repos** do dashboard com informações de git ao vivo.
+Uma raiz de projeto pode conter quantos sub-repos e diretórios você quiser. Registre eles e aparecerão na aba **Repos** do dashboard com info de git ao vivo.
 
 ```bash
-projctl repo add ./backend  --name backend
-projctl repo add ./frontend --name frontend
-projctl repo ls
-projctl repo info backend
+projhub repo add ./backend  --name backend
+projhub repo add ./frontend --name frontend
+projhub repo list
+projhub repo info backend
 ```
 
 ### 🌐 Dashboard Web
 
 ```bash
-projctl serve   # http://localhost:4242
+projhub serve              # http://127.0.0.1:4242 (só localhost)
+projhub serve --host 0.0.0.0  # expor na rede local
 ```
 
 | Aba | Descrição |
 |---|---|
-| **Board** | Kanban com atualização em tempo real (SSE) e filtro de scope por repo |
-| **Repos** | Status git de cada sub-repo: branch, último commit, link pro remote |
-| **Files** | Árvore de arquivos completa com badges de tecnologia |
+| **Board** | Visão kanban com atualização ao vivo via SSE |
+| **Repos** | Status git por sub-repo: branch, último commit, remote |
+| **Files** | Árvore completa de arquivos com badges de tech-stack |
 | **Agents** | Definições de agentes de IA |
 | **Commands** | Biblioteca de slash commands |
 | **Context** | Base de conhecimento do projeto |
 
-**Badges na árvore de arquivos:** Git, Node, React, Vue, React Native, Python, Go, Rust, Flutter, Docker, Terraform, iOS, Java, PHP.
+**Badges da árvore:** Git, Node, React, Vue, React Native, Python, Go, Rust, Flutter, Docker, Terraform, iOS, Java, PHP.
 
-### 🤖 Integração com Ferramentas de IA
+### 🤖 Integração com IA
 
-O projctl compila `.projctl/` para o formato nativo de cada ferramenta:
+`projhub compile` traduz `.projhub/` para o formato nativo de cada ferramenta:
 
 | Ferramenta | Slash Command | Arquivo de Contexto |
 |---|---|---|
-| Claude Code | `.claude/commands/projctl.md` | `CLAUDE.md` |
-| Cursor | `.cursor/commands/projctl.md` | `.cursor/rules/projctl.md` |
-| Windsurf | `.windsurf/workflows/projctl.md` | `.windsurfrules` |
-| GitHub Copilot | `.github/prompts/projctl.prompt.md` | `.github/copilot-instructions.md` |
+| Claude Code | `.claude/commands/*.md` | `CLAUDE.md` |
+| Cursor | `.cursor/commands/*.md` | `.cursor/rules/projhub.md` |
+| Windsurf | (n/d) | `.windsurfrules` |
+| GitHub Copilot | (n/d) | `.github/copilot-instructions.md` |
 
 ### 🔧 Setup Global
 
 ```bash
-projctl setup-global
-# Instala /projctl no Claude Code e Cursor globalmente
-# Funciona em qualquer diretório, mesmo antes do projctl init
+projhub setup-global
+# Instala /projhub no Claude Code globalmente (~/.claude/commands/projhub.md)
+# Funciona em qualquer diretório, mesmo antes do projhub init
 ```
 
 ---
@@ -141,27 +156,27 @@ projctl setup-global
 ## Comandos
 
 ```
-projctl init               Inicializa .projctl/ no diretório atual
-projctl board <cmd>        Gerencia tickets (add, ls, move, set, stat, get)
-projctl repo <cmd>         Gerencia sub-repos (add, remove, ls, info)
-projctl compile            Compila para arquivos específicos de cada ferramenta
-projctl serve              Inicia o dashboard web
-projctl setup-global       Instala /projctl globalmente para ferramentas de IA
-projctl workspace <cmd>    Gerencia projetos registrados
-projctl agent <cmd>        Gerencia definições de agentes
-projctl doctor             Verifica a saúde do projeto
+projhub init               Inicializa .projhub/ no diretório atual
+projhub board <cmd>        Gerencia tickets (add, ls, move, set, stat, get)
+projhub repo <cmd>         Gerencia sub-repos (add, remove, list, info)
+projhub compile            Compila para arquivos específicos da ferramenta
+projhub serve              Inicia o dashboard web
+projhub setup-global       Instala /projhub globalmente no Claude Code
+projhub workspace <cmd>    Gerencia projetos registrados
+projhub agent <cmd>        Gerencia definições de agentes
+projhub doctor             Verifica a saúde do projeto
 ```
 
 ---
 
-## Estrutura do .projctl/
+## Estrutura do `.projhub/`
 
 ```
-.projctl/
-├── config.json          ← configurações do projeto (nome, prefixo, board, repos)
+.projhub/
+├── config.json          ← configurações (nome, prefix, board, repos)
 ├── activity.jsonl       ← log de eventos append-only
 ├── board/
-│   ├── index.json       ← índice de tickets (reconstruído automaticamente dos .md)
+│   ├── index.json       ← índice de tickets (rebuild automático dos .md)
 │   └── tickets/
 │       └── PRJ-001-meu-ticket.md
 ├── agents/
@@ -175,12 +190,12 @@ projctl doctor             Verifica a saúde do projeto
 
 ---
 
-## Formato de Ticket
+## Formato do ticket
 
 ```markdown
 ---
 id: PRJ-001
-title: Implementar autenticação
+title: Adicionar autenticação
 agent: developer
 scope: backend
 status: doing
@@ -190,17 +205,17 @@ created: 2026-05-04
 updated: 2026-05-04
 completed: null
 depends: null
-tags: auth, segurança
+tags: auth, security
 ---
 
-# Estado Atual
-(Estado antes de começar)
+# Start
+(Estado atual antes de começar)
 
-# Objetivo — Definição de Pronto
-- [ ] Auth JWT implementada
+# Goal — Definition of Done
+- [ ] Auth JWT implementado
 - [ ] Testes passando
 
-# Contexto
+# Context
 Por que este ticket existe.
 ```
 
@@ -231,7 +246,7 @@ Por que este ticket existe.
 
 ## Requisitos
 
-- Node.js ≥ 18
+- Python ≥ 3.11
 
 ---
 

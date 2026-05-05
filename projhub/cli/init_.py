@@ -18,7 +18,9 @@ app = typer.Typer()
 def init_cmd(
     name: Optional[str] = typer.Option(None, "--name", help="Project name"),
     prefix: Optional[str] = typer.Option(None, "--prefix", help="Ticket ID prefix (e.g. MP)"),
-    targets: Optional[str] = typer.Option(None, "--targets", help="Compile targets (claude,cursor,windsurf)"),
+    targets: Optional[str] = typer.Option(None, "--targets", help="Compile targets (claude,cursor,windsurf,copilot)"),
+    skip_compile: bool = typer.Option(False, "--skip-compile", help="Skip auto-compile after init"),
+    skip_global: bool = typer.Option(False, "--skip-global", help="Skip global /projhub install for Claude Code"),
 ):
     """Initialize .projhub/ in the current directory."""
     cwd = Path.cwd()
@@ -79,10 +81,30 @@ def init_cmd(
         pass
 
     console.print(f"  [green]✓ .projhub/ initialized successfully.[/green]\n")
+
+    if not skip_compile:
+        from ..lib.compiler import compile_project
+        for tgt in target_list:
+            try:
+                result = compile_project(cwd, config, tgt, dry_run=False)
+                count = len(result.get("files", []))
+                console.print(f"  [green]✓ compiled[/green] [bold]{tgt}[/bold] [dim]({count} files)[/dim]")
+            except Exception as e:
+                console.print(f"  [red]✗ compile {tgt}:[/red] {e}")
+
+    if not skip_global and "claude" in target_list:
+        from .setup_global import setup_global as _setup_global
+        try:
+            results = _setup_global(["claude"], dry_run=False)
+            if any(r["status"] == "ok" for r in results):
+                console.print(f"  [green]✓ /projhub installed globally for Claude Code[/green]")
+        except Exception as e:
+            console.print(f"  [dim]global setup skipped: {e}[/dim]")
+
+    console.print("")
     console.print("  Next steps:")
     console.print(f"    [dim]$[/dim] projhub board add '{{\"title\":\"My first ticket\",\"agent\":\"developer\"}}'")
     console.print(f"    [dim]$[/dim] projhub serve")
-    console.print(f"    [dim]$[/dim] projhub compile --target {target_list[0]}")
     console.print("")
 
 
