@@ -1,59 +1,39 @@
-Onboard, configure or inspect projhub for the current project. **This command requires interaction — never write context files or register repos without explicit user confirmation.**
+Onboard, configure or inspect projhub. **Default mode = execute.** Pause to ask only at the three checkpoints below.
 
 # Step 1 — Detect state
 
-Run `projhub doctor`.
-- "No .projhub/ found" → go to Step 2.
-- Returns checks → go to Step 5.
+Run `projhub doctor`. "No .projhub/ found" → Step 2. Otherwise → Step 5.
 
-# Step 2 — Confirm before init
+# Step 2 — Init
 
-ASK: "Nome do projeto e prefix dos tickets (ex: MP → MP-001)? Ou prefere que eu infira do diretório?"
+Infer name + prefix from `cwd.name` and run `projhub init --name "<n>" --prefix "<P>"` (or `projhub init` if obvious). Auto-compiles cursor target.
 
-Then `projhub init --name "<name>" --prefix "<PREFIX>"` (auto-compiles cursor target).
+# Step 3 — Discover (read-only, parallel)
 
-# Step 3 — Discover (read-only)
+Read README, package files (package.json/pyproject.toml/Cargo.toml/etc.), top-level dirs (flag candidates with package files or `.git`), existing AI rules (`.cursor/rules/*`, `CLAUDE.md`, `.windsurfrules` — never overwrite), lint configs.
 
-Read in parallel: README, package files (package.json/pyproject.toml/Cargo.toml/etc.), top-level dirs, existing AI rules (`.cursor/rules/*`, `CLAUDE.md`, `.windsurfrules`), lint configs. **Do not overwrite existing AI instructions.**
+# Step 4 — Configure (execute by default)
 
-# Step 4 — Configure with confirmation gates
+**4.1 Sub-repos (✋ ASK once, aggregated)**: if multi-project, ask one question listing all candidates. For each approved: `projhub repo add ./<path> --name <n> --description "<one-line>"`. Single project → skip silently.
 
-For each sub-step: propose → show → confirm → write. One at a time.
+**4.2 Context files (write directly)**:
+- `.projhub/context/objective.md` — What/Why/Success criteria from README
+- `.projhub/context/architecture.md` — real Tech stack, Structure, Patterns, Boundaries; mark unclear `(TBD with team)`
+- `.projhub/context/conventions.md` — from real configs; missing dimensions `(not enforced)`
+- `.projhub/instructions.md` — Identity + Folder map
 
-## 4.1 — Sub-repos
+**4.3 Ambiguity escape (✋ ASK only if needed)**: if you genuinely cannot infer what the project does, ask one question for the objective. Otherwise write directly.
 
-If multi-project, list candidates and ASK which to register. Then `projhub repo add ./<path> --name <name> --description "<one-line>"`.
-
-## 4.2 — `objective.md`
-
-Draft What/Why/Success criteria from README. Show, confirm, write.
-
-## 4.3 — `architecture.md`
-
-Tech stack, Structure, Key patterns, Boundaries. Use only patterns visible in code; mark unclear items `(TBD with team)`. Show, confirm, write.
-
-## 4.4 — `conventions.md`
-
-Derive from real configs. Mark dimensions without config `(not enforced)`. Don't invent.
-
-## 4.5 — `instructions.md`
-
-Fill Identity + Folder map. Leave Decisions empty unless user dictates one now.
-
-## 4.6 — Recompile
-
-`projhub compile --target cursor`.
+**4.4** `projhub compile --target cursor`.
 
 # Step 5 — Inspect (already initialized)
 
-`projhub board stat`, `projhub board ls --status doing`, `projhub repo list`, `projhub agent list`. Suggest next action.
+`projhub board stat`, `board ls --status doing`, `repo list`, `agent list`. Suggest one next action.
 
 # Step 6 — Final report
 
-✅ what was set up · 🌐 dashboard at http://127.0.0.1:4242 via `projhub serve` · 🎯 next action.
+✅ what was set up · 🌐 http://127.0.0.1:4242 via `projhub serve` · 🎯 next action.
 
 # Hard rules
-- Show command output.
-- Never write context files without confirmation.
-- Never register repos silently.
-- Never overwrite existing AI rules — read for context only.
+- Default = execute. Show command output. Never overwrite existing AI rules.
+- If `.projhub/` already exists when initing, stop and ask before touching state.

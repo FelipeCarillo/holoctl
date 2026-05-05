@@ -2,30 +2,26 @@
 description: Onboard, configure or inspect projhub for the current project
 ---
 
-**This command requires interaction — never write context files or register repos without explicit user confirmation.**
+**Default mode = execute.** Pause to ask only at the three checkpoints below.
 
 # Step 1 — Detect state
 
-Run `projhub doctor`. "No .projhub/ found" → Step 2. Otherwise → Step 5.
+`projhub doctor`. "No .projhub/ found" → Step 2. Otherwise → Step 5.
 
-# Step 2 — Confirm before init
+# Step 2 — Init
 
-ASK: "Nome do projeto e prefix dos tickets? Ou inferir do diretório?" Then `projhub init --name "<n>" --prefix "<P>"` (auto-compiles windsurf).
+Infer name + prefix; `projhub init --name "<n>" --prefix "<P>"`. Auto-compiles windsurf.
 
 # Step 3 — Discover (read-only)
 
-Read README, package files, top-level dirs, existing AI rules (`.windsurfrules`, `CLAUDE.md`), lint configs. **Don't overwrite existing AI rules.**
+Read README, package files, top-level dirs (flag candidates with package files or `.git`), existing AI rules (`.windsurfrules`, `CLAUDE.md` — never overwrite), lint configs.
 
-# Step 4 — Configure with confirmation gates
+# Step 4 — Configure (execute by default)
 
-For each sub-step: propose → show → confirm → write. One at a time.
-
-- **4.1 Sub-repos**: list candidates, ASK which to register, then `projhub repo add ./<path> --name <n> --description "<one-line>"`.
-- **4.2 `objective.md`**: What/Why/Success criteria from README.
-- **4.3 `architecture.md`**: Tech stack, Structure, Patterns, Boundaries. Mark unclear `(TBD with team)`.
-- **4.4 `conventions.md`**: From real configs. Mark missing dimensions `(not enforced)`.
-- **4.5 `instructions.md`**: Identity + Folder map.
-- **4.6** `projhub compile --target windsurf`.
+- **4.1 Sub-repos (✋ ASK once)**: if multi-project, one aggregated question; then `projhub repo add ./<path> --name <n> --description "<one-line>"` for each approved. Single project → skip.
+- **4.2 Context files (write directly)**: `objective.md`, `architecture.md`, `conventions.md`, `instructions.md`.
+- **4.3 Ambiguity escape (✋ ASK only if needed)**: if unable to infer the objective, ask once. Otherwise write directly.
+- **4.4** `projhub compile --target windsurf`.
 
 # Step 5 — Inspect (already initialized)
 
@@ -36,7 +32,4 @@ For each sub-step: propose → show → confirm → write. One at a time.
 ✅ what was set up · 🌐 http://127.0.0.1:4242 via `projhub serve` · 🎯 next action.
 
 # Hard rules
-- Show command output.
-- Never write context files without confirmation.
-- Never register repos silently.
-- Never overwrite existing AI rules.
+- Default = execute. Show command output. Never overwrite existing AI rules. If `.projhub/` exists when initing, ask before touching it.

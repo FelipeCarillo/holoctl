@@ -2,6 +2,15 @@
 
 All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.3] — 2026-05-05
+
+### Fixed
+- **No more dark→light theme flash on navigation.** Inline boot script in `<head>` reads `localStorage` and applies the theme + sidebar state to `<html>` before the first paint. Previously the server hardcoded `data-theme="dark"`, so every navigation flashed dark even when the user had picked light.
+- **Sidebar collapsed view now usable.** Each nav item gained a small avatar (project prefix initials, ★ for Agents) that stays visible when collapsed; theme + collapse buttons stack vertically; brand shrinks to just the "P" logo. Width 64px.
+
+### Changed
+- **`/projhub` slash command: execute by default, ask only at 3 checkpoints.** The previous version paused after every context file, which was friction for the simple case. Now the agent reads the codebase and writes `objective.md`, `architecture.md`, `conventions.md`, `instructions.md` directly. It only stops to ask the user when (a) `.projhub/` already exists (conflict), (b) sub-repos are detected (one aggregated question listing all candidates, not one per repo), or (c) the codebase is genuinely ambiguous and the objective can't be inferred from the README. Same flow applied to cursor/windsurf/copilot variants.
+
 ## [0.4.2] — 2026-05-05
 
 ### Fixed
@@ -61,6 +70,7 @@ All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.
 ### Fixed
 - Windows: `sys.stdout.reconfigure(encoding="utf-8")` so Rich can render `✓` / `✗` characters on `cp1252` consoles.
 
+[0.4.3]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.3
 [0.4.2]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.2
 [0.4.1]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.1
 [0.4.0]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.0

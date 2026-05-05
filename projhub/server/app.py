@@ -135,12 +135,24 @@ def _read_context_docs(project_path: Path) -> list[dict]:
 # ── layout ───────────────────────────────────────────────────────────────────
 
 def _layout(title: str, body: str, *, sidebar: str = "", topbar: str = "") -> str:
+    # Inline script in <head> applies theme + sidebar state BEFORE first paint to
+    # avoid the dark→light flash on navigation.
+    boot_script = (
+        "<script>(function(){try{"
+        "var t=localStorage.getItem('projhub-theme')||'dark';"
+        "document.documentElement.setAttribute('data-theme',t);"
+        "if(localStorage.getItem('projhub-sidebar')==='collapsed'){"
+        "document.documentElement.setAttribute('data-sidebar','collapsed');"
+        "}"
+        "}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>"
+    )
     return f"""<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{title} — projhub</title>
+  {boot_script}
   <link rel="stylesheet" href="/static/projhub.css">
 </head>
 <body>
@@ -162,7 +174,13 @@ def _sidebar(projects: list[dict], current_alias: str = "") -> str:
         active = "active" if p["alias"] == current_alias else ""
         doing = p.get("counts", {}).get("doing", 0)
         badge = f'<span class="badge">{doing}</span>' if doing > 0 else ""
-        links += f'<a href="/project/{p["alias"]}/board" class="nav-item {active}"><span class="nav-item-text">{p["name"]}</span>{badge}</a>'
+        initial = (p.get("prefix") or p["name"][:2] or "?")[:2].upper()
+        links += (
+            f'<a href="/project/{p["alias"]}/board" class="nav-item {active}" title="{p["name"]}">'
+            f'<span class="nav-icon">{initial}</span>'
+            f'<span class="nav-item-text">{p["name"]}</span>'
+            f'{badge}</a>'
+        )
 
     theme_btn = f"""<button class="icon-btn" onclick="__toggleTheme()" title="Toggle theme">
       <span class="theme-icon-dark">{_ICON_MOON}</span>
@@ -170,22 +188,23 @@ def _sidebar(projects: list[dict], current_alias: str = "") -> str:
     </button>"""
     collapse_btn = f'<button class="icon-btn" onclick="__toggleSidebar()" title="Toggle sidebar">{_ICON_MENU}</button>'
 
+    empty_nav = '<div class="nav-item" style="opacity:.5"><span class="nav-icon">?</span><span class="nav-item-text">No projects</span></div>'
     return f"""
 <div class="sidebar-header">
-  <a href="/" class="sidebar-brand">
+  <a href="/" class="sidebar-brand" title="projhub home">
     <span class="logo">P</span>
     <span class="sidebar-brand-name">projhub</span>
   </a>
-  <div style="display:flex;gap:4px">{theme_btn}{collapse_btn}</div>
+  <div class="sidebar-header-actions">{theme_btn}{collapse_btn}</div>
 </div>
 <nav class="sidebar-nav">
   <div class="nav-group">
     <div class="nav-group-label">Projects</div>
-    {links if links else '<div class="nav-item" style="opacity:.5">No projects</div>'}
+    {links if links else empty_nav}
   </div>
 </nav>
-<div style="padding:12px">
-  <a href="/agents" class="nav-item"><span class="nav-item-text">Agents</span></a>
+<div class="sidebar-footer">
+  <a href="/agents" class="nav-item" title="Agents"><span class="nav-icon">★</span><span class="nav-item-text">Agents</span></a>
 </div>"""
 
 

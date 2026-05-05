@@ -27,19 +27,19 @@
     updateThemeIcons(next);
   };
 
-  // ── Sidebar collapse ──
-
-  function initSidebar() {
-    if (localStorage.getItem('projhub-sidebar') === 'collapsed') {
-      document.getElementById('app')?.classList.add('sidebar-collapsed');
-    }
-  }
+  // ── Sidebar collapse (state lives on <html data-sidebar="collapsed">,
+  //    set by the inline boot script in <head> to avoid layout flash) ──
 
   window.__toggleSidebar = function () {
-    const app = document.getElementById('app');
-    if (!app) return;
-    const collapsed = app.classList.toggle('sidebar-collapsed');
-    localStorage.setItem('projhub-sidebar', collapsed ? 'collapsed' : 'open');
+    const html = document.documentElement;
+    const collapsed = html.getAttribute('data-sidebar') === 'collapsed';
+    if (collapsed) {
+      html.removeAttribute('data-sidebar');
+      localStorage.setItem('projhub-sidebar', 'open');
+    } else {
+      html.setAttribute('data-sidebar', 'collapsed');
+      localStorage.setItem('projhub-sidebar', 'collapsed');
+    }
   };
 
   // ── Toast Notifications ──
@@ -205,7 +205,6 @@
   // ── Init ──
 
   initTheme();
-  initSidebar();
 
   document.addEventListener('DOMContentLoaded', () => {
     initSSE();
