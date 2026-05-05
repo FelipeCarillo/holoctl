@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { createRequire } from 'node:module';
 import { registerBoardCommand } from './commands/board.js';
 import { registerInitCommand } from './commands/init.js';
 import { registerWorkspaceCommand } from './commands/workspace.js';
@@ -10,13 +11,15 @@ import { registerRepoCommand } from './commands/repo.js';
 import { registerSetupGlobalCommand } from './commands/setup-global.js';
 import { registerSyncCommand } from './commands/sync.js';
 
+const { version } = createRequire(import.meta.url)('../../package.json');
+
 export function createCli() {
   const program = new Command();
 
   program
     .name('projctl')
     .description('Universal project operating system for AI coding assistants')
-    .version('0.1.0');
+    .version(version);
 
   registerInitCommand(program);
   registerBoardCommand(program);

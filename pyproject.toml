@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "projctl"
+version = "0.3.0"
+description = "Universal project operating system for AI coding assistants"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+keywords = [
+  "ai", "project-management", "kanban", "claude-code", "cursor",
+  "windsurf", "copilot", "aider", "agents", "cli",
+]
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+projctl = "projctl.__main__:app"
+pctl = "projctl.__main__:app"
+
+[project.urls]
+Homepage = "https://github.com/FelipeCarillo/projctl"
+Repository = "https://github.com/FelipeCarillo/projctl"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["projctl*"]
+
+[tool.setuptools.package-data]
+projctl = [
+    "templates/commands/*.md",
+    "server/static/*",
+]
+
+[tool.uv]
+package = true
