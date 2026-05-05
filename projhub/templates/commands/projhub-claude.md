@@ -64,20 +64,20 @@ Then write `objective.md` from the answer. Don't ask anything else.
 
 Run `projhub compile --target claude` to regenerate `CLAUDE.md` and `.claude/commands/*` from the populated `.projhub/`.
 
-# Step 5 — Inspect (when already initialized)
+# Step 5 — Show overview (always)
 
-1. `projhub board stat`
-2. `projhub board ls --status doing`
-3. `projhub repo list`
-4. `projhub agent list`
-5. Suggest one concrete next action based on what you see.
+Run `projhub overview` and **show the full output to the user**. This is the canonical project snapshot:
 
-# Step 6 — Final report
+- Project name, prefix, and projhub version
+- Objective (first paragraph from `objective.md`)
+- Board counts by status
+- Repos with branch + ticket count per repo
+- Available agents
+- Available slash commands (including `/projhub`)
+- Dashboard URL
+- Suggested next action (stalled ticket, next p1, or "create your first ticket")
 
-End with a compact summary:
-- ✅ what was set up (or already configured)
-- 🌐 dashboard: `http://127.0.0.1:4242` (run `projhub serve`)
-- 🎯 single-line suggested next action
+This replaces any manual summary you would have written. Don't paraphrase — show the actual output.
 
 # Hard rules
 
@@ -85,3 +85,4 @@ End with a compact summary:
 - **Show command output** so the user sees what happened.
 - **Never overwrite** existing AI rules (`.cursor/rules/`, hand-edited `CLAUDE.md`, etc) — read for context only.
 - **If `.projhub/` already exists** when you tried to init, stop and ask whether to reuse, refresh, or abort. Don't blow away existing state.
+- **Always end with `projhub overview`** — both for fresh init and for the inspect-mode path.

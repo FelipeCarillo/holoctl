@@ -24,13 +24,9 @@ Read README, package files, top-level dirs (flag candidates with package files o
 - **4.3 Ambiguity escape (✋ ASK only if needed)**: if unable to infer the objective, ask once. Otherwise write directly.
 - **4.4** `projhub compile --target copilot`.
 
-# Step 5 — Inspect (already initialized)
+# Step 5 — Show overview (always)
 
-`projhub board stat`, `board ls --status doing`, `repo list`, `agent list`. Suggest next action.
-
-# Step 6 — Final report
-
-✅ what was set up · 🌐 http://127.0.0.1:4242 via `projhub serve` · 🎯 next action.
+Run `projhub overview` and show the full output. Single canonical snapshot: project name, board counts, repos, agents, slash commands, dashboard URL, suggested next.
 
 # Hard rules
-- Default = execute. Show command output. Never overwrite existing AI rules. If `.projhub/` exists when initing, ask before touching it.
+- Default = execute. Show command output. Never overwrite existing AI rules. If `.projhub/` exists when initing, ask before touching it. Always end with `projhub overview`.

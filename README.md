@@ -82,6 +82,7 @@ projhub compile --target claude    # CLAUDE.md + .claude/commands/
 projhub compile --target cursor    # .cursor/commands/ + .cursor/rules/
 projhub compile --target windsurf  # .windsurfrules
 projhub compile --target copilot   # .github/copilot-instructions.md
+projhub compile --target devin     # AGENTS.md + .devin/skills/
 ```
 
 Or just type `/projhub` in Claude Code — it detects, initializes, and compiles automatically.
@@ -142,6 +143,7 @@ projhub serve --host 0.0.0.0  # expose on local network
 | Cursor | `.cursor/commands/*.md` | `.cursor/rules/projhub.md` |
 | Windsurf | (n/a) | `.windsurfrules` |
 | GitHub Copilot | (n/a) | `.github/copilot-instructions.md` |
+| Devin CLI | `.devin/skills/*/SKILL.md` | `AGENTS.md` |
 
 ### 🔧 Global Setup
 
@@ -157,6 +159,7 @@ projhub setup-global
 
 ```
 projhub init               Initialize .projhub/ in the current directory
+projhub overview           One-screen project snapshot (board, repos, agents, suggested next)
 projhub board <cmd>        Manage tickets (add, ls, move, set, stat, get)
 projhub repo <cmd>         Manage sub-repos (add, remove, list, info)
 projhub compile            Compile to tool-specific files

@@ -2,6 +2,16 @@
 
 All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.4] — 2026-05-05
+
+### Added
+- **Devin CLI compile target.** `projhub compile --target devin` writes:
+  - `AGENTS.md` at the project root (Devin's primary always-active rules file, equivalent to `CLAUDE.md`).
+  - `.devin/skills/<name>/SKILL.md` per slash command, with YAML frontmatter (`name`, `description`, `arguments`). Devin invokes them as `/<name>`.
+- **`projhub overview` command.** One-screen project snapshot: name, prefix, version, objective, board counts (backlog/doing/review/done/cancelled), repos with branch + dirty + ticket count, agents, slash commands, dashboard URL, and a context-aware suggested next action (stalled tickets, next p1, or "create your first").
+- The `/projhub` slash command now ends every invocation with `projhub overview` so the user sees the canonical snapshot — same template applied to claude/cursor/windsurf/copilot/devin variants.
+- `projhub doctor` recognises the `devin` target and verifies that `AGENTS.md` and `.devin/skills` exist when devin is in `config.targets`.
+
 ## [0.4.3] — 2026-05-05
 
 ### Fixed
@@ -70,6 +80,7 @@ All notable changes to projhub follow [Keep a Changelog](https://keepachangelog.
 ### Fixed
 - Windows: `sys.stdout.reconfigure(encoding="utf-8")` so Rich can render `✓` / `✗` characters on `cp1252` consoles.
 
+[0.4.4]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.4
 [0.4.3]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.3
 [0.4.2]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.2
 [0.4.1]: https://github.com/FelipeCarillo/projhub/releases/tag/v0.4.1

@@ -5,6 +5,7 @@ from .claude import compile_claude
 from .cursor import compile_cursor
 from .windsurf import compile_windsurf
 from .copilot import compile_copilot
+from .devin import compile_devin
 from .generic import compile_generic
 
 _COMPILERS = {
@@ -12,6 +13,7 @@ _COMPILERS = {
     "cursor": compile_cursor,
     "windsurf": compile_windsurf,
     "copilot": compile_copilot,
+    "devin": compile_devin,
     "generic": compile_generic,
 }
 

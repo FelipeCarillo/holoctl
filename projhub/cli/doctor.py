@@ -14,6 +14,7 @@ _TARGET_OUTPUTS = {
     "cursor": [".cursor/commands", ".cursor/rules/projhub.md"],
     "windsurf": [".windsurfrules"],
     "copilot": [".github/copilot-instructions.md"],
+    "devin": ["AGENTS.md", ".devin/skills"],
 }
 
 

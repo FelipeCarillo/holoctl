@@ -17,6 +17,7 @@ from .cli.workspace import app as _workspace_app
 from .cli.agent import app as _agent_app
 from .cli.repo import app as _repo_app
 from .cli.serve import app as _serve_app, serve_cmd
+from .cli.overview import app as _overview_app, overview_cmd
 from . import __version__
 
 app = typer.Typer(
@@ -38,6 +39,7 @@ app.command("sync")(sync_cmd)
 app.command("setup-global")(setup_global_cmd)
 app.command("doctor")(doctor_cmd)
 app.command("serve")(serve_cmd)
+app.command("overview")(overview_cmd)
 
 
 def _version_callback(value: bool):
