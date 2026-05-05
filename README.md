@@ -2,12 +2,15 @@
 
 > Universal project operating system for AI coding assistants.
 
+<p>
+  <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue?style=flat-square" alt="English"/></a>
+  <a href="./README.pt-br.md"><img src="https://img.shields.io/badge/lang-Português-green?style=flat-square" alt="Português"/></a>
+</p>
+
 [![npm version](https://img.shields.io/npm/v/projctl.svg)](https://www.npmjs.com/package/projctl)
 [![npm downloads](https://img.shields.io/npm/dm/projctl.svg)](https://www.npmjs.com/package/projctl)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
-
-**[Leia em Português →](./README.pt-br.md)**
 
 ---
 
