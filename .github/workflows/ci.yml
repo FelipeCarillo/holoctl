@@ -87,14 +87,8 @@ jobs:
           node bin/holoctl.js --version
           node bin/holoctl.js --help
 
-      - name: Run tests if any exist
-        shell: bash
-        run: |
-          if ls src/**/*.test.js >/dev/null 2>&1; then
-            npm test
-          else
-            echo "No *.test.js yet — skipping"
-          fi
+      - name: Run tests
+        run: npm test
 
   build:
     name: Build wheel + sdist
