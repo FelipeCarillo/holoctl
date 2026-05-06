@@ -111,7 +111,10 @@ body {
   font-family: var(--font);
   background: var(--bg-0);
   color: var(--text-0);
-  min-height: 100vh;
+  /* Lock the page to the viewport — no global scroll. Inner scroll regions
+     (each kanban column, the content-body wrapper) handle their own overflow. */
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -130,7 +133,7 @@ code {
 }
 
 /* ── Layout ── */
-.app { display: flex; width: 100%; min-height: 100vh; }
+.app { display: flex; width: 100%; height: 100vh; overflow: hidden; }
 
 /* ── Sidebar ── */
 .sidebar {
@@ -350,14 +353,15 @@ code {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  /* Without `min-width: 0`, a flex item defaults to `min-width: auto` and
-     grows to fit its widest child. That made the kanban (which is wider than
-     the viewport on multi-column boards) push the entire `.main` past the
-     viewport edge, causing the WHOLE page to scroll horizontally — sidebar
-     and all. With this, the overflow stays contained inside `.content`,
-     where `overflow-x: auto` actually does its job. */
+  height: 100vh;
+  overflow: hidden;
+  /* Without `min-width: 0` and `min-height: 0`, a flex item defaults to
+     `auto` mins and grows to fit its widest/tallest child. That made the
+     kanban (which is wider AND taller than the viewport on busy boards)
+     push the entire `.main` past the viewport edges, causing the WHOLE
+     page to scroll. With these, overflow stays contained inside `.content`. */
   min-width: 0;
+  min-height: 0;
 }
 
 .topbar {
@@ -395,9 +399,33 @@ code {
 .content {
   flex: 1;
   padding: 28px;
-  overflow-x: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   animation: fadeUp 0.3s var(--ease);
 }
+
+/* Wrapper around every page's content. Default behavior: scroll vertically
+   inside this box so the page itself never grows past the viewport.
+   Overridden below for the board page (kanban handles its own layout). */
+.content-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Board page: kanban needs to be full-height with horizontal scroll INSIDE
+   it (so the bar lands at the visible viewport bottom, not below the last
+   ticket card). Each column scrolls vertically on its own. */
+.content-body:has(> .kanban),
+.content-body:has(> .board-header) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.content-body > .board-header { flex-shrink: 0; }
 
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }
@@ -405,12 +433,23 @@ code {
 }
 
 /* ── Tabs ── */
+/* Content-wrap stacks tabs (if any) on top of .content. Flex column so that
+   .content can `flex: 1; min-height: 0` and contain its scroll. */
+.content-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .tabs {
   display: flex;
   gap: 0;
   padding: 0 28px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 [data-theme="light"] .tabs { background: rgba(248,248,250,0.85); }
@@ -698,7 +737,14 @@ code {
   display: flex;
   gap: 14px;
   min-width: fit-content;
-  align-items: flex-start;
+  align-items: stretch;
+  /* Take all the height of .content-body so the horizontal scrollbar (when
+     the kanban is wider than viewport) lands at the visible bottom edge,
+     not below the tallest column. */
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .kanban-col {
@@ -707,7 +753,12 @@ code {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Each column is a flex column whose ticket-list scrolls internally. */
+  max-height: 100%;
+  min-height: 0;
 }
+
+.kanban-col-header { flex-shrink: 0; }
 
 .kanban-col-header {
   display: flex;
@@ -743,7 +794,13 @@ code {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 60px;
+  /* Per-column vertical scroll. With `flex: 1; min-height: 0` the cards
+     area takes whatever room is left after the column header and scrolls
+     internally instead of pushing the column past its parent. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .kanban-card {
