@@ -4,6 +4,15 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+### Fixed (dashboard)
+
+- **Kanban now updates live without a page refresh.** SSE was already firing `board-update` events on every `index.json` mtime change but the JS handler only showed a toast. The handler now fetches a new `/api/project/<alias>/board-html` HTML fragment and atomically swaps the `<div id="kanban">` in place. New tickets, status moves, and ticket edits show up immediately. Falls back to the toast on fetch error and re-tries on the next event.
+- **Kanban card left border no longer looks "bitten" at the corners.** Was caused by mixing a 1px border with a 3px `border-left` under `border-radius` — the rounded corners only honored the smaller width and clipped the colored bar. Replaced the border with a `::before` pseudo-element so the priority stripe lives inside the rounded card and renders cleanly when the card is at rest.
+
+### Added
+
+- `GET /api/project/<alias>/board-html` returns just the kanban fragment as HTML, used by the SSE swap above.
+
 ### Performance
 
 - **Dashboard hot path: ~14 git subprocess calls → 0.** `discover_repos()` no longer shells out to `git` for every subproject. Branch, commit hash, and remote URL are now read directly from `.git/HEAD`, `.git/refs/`, `.git/packed-refs`, and `.git/config` via a new `read_git_fast()` helper. The `dirty` flag (`git status --porcelain`) is the only call that genuinely requires git's working-tree scan; it now runs **only** on the explicit Repos tab and `holoctl repo info`. Massive win on Windows + corporate AV, where each subprocess spawn cost 100-300ms.

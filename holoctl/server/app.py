@@ -317,10 +317,11 @@ def _home_page(projects: list[dict]) -> str:
     return f'<div class="project-grid">{cards}</div>'
 
 
-def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
-    statuses = config["board"]["statuses"]
-    alias = project["alias"]
-    path_display = project.get("path", "")
+def _kanban_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
+    """Build the `<div class="kanban">` block. Used by both the full board page
+    and the `/api/.../board-html` fragment endpoint that the SSE client swaps
+    in on each `board-update` event.
+    """
     cols = ""
     for status in statuses:
         col_tickets = [t for t in tickets if t["status"] == status]
@@ -349,11 +350,16 @@ def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
   </div>
   <div class="kanban-cards">{cards}</div>
 </div>"""
+    return f'<div class="kanban" id="kanban">{cols}</div>'
 
+
+def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
+    alias = project["alias"]
+    path_display = project.get("path", "")
     live = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
     path_el = f'<span class="board-path">{_e(path_display)}</span>'
     header = f'<div class="board-header">{live}{path_el}</div>'
-    return f'{header}<div class="kanban" id="kanban">{cols}</div>'
+    return header + _kanban_html(tickets, config["board"]["statuses"], alias)
 
 
 def _agents_page(agents: list[dict], alias: str = "") -> str:
@@ -803,6 +809,22 @@ def api_board(alias: str):
     if index_path.exists():
         return json.loads(index_path.read_text(encoding="utf-8"))
     return {"meta": {}, "tickets": []}
+
+
+@app.get("/api/project/{alias}/board-html", response_class=HTMLResponse)
+def api_board_html(alias: str):
+    """Return just the `<div class="kanban">` fragment.
+
+    The dashboard's SSE client swaps this into the page on every
+    `board-update` event, so tickets appear/move/disappear without a
+    full reload.
+    """
+    project = _get_project(alias)
+    if not project:
+        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+    board = Board(Path(project["path"]), project["config"])
+    tickets = board.ls()
+    return HTMLResponse(_kanban_html(tickets, project["config"]["board"]["statuses"], alias))
 
 
 @app.get("/api/project/{alias}/events")

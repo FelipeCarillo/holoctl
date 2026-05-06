@@ -742,24 +742,39 @@ code {
 .kanban-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-left: 3px solid transparent;
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 14px 16px 14px 19px;
   transition: all 0.2s var(--ease);
   cursor: pointer;
   display: block;
+  position: relative;
+  overflow: hidden;
 }
+
+/* Priority stripe as a pseudo-element so the card keeps a uniform 1px border.
+   The previous `border-left: 3px` mixed with the 1px on the other three sides
+   collided with `border-radius`, leaving the top-left and bottom-left corners
+   looking "bitten". */
+.kanban-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: transparent;
+}
+
+.kanban-card[data-p="p0"]::before { background: var(--red); }
+.kanban-card[data-p="p1"]::before { background: var(--yellow); }
+.kanban-card[data-p="p2"]::before { background: var(--blue); }
+.kanban-card[data-p="p3"]::before { background: var(--text-3); }
 
 .kanban-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: var(--border-hover);
 }
-
-.kanban-card[data-p="p0"] { border-left-color: var(--red); }
-.kanban-card[data-p="p1"] { border-left-color: var(--yellow); }
-.kanban-card[data-p="p2"] { border-left-color: var(--blue); }
-.kanban-card[data-p="p3"] { border-left-color: var(--text-3); }
 
 .kanban-card-top {
   display: flex;
