@@ -4,6 +4,10 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+### Fixed (server)
+
+- **SSE board updates were silently broken: required F5 to see new tickets.** PR #9 wired the kanban DOM swap on every `board-update` event, but the SSE handler emitted `data: {multi-line JSON}` directly. The SSE protocol treats every `\n` inside the data field as a record terminator, so the browser only saw `e.data === "{"`. The handler's deduplication check (`e.data === lastData`) then matched on every event and never fired the swap. Fix: compact the JSON to a single line via `json.dumps(json.loads(raw), separators=(",", ":"))` before yielding. Live updates now work.
+
 ### Added
 
 - `GET /api/project/<alias>/board-html` returns just the kanban fragment as HTML, used by the SSE swap.
