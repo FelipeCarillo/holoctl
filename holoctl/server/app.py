@@ -748,8 +748,19 @@ def project_repos(alias: str):
     project = _get_project(alias)
     if not project:
         return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
+    # The Repos tab is the only place that shows dirty state, so this is the
+    # only route that pays the `git status` subprocess cost (one per subrepo).
+    repos = discover_repos(
+        Path(project["path"]),
+        include_manual=project["config"]["project"].get("repos", []),
+        with_dirty=True,
+    )
+    board = Board(Path(project["path"]), project["config"])
+    all_tickets = board.ls()
+    for r in repos:
+        r["ticketCount"] = sum(1 for t in all_tickets if r["name"] in (t.get("projects") or []))
     return _render(
-        project["name"], _repos_page(project.get("repos", []), alias),
+        project["name"], _repos_page(repos, alias),
         current_alias=alias, current_tab="repos",
         breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Repos"}],
         tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",

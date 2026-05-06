@@ -2,6 +2,14 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Performance
+
+- **Dashboard hot path: ~14 git subprocess calls → 0.** `discover_repos()` no longer shells out to `git` for every subproject. Branch, commit hash, and remote URL are now read directly from `.git/HEAD`, `.git/refs/`, `.git/packed-refs`, and `.git/config` via a new `read_git_fast()` helper. The `dirty` flag (`git status --porcelain`) is the only call that genuinely requires git's working-tree scan; it now runs **only** on the explicit Repos tab and `holoctl repo info`. Massive win on Windows + corporate AV, where each subprocess spawn cost 100-300ms.
+- New `discover_repos(..., with_dirty=False)` parameter. Pass `with_dirty=True` to opt into the slow-but-complete path.
+- New tests in `tests/test_git.py` cover `read_git_fast()`: loose refs, packed-refs, detached HEAD, gitfile pointers (worktrees/submodules), missing remote.
+
 ## [0.6.0] — 2026-05-06
 
 ### Removed (breaking)

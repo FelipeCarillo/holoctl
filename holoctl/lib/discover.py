@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Optional
 
-from .git import get_git_info
+from .git import get_git_info, read_git_fast
 
 
 PROJECT_MARKERS = [
@@ -40,8 +40,22 @@ def discover_repos(
     project_root: Path,
     include_manual: Optional[Iterable[dict]] = None,
     skip: Optional[Iterable[str]] = None,
+    *,
+    with_dirty: bool = False,
 ) -> list[dict]:
+    """Walk direct children of project_root and collect subprojects.
+
+    Git metadata (branch, commit hash, remote URL) is read directly from
+    `.git/HEAD` and `.git/config` — no subprocess. The `dirty` flag and
+    last-commit info are NOT included by default because they require
+    `git status --porcelain` which spawns a process per repo and is the
+    dominant cost on Windows + corporate AV.
+
+    Pass `with_dirty=True` to opt into the slow path (used by the dashboard
+    Repos tab and `holoctl repo info`).
+    """
     skip_set = set(SKIP_NAMES) | set(skip or [])
+    git_reader = get_git_info if with_dirty else read_git_fast
 
     try:
         entries = list(project_root.iterdir())
@@ -65,7 +79,7 @@ def discover_repos(
             "name": entry.name,
             "path": entry.name,
             "markers": markers,
-            "git": get_git_info(entry) if ".git" in markers else None,
+            "git": git_reader(entry) if ".git" in markers else None,
             "source": "auto",
         })
 
@@ -86,7 +100,7 @@ def discover_repos(
                 "name": manual.get("name") or abs_path.name,
                 "path": rel_path,
                 "markers": _detect_markers(abs_path),
-                "git": get_git_info(abs_path),
+                "git": git_reader(abs_path),
                 "description": manual.get("description"),
                 "source": "manual",
             }
