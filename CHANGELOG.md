@@ -2,6 +2,15 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added (board controls UI)
+
+- **Filter / sort / group-by panel above the kanban.** A collapsible "Filter, sort & group" toggle exposes six filter dropdowns (status, priority, agent, sprint, tag, project), a sort dropdown (created asc/desc, updated desc, priority p0→p3, title A-Z, ID numeric) and a group-by dropdown (status default, priority, sprint, agent, tag). Group-by rebuilds the columns entirely — e.g. switching to "agent" gives one column per assigned persona; tickets with multiple values are cloned into each bucket they belong to.
+- **State persists per workspace** via `localStorage` (`holoctl-bc:<alias>`). Refreshing or navigating away keeps the agent's view intact. The toggle auto-expands when any non-default filter / sort / group is active so the user sees what's filtering their view.
+- **Live updates honor the active controls.** When SSE swaps the kanban DOM (PR #9 / #10 mechanic), the new cards are run back through `__reapplyBoardControls()` so an incoming ticket lands in the correct bucket and respects the active filter rather than appearing unfiltered for one cycle.
+- All `kanban-card` elements now carry `data-id`, `data-status`, `data-p`, `data-agent`, `data-sprint`, `data-tags`, `data-projects`, `data-title`, `data-created`, `data-updated`. Filter/sort/group is fully client-side — no extra server round-trip.
+
 ## [0.7.1] — 2026-05-06
 
 ### Added (parallel decomposition)
