@@ -25,7 +25,7 @@ holoctl init
 ## Environment
 
 - holoctl version: <!-- `holoctl --version` -->
-- Install method: <!-- `uv tool install` / `pipx` / `pip` / npm -->
+- Install method: <!-- `uv tool install` / `pipx` / `pip` -->
 - OS + version: <!-- e.g. macOS 14.4, Windows 11, Ubuntu 22.04 -->
 - Python version: <!-- `python --version` -->
 - AI tool (if relevant): <!-- Claude Code, Cursor, Devin, ... -->

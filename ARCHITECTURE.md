@@ -4,50 +4,33 @@
 
 This document covers the **internal design**. For user-facing usage see [README.md](README.md).
 
-## Two implementations, one product
+## One implementation, one product
 
-Historical artifact: holoctl ships **two parallel implementations** of the same CLI:
+holoctl is a single Python package distributed via PyPI (`pip install holoctl`, `uv tool install holoctl`, or `pipx install holoctl`). The CLI is built with `typer`; the web dashboard with `fastapi` + `uvicorn`; tests with `pytest`.
 
-| | Node | Python |
-|---|---|---|
-| Entrypoint | `bin/holoctl.js` | `holoctl/__main__.py` |
-| CLI framework | `commander` | `typer` |
-| Web server | `hono` (`src/server/`) | `fastapi` + `uvicorn` (`holoctl/server/`) |
-| Distribution | npm (`holoctl`, alias `hctl`) | PyPI (`holoctl`, alias `hctl`) |
-| Tests | `node --test src/**/*.test.js` | `pytest tests/` |
-
-Currently the **PyPI** distribution is the canonical one (`pip install holoctl`); the Node tree is kept in sync but not yet published to npm. Either may be deprecated in a future release — track [#deprecation](https://github.com/FelipeCarillo/holoctl/issues) discussion.
-
-Every change to a `lib/` or CLI surface should be applied to **both** trees, or the diff explicitly noted as Python-only / Node-only.
+> **History**: holoctl started life as a Node CLI (`projctl` on npm). Versions 0.3.0 through 0.5.x shipped a parallel Node mirror under `src/` for compatibility. The Node tree was removed in 0.6.0 — Python is the only implementation going forward. If you need a JS-only entrypoint, an older release tag is available, but it is no longer maintained.
 
 ## Layout
 
 ```
 .
-├── bin/holoctl.js                Node CLI entrypoint
-├── src/                          Node implementation
-│   ├── cli/
-│   │   ├── index.js              registers all subcommands with commander
-│   │   └── commands/             init, board, repo, agent, compile, serve, sync, doctor
-│   ├── lib/
-│   │   ├── config.js             find_project_root, load/save config, marker auto-migrate
-│   │   ├── board.js              ticket CRUD, frontmatter <-> index.json sync
-│   │   ├── discover.js           auto-scan workspace for project markers
-│   │   ├── git.js                git info per subdir
-│   │   ├── markdown.js           frontmatter parse/serialize
-│   │   ├── filetree.js           dashboard file tree with tech-stack badges
-│   │   └── compiler/             one file per AI tool target
-│   ├── server/                   Hono web dashboard
-│   └── templates/                board WORKFLOW, slash commands, agents, instructions
-│
-├── holoctl/                      Python implementation (mirror of src/)
+├── holoctl/                      Python package (canonical)
 │   ├── __main__.py               typer app, registers subcommands
-│   ├── cli/                      init_, board, repo, agent, compile_, serve, sync_, doctor, overview
-│   ├── lib/                      config, board, discover, git, markdown, filetree, templates, compiler/
-│   └── server/                   FastAPI dashboard
+│   ├── cli/                      init, board, repo, agent, compile, serve, sync, doctor, overview
+│   ├── lib/
+│   │   ├── config.py             find_project_root, load/save config, marker auto-migrate
+│   │   ├── board.py              ticket CRUD, frontmatter <-> index.json sync
+│   │   ├── discover.py           auto-scan workspace for project markers
+│   │   ├── git.py                git info per subdir
+│   │   ├── markdown.py           frontmatter parse/serialize
+│   │   ├── filetree.py           file tree with tech-stack badges (used internally)
+│   │   ├── templates.py          init-time templates for agents/commands/context/instructions
+│   │   └── compiler/             one file per AI tool target
+│   ├── server/                   FastAPI dashboard
+│   └── templates/commands/       /holoctl bootstrap commands per tool target
 │
-├── pyproject.toml                Python package metadata
-├── package.json                  Node package metadata
+├── tests/                        pytest suite
+├── pyproject.toml                package metadata
 └── .holoctl/                     dogfood — this repo uses holoctl on itself
 ```
 
@@ -116,50 +99,50 @@ The `index.json` next to it is a denormalized projection used for fast filtering
 `holoctl compile --target X` is the bridge from `.holoctl/` to whatever the target tool reads at startup.
 
 ```
-.holoctl/agents/*.md       ──┐
-.holoctl/commands/*.md     ──┼──> compiler/X ──> CLAUDE.md, .claude/commands/*.md, ...
-.holoctl/instructions.md   ──┤                  AGENTS.md, .devin/skills/*/SKILL.md, ...
-.holoctl/context/*.md      ──┘                  .cursor/rules/*.md, .cursor/commands/*.md
-                                                .windsurfrules, .windsurf/workflows/*.md
-                                                .github/copilot-instructions.md, .github/prompts/*.md
+.holoctl/agents/*.md         ──┐
+.holoctl/commands/*.md       ──┼──> compiler/X ──> CLAUDE.md, .claude/commands/*.md, ...
+.holoctl/instructions.md     ──┤                  AGENTS.md, .devin/skills/*/SKILL.md, ...
+.holoctl/context/*.md        ──┤                  .cursor/rules/holoctl.md, .cursor/commands/*.md
+holoctl/templates/commands/  ──┘                  .windsurfrules, .windsurf/workflows/*.md
+                                                  .github/copilot-instructions.md, .github/prompts/*.md
 ```
 
-Each compiler module is a pure function from `(project_root, config) → list of (rel_path, content)`. Adding a new target is a single new module + an entry in the dispatch dict. See [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-compile-target).
+Each compiler module is a pure function from `(project_root, config) → list of (rel_path, content)`. Adding a new target is a single new module + an entry in the dispatch dict in `compiler/__init__.py`. See [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-compile-target).
+
+The `/holoctl` bootstrap slash command per target lives in `holoctl/templates/commands/holoctl-<target>.md` and is loaded at compile time via `compiler.template.load_bootstrap()`.
 
 The output is **always** prefixed with `<!-- Generated by holoctl. Do not edit directly. Source: .holoctl/ -->` so users know the file is regenerated.
 
 ### Templates and `sync`
 
-The contents of `.holoctl/board/WORKFLOW.md`, `.holoctl/commands/*.md`, and `.holoctl/board/tickets/_template.md` come from a template module embedded in the lib (`src/templates/index.js`, `holoctl/lib/templates.py`). When you upgrade holoctl, run `holoctl sync` to refresh those template-managed files **without** touching user-owned files (tickets, agent customizations, context docs, instructions.md).
+The contents of `.holoctl/board/WORKFLOW.md`, `.holoctl/commands/*.md`, and `.holoctl/board/tickets/_template.md` come from `holoctl/lib/templates.py`. When you upgrade holoctl, run `holoctl sync` to refresh those template-managed files **without** touching user-owned files (tickets, agent customizations, context docs, instructions.md).
 
-The list of synced files is hardcoded in `src/cli/commands/sync.js` (`SYNC_TARGETS`). Add a new template-managed file there if you introduce one.
+The list of synced files is hardcoded in `holoctl/cli/sync_.py` (`_SYNC_TARGETS`). Add a new template-managed file there if you introduce one.
 
 ## Web dashboard
 
-Single-page-app served from the language's stdlib HTTP server (Hono on Node, FastAPI on Python). All state read live from `.holoctl/`. Real-time board updates use **SSE** (Server-Sent Events), one stream that fans out events from `activity.jsonl` (which `board.js` / `board.py` append-write on every mutation).
+Single-page-app served from `holoctl/server/app.py` (FastAPI + uvicorn). All state read live from `.holoctl/`. Real-time board updates use **SSE** (Server-Sent Events) — the stream tails `index.json` `mtime` and pushes the new contents on change.
 
-Static assets:
-- `src/server/static/holoctl.css` + `holoctl-ui.js` (Node)
-- `holoctl/server/static/holoctl.css` + `holoctl-ui.js` (Python)
+Static assets live in `holoctl/server/static/holoctl.css` + `holoctl-ui.js`.
 
-These are mostly mirrors. Keep them in sync.
+The server binds to `127.0.0.1` by default. `--host 0.0.0.0` is opt-in and prints a warning, since the dashboard has no auth.
 
 ## What's deliberately NOT here
 
 - **No global registry of projects.** Removed in 0.5.0. Workspace = `.holoctl/` next to your code, period.
 - **No global slash command installer.** The old `holoctl setup-global` is gone. Slash commands are per-workspace, generated by `compile`.
-- **No npm postinstall hook.** Removed to keep installs side-effect-free.
 - **No telemetry, no auto-update check, no network calls** outside what `compile` writes to your filesystem.
 - **No daemon.** `holoctl serve` is a foreground process you start when you want the dashboard.
 
 ## File responsibility cheat sheet
 
-| Concern | Node | Python |
-|---|---|---|
-| Find `.holoctl/` upwards from cwd | `src/lib/config.js` `findProjectRoot` | `holoctl/lib/config.py` `find_project_root` |
-| Auto-rename `.projctl`/`.projhub` → `.holoctl` | `migrateLegacyMarker` (in config.js) | `_migrate_legacy_marker` (in config.py) |
-| Auto-discover subprojects | `src/lib/discover.js` `discoverRepos` | `holoctl/lib/discover.py` `discover_repos` |
-| Ticket CRUD + .md ↔ index.json sync | `src/lib/board.js` | `holoctl/lib/board.py` |
-| Generate AI-tool files | `src/lib/compiler/*.js` | `holoctl/lib/compiler/*.py` |
-| Refresh template-managed files | `src/cli/commands/sync.js` `SYNC_TARGETS` | `holoctl/cli/sync_.py` |
-| Web dashboard server | `src/server/index.js` (Hono) | `holoctl/server/app.py` (FastAPI) |
+| Concern | File |
+|---|---|
+| Find `.holoctl/` upwards from cwd | `holoctl/lib/config.py` `find_project_root` |
+| Auto-rename `.projctl`/`.projhub` → `.holoctl` | `_migrate_legacy_marker` (in `config.py`) |
+| Auto-discover subprojects | `holoctl/lib/discover.py` `discover_repos` |
+| Ticket CRUD + .md ↔ index.json sync | `holoctl/lib/board.py` |
+| Generate AI-tool files | `holoctl/lib/compiler/*.py` |
+| `/holoctl` bootstrap per target | `holoctl/templates/commands/holoctl-*.md` + `compiler/template.py:load_bootstrap` |
+| Refresh template-managed files | `holoctl/cli/sync_.py` `_SYNC_TARGETS` |
+| Web dashboard server | `holoctl/server/app.py` |

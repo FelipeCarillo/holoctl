@@ -155,8 +155,7 @@ holoctl serve --host 0.0.0.0   # expose on local network
 | Tab | What's there |
 |---|---|
 | **Board** | Kanban with real-time SSE updates, filter by project / agent / sprint |
-| **Projects** | Auto-discovered subdirs with git branch, dirty state, ticket count |
-| **Files** | File tree with tech-stack badges (Git, Node, React, Vue, Python, Go, Rust, Flutter, Docker, Terraform, iOS, Java, PHP) |
+| **Repos** | Auto-discovered subdirs with git branch, dirty state, ticket count |
 | **Agents** | Personas as cards |
 | **Commands** | Slash command library |
 | **Context** | Decisions log, free-form documents |
@@ -224,7 +223,7 @@ Earlier names of this project. holoctl reads `.projctl/` and `.projhub/` directo
 ## Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) — release notes
-- [ARCHITECTURE.md](ARCHITECTURE.md) — internal design, dual-stack Node + Python implementation, compile pipeline
+- [ARCHITECTURE.md](ARCHITECTURE.md) — internal design, compile pipeline
 - [SECURITY.md](SECURITY.md) — vulnerability reporting + threat model
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, conventions, how to add a compile target
 

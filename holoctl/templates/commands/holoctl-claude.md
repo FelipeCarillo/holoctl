@@ -17,7 +17,7 @@ Infer the project name and prefix from the current directory and run:
 holoctl init --name "<inferred>" --prefix "<INFERRED>"
 ```
 
-(Or `holoctl init` with no flags if the inference is obvious — the CLI derives both from `cwd.name`.) This auto-runs `holoctl compile --target claude` and `holoctl setup-global`.
+(Or `holoctl init` with no flags if the inference is obvious — the CLI derives both from `cwd.name`.) `init` auto-runs `holoctl compile --target claude` so `CLAUDE.md` and `.claude/commands/` get written in the same step.
 
 # Step 3 — Discover (read-only, parallel)
 

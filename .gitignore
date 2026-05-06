@@ -1,5 +1,4 @@
 # Dependencies
-node_modules/
 .venv/
 venv/
 env/
@@ -22,15 +21,8 @@ dist/
 htmlcov/
 coverage/
 
-# Node caches
-.nyc_output/
-*.tsbuildinfo
-
 # Logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # OS
 .DS_Store
@@ -65,4 +57,9 @@ CLAUDE.md
 .claude/agents/
 .claude/commands/
 .claude/settings*.json
+.cursor/
 .devin/
+.github/copilot-instructions.md
+.github/prompts/
+.windsurf/
+.windsurfrules
