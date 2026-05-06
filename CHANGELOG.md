@@ -17,6 +17,11 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 - `compile_devin` now writes a `.devin/skills/holoctl/SKILL.md` bootstrap.
 - `holoctl sync` now refreshes `.holoctl/board/tickets/_template.md` (it was missing from `_SYNC_TARGETS`).
 
+### Security
+
+- **Stored XSS in dashboard.** Every page generator (`_home_page`, `_board_page`, `_agents_page`, `_commands_page`, `_context_page`, `_repos_page`, `_ticket_detail_page`, `_doc_detail_page`, `_sidebar`, `_topbar`, `_layout`) was interpolating user-controlled strings (project name, ticket title, agent description, sprint label, repo path) raw into HTML. Anyone able to write `.holoctl/config.json` or a ticket frontmatter could inject script that ran in the browser of anyone hitting the dashboard. Especially relevant under the documented `holoctl serve --host 0.0.0.0` LAN-exposure mode. All interpolations now go through a new `_e()` helper that calls `html.escape(value, quote=True)`.
+- **Path traversal in agent and command detail routes.** `/project/<alias>/agents/<slug>` and `/project/<alias>/commands/<slug>` joined the URL `slug` parameter directly into a filesystem path with no containment check. Both routes now resolve to absolute paths and reject anything outside their respective `.holoctl/agents/` and `.holoctl/commands/` directories — same `Path.resolve()` + `relative_to()` pattern applied to the context route earlier.
+
 ### Fixed
 
 - `holoctl repo list` now merges auto-discovered subprojects with manual overrides from `config.project.repos[]`, matching the README/CHANGELOG 0.5.0 promise. Previously it only listed manual entries — same bug 0.5.1 fixed for `overview`.
