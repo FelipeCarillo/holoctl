@@ -205,12 +205,15 @@ Defaults live in code; only override what you need in `.holoctl/config.json`:
     "priorities": ["p0", "p1", "p2", "p3"],
     "idPadding": 3
   },
+  "git": { "checkDirty": false },
   "targets": ["claude", "cursor"],
   "server": { "port": 4242, "theme": "dark" }
 }
 ```
 
 `project.repos` is **optional** — only needed to register subdirs the auto-scan misses or to override their display name. Auto-discovered subdirs already appear without it.
+
+`git.checkDirty` defaults to **false**. When false, holoctl reads `.git/HEAD`, `.git/refs`, and `.git/config` directly and never spawns a `git` subprocess — the `dirty` flag in the dashboard Repos tab, `repo list`, `repo info`, and `overview` is omitted in exchange. Flip to `true` if you want the asterisk back; you can also pass `--check-dirty` once to `repo info` / `repo list` / `overview` for a single invocation. Off-by-default makes every dashboard click instant on Windows + corporate AV setups where each subprocess spawn costs 100-300ms.
 
 ---
 

@@ -25,6 +25,14 @@ _DEFAULTS: dict = {
     "commands": {
         "boardCli": "holoctl board",
     },
+    "git": {
+        # When false (default) holoctl never spawns `git status --porcelain`.
+        # The `dirty` flag in `repo list`, `repo info`, `overview`, and the
+        # dashboard Repos tab is omitted. Flip to true (per workspace) to
+        # restore it. Subprocess spawn is the dominant cost on Windows +
+        # corporate AV; off-by-default makes the dashboard instant.
+        "checkDirty": False,
+    },
     "targets": ["claude"],
     "server": {
         "port": 4242,

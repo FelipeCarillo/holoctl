@@ -94,3 +94,25 @@ def test_load_config_merges_defaults(tmp_path: Path):
     assert cfg["project"]["name"] == "P"
     assert "statuses" in cfg["board"]
     assert "backlog" in cfg["board"]["statuses"]
+
+
+def test_default_git_check_dirty_is_off(tmp_path: Path):
+    """git.checkDirty must default to False — that's the whole feature."""
+    (tmp_path / ".holoctl").mkdir()
+    (tmp_path / ".holoctl" / "config.json").write_text(
+        json.dumps({"project": {"name": "P", "prefix": "P"}}),
+        encoding="utf-8",
+    )
+    cfg = load_config(tmp_path)
+    assert cfg["git"]["checkDirty"] is False
+
+
+def test_user_can_opt_into_check_dirty(tmp_path: Path):
+    """User-supplied `git.checkDirty: true` should override the default."""
+    (tmp_path / ".holoctl").mkdir()
+    (tmp_path / ".holoctl" / "config.json").write_text(
+        json.dumps({"project": {"name": "P", "prefix": "P"}, "git": {"checkDirty": True}}),
+        encoding="utf-8",
+    )
+    cfg = load_config(tmp_path)
+    assert cfg["git"]["checkDirty"] is True
