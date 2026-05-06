@@ -4,6 +4,23 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+### Added (board agent + single-shot ticket creation)
+
+- **New `boardmaster` agent persona.** `holoctl init` (and `holoctl sync --agents`) now plants `.holoctl/agents/boardmaster.md` alongside the existing developer / reviewer / architect / researcher. The persona owns the ticket lifecycle: creates tickets with full body content in a single CLI call, edits body via stdin, moves through statuses, never touches the .md files by hand. Refuses requests for code / review / architecture work and routes to the right specialist.
+- **`Board.add()` accepts body content directly in the create patch.** No more two-pass "create then edit". The patch can include any of:
+  - `goal: list[str]` — each item rendered as `- [ ] <text>` under `# Goal — Definition of Done`.
+  - `start: str` / `context: str` / `outOfScope: str` / `executionNotes: str` — each rendered as a `# Section\n\n<text>` block. Empty / whitespace-only fields are silently dropped.
+  - `body: str` — full markdown override. When set, the structured fields above are ignored.
+
+  When no body fields are passed, `_create_ticket_md` falls back to the existing `_template.md` placeholders (backwards compatible).
+- **New CLI: `hctl board body <ID>`.** Reads new body from stdin (`echo '...' | hctl board body PRJ-001`) or `--from-file path`. Replaces the body of the ticket .md while preserving frontmatter and bumping `updated:`. Logs `ticket.body_updated` in `activity.jsonl`. Replaces the previous workflow of opening the .md file in an editor and hand-editing.
+- **`/ticket` slash command rewritten** to instruct the agent to pass body fields in the same `add` JSON, with worked examples covering the structured + raw-body forms.
+
+### Changed (token economy)
+
+- **`boardCli` default switched from `holoctl board` to `hctl board`.** `hctl` is the short alias of `holoctl` (both registered as entry points in `pyproject.toml`). Slash commands now use the shorter form by default — saves ~3 chars × dozens of CLI invocations per agent session, nontrivial token economy on long workflows. Existing workspaces with an explicit `boardCli` in their `config.json` are unaffected.
+- All `holoctl <cmd>` references in `holoctl/templates/commands/holoctl-*.md` (the `/holoctl` bootstrap commands per AI tool) switched to `hctl <cmd>` for the same reason.
+
 ### Fixed (server)
 
 - **SSE board updates were silently broken: required F5 to see new tickets.** PR #9 wired the kanban DOM swap on every `board-update` event, but the SSE handler emitted `data: {multi-line JSON}` directly. The SSE protocol treats every `\n` inside the data field as a record terminator, so the browser only saw `e.data === "{"`. The handler's deduplication check (`e.data === lastData`) then matched on every event and never fired the swap. Fix: compact the JSON to a single line via `json.dumps(json.loads(raw), separators=(",", ":"))` before yielding. Live updates now work.

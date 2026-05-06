@@ -268,10 +268,38 @@ class Board:
         data["meta"]["updated"] = now
         self._save(data)
 
-        self._create_ticket_md(ticket)
+        body = _build_body(patch)
+        self._create_ticket_md(ticket, body=body)
         _log_activity(self._root, {"type": "ticket.created", "ticket": ticket_id, "actor": "cli"})
 
         return ticket
+
+    def set_body(self, ticket_id: str, body: str) -> dict:
+        """Replace the body of a ticket .md, preserving frontmatter."""
+        data = self._load()
+        ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+        if not ticket:
+            raise KeyError(f"Ticket {ticket_id} not found")
+
+        if not ticket.get("file"):
+            raise ValueError(f"Ticket {ticket_id} has no file path; cannot edit body")
+
+        full_path = self._board_dir / ticket["file"]
+        if not full_path.exists():
+            raise FileNotFoundError(f"Ticket file missing: {full_path}")
+
+        existing = full_path.read_text(encoding="utf-8")
+        fm, _ = parse_frontmatter(existing)
+        now = _now()
+        fm["updated"] = now
+        full_path.write_text(serialize_frontmatter(fm, body), encoding="utf-8")
+
+        ticket["updated"] = now
+        data["meta"]["updated"] = now
+        self._save(data)
+        _log_activity(self._root, {"type": "ticket.body_updated", "ticket": ticket_id, "actor": "cli"})
+
+        return {"id": ticket_id, "bytes": len(body)}
 
     def next_id(self) -> str:
         data = self._load()
@@ -325,21 +353,22 @@ class Board:
         self._save(index)
         return {"ticketCount": len(tickets), "nextId": index["meta"]["nextId"]}
 
-    def _create_ticket_md(self, ticket: dict) -> None:
+    def _create_ticket_md(self, ticket: dict, body: str | None = None) -> None:
         md_path = self._board_dir / ticket["file"]
         md_path.parent.mkdir(parents=True, exist_ok=True)
 
-        template_path = self._tickets_dir / "_template.md"
-        if template_path.exists():
-            _, body = parse_frontmatter(template_path.read_text(encoding="utf-8"))
-        else:
-            body = (
-                "\n# Start\n\n(Current state before starting)\n\n"
-                "# Goal — Definition of Done\n\n- [ ] (criteria)\n\n"
-                "# Context\n\n(Why this ticket exists)\n\n"
-                "# Out of scope\n\n(What NOT to do)\n\n"
-                "# Execution notes\n\n(Agent fills during work)\n"
-            )
+        if body is None:
+            template_path = self._tickets_dir / "_template.md"
+            if template_path.exists():
+                _, body = parse_frontmatter(template_path.read_text(encoding="utf-8"))
+            else:
+                body = (
+                    "\n# Start\n\n(Current state before starting)\n\n"
+                    "# Goal — Definition of Done\n\n- [ ] (criteria)\n\n"
+                    "# Context\n\n(Why this ticket exists)\n\n"
+                    "# Out of scope\n\n(What NOT to do)\n\n"
+                    "# Execution notes\n\n(Agent fills during work)\n"
+                )
 
         agents_val = ticket["agent"]
         projects_val = ticket.get("projects") or []
@@ -359,6 +388,47 @@ class Board:
         }
 
         md_path.write_text(serialize_frontmatter(frontmatter, body), encoding="utf-8")
+
+
+_BODY_SECTIONS = (
+    ("start", "Start"),
+    ("context", "Context"),
+    ("outOfScope", "Out of scope"),
+    ("executionNotes", "Execution notes"),
+)
+
+
+def _build_body(patch: dict) -> str | None:
+    """Assemble a ticket body from structured fields in the create patch.
+
+    If `patch["body"]` is set, it wins (raw markdown override). Otherwise
+    each of the optional structured fields (`goal`, `start`, `context`,
+    `outOfScope`, `executionNotes`) is rendered into a `# Section` block
+    and concatenated. Sections without content are omitted entirely.
+
+    Returns None when no structured/body fields are present, signalling to
+    the caller that it should fall back to the `_template.md` placeholder.
+    """
+    raw = patch.get("body")
+    if raw is not None and str(raw).strip():
+        return str(raw)
+
+    sections: list[str] = []
+
+    goal = patch.get("goal")
+    if goal:
+        if isinstance(goal, str):
+            goal = [g.strip() for g in goal.split("\n") if g.strip()]
+        items = "\n".join(f"- [ ] {g}" for g in goal if str(g).strip())
+        if items:
+            sections.append(f"# Goal — Definition of Done\n\n{items}")
+
+    for key, header in _BODY_SECTIONS:
+        val = patch.get(key)
+        if val and str(val).strip():
+            sections.append(f"# {header}\n\n{str(val).strip()}")
+
+    return "\n\n".join(sections) + "\n" if sections else None
 
 
 def _normalize_array(val) -> list:
