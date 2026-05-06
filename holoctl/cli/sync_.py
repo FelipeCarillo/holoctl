@@ -16,6 +16,7 @@ _SYNC_TARGETS = {
     ".holoctl/commands/decision.md",
     ".holoctl/commands/close.md",
     ".holoctl/board/WORKFLOW.md",
+    ".holoctl/board/tickets/_template.md",
 }
 
 

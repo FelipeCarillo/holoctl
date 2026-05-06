@@ -12,7 +12,7 @@ app = typer.Typer()
 
 @app.command("compile")
 def compile_cmd(
-    target: Optional[str] = typer.Option(None, "--target", help="Target (claude, cursor, windsurf, copilot, generic)"),
+    target: Optional[str] = typer.Option(None, "--target", help="Target (claude, cursor, windsurf, copilot, devin, generic)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files"),
 ):
     """Compile .holoctl/ to tool-specific files."""
