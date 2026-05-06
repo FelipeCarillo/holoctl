@@ -273,7 +273,14 @@ def _render(title: str, content: str, *, projects: list[dict] | None = None,
     sidebar = _sidebar(all_projects, current_alias)
     topbar = _topbar(title, breadcrumbs or [], actions)
     tabs_html = _tabs(tabs, current_tab, tab_base) if tabs else ""
-    return _layout(title, tabs_html + f'<div class="content">{content}</div>', sidebar=sidebar, topbar=topbar)
+    # Inner `.content-body` is the scroll container. CSS picks the right
+    # behavior per page: vertical-scroll for grids/lists, flex-column with
+    # internal kanban scroll on the board.
+    return _layout(
+        title,
+        tabs_html + f'<div class="content"><div class="content-body">{content}</div></div>',
+        sidebar=sidebar, topbar=topbar,
+    )
 
 
 def _not_found_html(msg: str = "Not found") -> str:

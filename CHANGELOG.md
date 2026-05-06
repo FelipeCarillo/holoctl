@@ -8,6 +8,13 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 - **SSE board updates were silently broken: required F5 to see new tickets.** PR #9 wired the kanban DOM swap on every `board-update` event, but the SSE handler emitted `data: {multi-line JSON}` directly. The SSE protocol treats every `\n` inside the data field as a record terminator, so the browser only saw `e.data === "{"`. The handler's deduplication check (`e.data === lastData`) then matched on every event and never fired the swap. Fix: compact the JSON to a single line via `json.dumps(json.loads(raw), separators=(",", ":"))` before yielding. Live updates now work.
 
+### Fixed (dashboard layout)
+
+- **Page-level scroll replaced with contained scroll regions.** Previously busy boards or long agent lists made the entire page scroll vertically, hiding the topbar and pushing the sidebar. Now: `body`, `.app`, `.main`, and `.content` all lock to the viewport (`height: 100vh; overflow: hidden`); a new `.content-body` wrapper inside `.content` is the scroll surface (`overflow-y: auto` for grids/lists, opted into a flex-column kanban layout for the board page via CSS `:has()`).
+- **Each kanban column scrolls vertically on its own.** `.kanban-cards` now has `flex: 1; min-height: 0; overflow-y: auto`, so a column with 50 tickets scrolls inside the column instead of pushing the column past the viewport. Column headers stay pinned at the top of each column (`flex-shrink: 0`).
+- **Horizontal scrollbar on the board lands at the visible viewport bottom.** `.kanban` now has `overflow-x: auto; overflow-y: hidden` and is itself the horizontal scroll container, so the bar sits at the bottom of the visible content area regardless of how tall the tallest column is. Replaces the previous behavior where the bar appeared below the last ticket card (often off-screen).
+- `_render` wraps page content in `<div class="content-body">…</div>`. `.tabs` and `.content-wrap` are also flex-column constrained so they don't grow past the viewport.
+
 ### Added
 
 - `GET /api/project/<alias>/board-html` returns just the kanban fragment as HTML, used by the SSE swap.
