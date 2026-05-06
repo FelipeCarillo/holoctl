@@ -266,6 +266,53 @@ Updated context paragraph." | {cli} body PRJ-001
 
 This replaces the body, preserves frontmatter, and updates `updated:` automatically.
 
+# Work order — decomposing into a parallel-safe batch
+
+When the user asks for a feature/epic that the runtime should execute concurrently, you decompose it into N tickets and create them with **one** `{cli} batch` call. The CLI proves non-overlap before creating anything; if it rejects, fix the inputs and retry.
+
+Invariants you must satisfy in the batch:
+
+1. **Each ticket declares `files: ["path/a", "path/b"]`** — the exact files it will touch. The CLI requires this on batch.
+2. **No two tickets share a file.** If two need the same file, merge them or split that file into separable layers (e.g. signing.py vs verifier.py).
+3. **Each ticket's `goal` is independently achievable.** No DoD item references another ticket's output.
+4. **No `depends` between siblings.** If T-002 needs T-001 first, they're not parallel — create them with `{cli} add` separately.
+5. **Distinct `agent` per ticket when possible.** Same agent twice is fine if the runtime can fan out, but spreading across `developer` / `reviewer` / `architect` typically maps better to specialist subagents.
+6. **Shared marker.** Pass `shared.tags: ["par:<short-name>"]` (or `shared.sprint: "<name>"`) so the batch is recognizable later. The dashboard groups by tag/sprint.
+
+```bash
+{cli} batch '{{
+  "shared": {{
+    "projects": ["backend"],
+    "tags": ["par:auth-flow"]
+  }},
+  "tickets": [
+    {{
+      "title": "JWT signing module",
+      "agent": "developer",
+      "priority": "p1",
+      "files": ["src/auth/jwt.py"],
+      "goal": ["sign() emits HS256", "tests cover invalid key"]
+    }},
+    {{
+      "title": "Auth middleware",
+      "agent": "developer",
+      "priority": "p1",
+      "files": ["src/middleware/auth.py"],
+      "goal": ["verify+expiry+401", "tests pass"]
+    }},
+    {{
+      "title": "Auth integration tests",
+      "agent": "reviewer",
+      "priority": "p1",
+      "files": ["tests/test_auth.py"],
+      "goal": ["covers happy/expired/invalid token"]
+    }}
+  ]
+}}'
+```
+
+If the CLI returns an error like "File overlap" or "missing files field", **fix and retry** — never bypass with raw `add` calls that would skip the validation.
+
 # Work order — moving / setting fields
 
 - `{cli} move PRJ-001 doing` — status transition.
