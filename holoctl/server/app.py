@@ -329,29 +329,49 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
     """Build the `<div class="kanban">` block. Used by both the full board page
     and the `/api/.../board-html` fragment endpoint that the SSE client swaps
     in on each `board-update` event.
+
+    Cards carry a full set of `data-*` attributes so the client-side
+    filter / sort / group-by controls can rework the layout without a
+    server round-trip.
     """
     cols = ""
     for status in statuses:
         col_tickets = [t for t in tickets if t["status"] == status]
         cards = ""
         for t in col_tickets:
-            agents = ", ".join(t.get("agent") or []) or "—"
+            agents_list = t.get("agent") or []
+            agents_csv = ",".join(agents_list)
+            agents_display = ", ".join(agents_list) or "—"
             prio = t.get("priority", "p2")
             sprint = t.get("sprint") or ""
             sprint_chip = f'<span class="chip chip-sprint">{_e(sprint)}</span>' if sprint else ""
-            cards += f"""<a href="/project/{_e(alias)}/board/{_e(t['id'])}" class="kanban-card" data-p="{_e(prio)}" data-projects="{_e(','.join(t.get('projects') or []))}">
+            tags_csv = ",".join(t.get("tags") or [])
+            projects_csv = ",".join(t.get("projects") or [])
+            data_attrs = (
+                f'data-id="{_e(t["id"])}"'
+                f' data-status="{_e(status)}"'
+                f' data-p="{_e(prio)}"'
+                f' data-agent="{_e(agents_csv)}"'
+                f' data-sprint="{_e(sprint)}"'
+                f' data-tags="{_e(tags_csv)}"'
+                f' data-projects="{_e(projects_csv)}"'
+                f' data-title="{_e(t.get("title", ""))}"'
+                f' data-created="{_e(t.get("created", ""))}"'
+                f' data-updated="{_e(t.get("updated", ""))}"'
+            )
+            cards += f"""<a href="/project/{_e(alias)}/board/{_e(t['id'])}" class="kanban-card" {data_attrs}>
   <div class="kanban-card-top">
     <span class="kanban-card-id">{_e(t['id'])}</span>
     <span class="p-badge {_e(prio)}">{_e(prio)}</span>
   </div>
   <div class="kanban-card-title">{_e(t['title'][:60])}</div>
   <div class="kanban-card-meta">
-    <span class="chip chip-agent">{_e(agents)}</span>{sprint_chip}
+    <span class="chip chip-agent">{_e(agents_display)}</span>{sprint_chip}
   </div>
 </a>"""
         if not cards:
             cards = '<div class="kanban-empty">No tickets</div>'
-        cols += f"""<div class="kanban-col" data-status="{_e(status)}">
+        cols += f"""<div class="kanban-col" data-status="{_e(status)}" data-bucket="{_e(status)}">
   <div class="kanban-col-header">
     <span class="col-label">{_e(status.upper())}</span>
     <span class="count">{len(col_tickets)}</span>
@@ -367,7 +387,52 @@ def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
     live = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
     path_el = f'<span class="board-path">{_e(path_display)}</span>'
     header = f'<div class="board-header">{live}{path_el}</div>'
-    return header + _kanban_html(tickets, config["board"]["statuses"], alias)
+    return header + _board_controls_html() + _kanban_html(tickets, config["board"]["statuses"], alias)
+
+
+def _board_controls_html() -> str:
+    """Filter + sort + group-by panel above the kanban.
+
+    Options for each filter dropdown are populated client-side by scanning
+    `data-*` attributes off the cards already in the DOM. Server only emits
+    the skeleton, so re-renders (SSE swaps) don't need to know the option
+    set. State is persisted per-workspace in `localStorage`.
+    """
+    return """<div class="board-controls" id="board-controls" data-state="collapsed">
+  <button class="board-controls-toggle" data-bc-toggle aria-expanded="false">
+    <span class="board-controls-icon">⚙</span>
+    <span class="board-controls-label">Filter, sort &amp; group</span>
+    <span class="board-controls-count" id="board-controls-count"></span>
+  </button>
+  <div class="board-controls-body" id="board-controls-body">
+    <div class="board-controls-row">
+      <label class="bc-field"><span>Status</span><select data-filter="status"><option value="">All</option></select></label>
+      <label class="bc-field"><span>Priority</span><select data-filter="priority"><option value="">All</option></select></label>
+      <label class="bc-field"><span>Agent</span><select data-filter="agent"><option value="">All</option></select></label>
+      <label class="bc-field"><span>Sprint</span><select data-filter="sprint"><option value="">All</option></select></label>
+      <label class="bc-field"><span>Tag</span><select data-filter="tag"><option value="">All</option></select></label>
+      <label class="bc-field"><span>Project</span><select data-filter="project"><option value="">All</option></select></label>
+    </div>
+    <div class="board-controls-row">
+      <label class="bc-field"><span>Sort by</span><select data-sort>
+        <option value="created">Created (oldest first)</option>
+        <option value="created-desc">Created (newest first)</option>
+        <option value="updated-desc">Updated (recent first)</option>
+        <option value="priority">Priority (p0 → p3)</option>
+        <option value="title">Title (A-Z)</option>
+        <option value="id">ID (numeric)</option>
+      </select></label>
+      <label class="bc-field"><span>Group by</span><select data-group>
+        <option value="status">Status (default)</option>
+        <option value="priority">Priority</option>
+        <option value="sprint">Sprint</option>
+        <option value="agent">Agent</option>
+        <option value="tag">Tag</option>
+      </select></label>
+      <button class="bc-reset" data-bc-reset>Reset</button>
+    </div>
+  </div>
+</div>"""
 
 
 def _agents_page(agents: list[dict], alias: str = "") -> str:

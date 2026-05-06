@@ -1411,3 +1411,128 @@ details[open] > summary .tree-icon { content: '📂'; }
 @keyframes toastOut {
   to { opacity: 0; transform: translateY(8px) scale(0.95); }
 }
+
+/* ── Board controls (filter / sort / group-by) ── */
+.board-controls {
+  flex-shrink: 0;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.board-controls-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0;
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  border-radius: var(--radius);
+  transition: background 0.15s var(--ease);
+  text-align: left;
+}
+.board-controls-toggle:hover { background: var(--bg-hover); color: var(--text-0); }
+
+.board-controls-icon {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.board-controls-label { flex: 1; }
+
+.board-controls-count {
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.board-controls-count:empty { display: none; }
+
+.board-controls-body {
+  display: none;
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--border);
+  flex-direction: column;
+  gap: 10px;
+}
+
+.board-controls[data-state="expanded"] .board-controls-body {
+  display: flex;
+}
+
+.board-controls[data-state="expanded"] .board-controls-toggle {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.board-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.bc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 130px;
+}
+
+.bc-field span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.bc-field select {
+  padding: 6px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease);
+}
+.bc-field select:hover { border-color: var(--border-hover); }
+.bc-field select:focus { outline: none; border-color: var(--accent); }
+
+.bc-reset {
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s var(--ease);
+}
+.bc-reset:hover {
+  background: var(--red-subtle);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* Hidden card via filter — uses class so it composes with other style state. */
+.kanban-card.bc-hidden { display: none !important; }
+
+/* When filter hides every card in a column, the empty placeholder reappears. */
+.kanban-cards:has(> .kanban-card:not(.bc-hidden)) > .kanban-empty { display: none; }
+
