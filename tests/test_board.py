@@ -211,3 +211,97 @@ def test_created_and_updated_use_iso_8601_utc(workspace: Path, workspace_config:
     iso_z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
     assert iso_z.match(t["created"]), f"created not ISO+Z: {t['created']!r}"
     assert iso_z.match(t["updated"]), f"updated not ISO+Z: {t['updated']!r}"
+
+
+def test_add_with_structured_body_fields(workspace: Path, workspace_config: dict):
+    """`goal` + `context` flow into the .md as proper sections."""
+    board = Board(workspace, workspace_config)
+    t = board.add({
+        "title": "Auth",
+        "agent": "developer",
+        "goal": ["JWT signing", "Tests pass"],
+        "context": "Sessions are cookie-based today.",
+    })
+    md = (workspace / ".holoctl" / "board" / t["file"]).read_text(encoding="utf-8")
+    assert "# Goal — Definition of Done" in md
+    assert "- [ ] JWT signing" in md
+    assert "- [ ] Tests pass" in md
+    assert "# Context" in md
+    assert "Sessions are cookie-based today." in md
+    # Optional sections not provided → not rendered.
+    assert "# Start" not in md
+    assert "# Out of scope" not in md
+
+
+def test_add_with_raw_body_overrides_template(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    t = board.add({
+        "title": "X",
+        "agent": "developer",
+        "body": "# Anything goes\n\njust freeform text",
+    })
+    md = (workspace / ".holoctl" / "board" / t["file"]).read_text(encoding="utf-8")
+    assert "# Anything goes" in md
+    assert "just freeform text" in md
+    # Default template sections must not leak in.
+    assert "# Start" not in md
+    assert "# Goal — Definition of Done" not in md
+
+
+def test_add_body_field_wins_over_structured(workspace: Path, workspace_config: dict):
+    """`body` is the override — structured fields are ignored when both passed."""
+    board = Board(workspace, workspace_config)
+    t = board.add({
+        "title": "X",
+        "agent": "developer",
+        "body": "# Override",
+        "goal": ["should be ignored"],
+        "context": "should be ignored",
+    })
+    md = (workspace / ".holoctl" / "board" / t["file"]).read_text(encoding="utf-8")
+    assert "# Override" in md
+    assert "should be ignored" not in md
+
+
+def test_add_without_body_falls_back_to_template(workspace: Path, workspace_config: dict):
+    """No body / structured fields → use the existing _template.md content."""
+    template = workspace / ".holoctl" / "board" / "tickets" / "_template.md"
+    template.write_text(
+        "---\nid: TPL\n---\n\n# Goal — Definition of Done\n\n- [ ] template criterion\n",
+        encoding="utf-8",
+    )
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X", "agent": "developer"})
+    md = (workspace / ".holoctl" / "board" / t["file"]).read_text(encoding="utf-8")
+    assert "template criterion" in md
+
+
+def test_set_body_replaces_body_keeps_frontmatter(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X", "agent": "developer", "goal": ["original"]})
+    result = board.set_body(t["id"], "# Goal — Definition of Done\n\n- [x] new content")
+    assert result["id"] == t["id"]
+
+    md = (workspace / ".holoctl" / "board" / t["file"]).read_text(encoding="utf-8")
+    # New body present, old goal item gone.
+    assert "- [x] new content" in md
+    assert "- [ ] original" not in md
+    # Frontmatter preserved.
+    assert f"id: {t['id']}" in md
+    assert "title: X" in md
+
+
+def test_set_body_rejects_unknown_ticket(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    with pytest.raises(KeyError, match="not found"):
+        board.set_body("MISSING-001", "# X")
+
+
+def test_set_body_logs_activity(workspace: Path, workspace_config: dict):
+    import json as _j
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X", "agent": "developer"})
+    board.set_body(t["id"], "# Updated")
+    log = (workspace / ".holoctl" / "activity.jsonl").read_text(encoding="utf-8")
+    entries = [_j.loads(line) for line in log.strip().splitlines() if line]
+    assert any(e["type"] == "ticket.body_updated" and e["ticket"] == t["id"] for e in entries)

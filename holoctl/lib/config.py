@@ -23,7 +23,11 @@ _DEFAULTS: dict = {
         "requireTicket": True,
     },
     "commands": {
-        "boardCli": "holoctl board",
+        # `hctl` is the short alias of `holoctl` (both are registered in
+        # pyproject.toml as entry points). Defaulting slash commands to the
+        # short form saves ~3 chars per call × dozens of calls per agent
+        # session — nontrivial token economy on long workflows.
+        "boardCli": "hctl board",
     },
     "git": {
         # When false (default) holoctl never spawns `git status --porcelain`.

@@ -126,6 +126,38 @@ def add_cmd(ticket_json: str = typer.Argument(..., help="JSON ticket data")):
         raise typer.Exit(1)
 
 
+@app.command("body")
+def body_cmd(
+    ticket_id: str = typer.Argument(...),
+    from_file: Optional[str] = typer.Option(None, "--from-file", "-f", help="Read body from a file instead of stdin"),
+):
+    """Replace the body of a ticket .md (preserves frontmatter)."""
+    import sys
+    board, _, _ = _get_board()
+    if from_file:
+        from pathlib import Path
+        body_text = Path(from_file).read_text(encoding="utf-8")
+    elif not sys.stdin.isatty():
+        body_text = sys.stdin.read()
+    else:
+        console.print(
+            "[red]Pipe the new body via stdin or pass --from-file <path>.[/red]\n"
+            "[dim]Example: echo '# Goal\\n- [ ] criterion' | hctl board body PRJ-001[/dim]"
+        )
+        raise typer.Exit(1)
+
+    if not body_text.strip():
+        console.print("[red]Body is empty. Refusing to overwrite ticket with nothing.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        result = board.set_body(ticket_id, body_text)
+        console.print(f"[green]{result['id']} body updated[/green] [dim]({result['bytes']} bytes)[/dim]")
+    except (KeyError, FileNotFoundError, ValueError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+
 @app.command("next-id")
 def next_id_cmd():
     """Show the next available ticket ID."""

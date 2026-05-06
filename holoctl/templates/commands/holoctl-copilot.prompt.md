@@ -7,11 +7,11 @@ description: Onboard, configure or inspect holoctl for the current project
 
 # Step 1 — Detect state
 
-`holoctl doctor`. "No .holoctl/ found" → Step 2. Otherwise → Step 5.
+`hctl doctor`. "No .holoctl/ found" → Step 2. Otherwise → Step 5.
 
 # Step 2 — Init
 
-Infer name + prefix; `holoctl init --name "<n>" --prefix "<P>"`. Auto-compiles copilot.
+Infer name + prefix; `hctl init --name "<n>" --prefix "<P>"`. Auto-compiles copilot.
 
 # Step 3 — Discover (read-only)
 
@@ -19,14 +19,14 @@ Read README, package files, top-level dirs (flag candidates with package files o
 
 # Step 4 — Configure (execute by default)
 
-- **4.1 Sub-repos (✋ ASK once)**: if multi-project, one aggregated question; then `holoctl repo add ./<path> --name <n> --description "<one-line>"` for each approved. Single project → skip.
+- **4.1 Sub-repos (✋ ASK once)**: if multi-project, one aggregated question; then `hctl repo add ./<path> --name <n> --description "<one-line>"` for each approved. Single project → skip.
 - **4.2 Context files (write directly)**: `objective.md`, `architecture.md`, `conventions.md`, `instructions.md`.
 - **4.3 Ambiguity escape (✋ ASK only if needed)**: if unable to infer the objective, ask once. Otherwise write directly.
-- **4.4** `holoctl compile --target copilot`.
+- **4.4** `hctl compile --target copilot`.
 
 # Step 5 — Show overview (always)
 
-Run `holoctl overview` and show the full output. Single canonical snapshot: project name, board counts, repos, agents, slash commands, dashboard URL, suggested next.
+Run `hctl overview` and show the full output. Single canonical snapshot: project name, board counts, repos, agents, slash commands, dashboard URL, suggested next.
 
 # Hard rules
-- Default = execute. Show command output. Never overwrite existing AI rules. If `.holoctl/` exists when initing, ask before touching it. Always end with `holoctl overview`.
+- Default = execute. Show command output. Never overwrite existing AI rules. If `.holoctl/` exists when initing, ask before touching it. Always end with `hctl overview`.

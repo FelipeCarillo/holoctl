@@ -4,7 +4,7 @@ Onboard, configure or inspect holoctl for the current project.
 
 # Step 1 — Detect state
 
-Run `holoctl doctor`.
+Run `hctl doctor`.
 
 - **Errors with "No .holoctl/ found"** → uninitialized. Go to Step 2.
 - **Returns checks** → already initialized. Go to Step 5 (Inspect).
@@ -14,10 +14,10 @@ Run `holoctl doctor`.
 Infer the project name and prefix from the current directory and run:
 
 ```bash
-holoctl init --name "<inferred>" --prefix "<INFERRED>"
+hctl init --name "<inferred>" --prefix "<INFERRED>"
 ```
 
-(Or `holoctl init` with no flags if the inference is obvious — the CLI derives both from `cwd.name`.) `init` auto-runs `holoctl compile --target claude` so `CLAUDE.md` and `.claude/commands/` get written in the same step.
+(Or `hctl init` with no flags if the inference is obvious — the CLI derives both from `cwd.name`.) `init` auto-runs `hctl compile --target claude` so `CLAUDE.md` and `.claude/commands/` get written in the same step.
 
 # Step 3 — Discover (read-only, parallel)
 
@@ -38,7 +38,7 @@ If you found multiple sub-projects, **ask one aggregate question**:
 
 For each one approved, run:
 ```bash
-holoctl repo add ./<path> --name <name> --description "<one-line>"
+hctl repo add ./<path> --name <name> --description "<one-line>"
 ```
 
 If single project, **skip silently** (no question).
@@ -62,11 +62,11 @@ Then write `objective.md` from the answer. Don't ask anything else.
 
 ## 4.4 — Recompile
 
-Run `holoctl compile --target claude` to regenerate `CLAUDE.md` and `.claude/commands/*` from the populated `.holoctl/`.
+Run `hctl compile --target claude` to regenerate `CLAUDE.md` and `.claude/commands/*` from the populated `.holoctl/`.
 
 # Step 5 — Show overview (always)
 
-Run `holoctl overview` and **show the full output to the user**. This is the canonical project snapshot:
+Run `hctl overview` and **show the full output to the user**. This is the canonical project snapshot:
 
 - Project name, prefix, and holoctl version
 - Objective (first paragraph from `objective.md`)
@@ -85,4 +85,4 @@ This replaces any manual summary you would have written. Don't paraphrase — sh
 - **Show command output** so the user sees what happened.
 - **Never overwrite** existing AI rules (`.cursor/rules/`, hand-edited `CLAUDE.md`, etc) — read for context only.
 - **If `.holoctl/` already exists** when you tried to init, stop and ask whether to reuse, refresh, or abort. Don't blow away existing state.
-- **Always end with `holoctl overview`** — both for fresh init and for the inspect-mode path.
+- **Always end with `hctl overview`** — both for fresh init and for the inspect-mode path.
