@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import html
 import json
 from pathlib import Path
 
@@ -25,6 +26,20 @@ def _list_workspace_compat() -> list[dict]:
     return [{"path": str(root), "alias": root.name, "added": "", "lastSeen": ""}]
 
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _e(value) -> str:
+    """HTML-escape an arbitrary value before interpolation.
+
+    Anything that came from .holoctl/ (config, ticket frontmatter, agent files,
+    context docs) is treated as untrusted text. Without this, a project name or
+    ticket title with `<script>` would execute in the dashboard, which matters
+    when `holoctl serve --host 0.0.0.0` exposes it on the network.
+    """
+    if value is None:
+        return ""
+    return html.escape(str(value), quote=True)
+
 
 app = FastAPI(title="holoctl dashboard", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
@@ -163,7 +178,7 @@ def _layout(title: str, body: str, *, sidebar: str = "", topbar: str = "") -> st
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{title} — holoctl</title>
+  <title>{_e(title)} — holoctl</title>
   {boot_script}
   <link rel="stylesheet" href="/static/holoctl.css">
 </head>
@@ -185,12 +200,12 @@ def _sidebar(projects: list[dict], current_alias: str = "") -> str:
     for p in projects:
         active = "active" if p["alias"] == current_alias else ""
         doing = p.get("counts", {}).get("doing", 0)
-        badge = f'<span class="badge">{doing}</span>' if doing > 0 else ""
+        badge = f'<span class="badge">{int(doing)}</span>' if doing > 0 else ""
         initial = (p.get("prefix") or p["name"][:2] or "?")[:2].upper()
         links += (
-            f'<a href="/project/{p["alias"]}/board" class="nav-item {active}" title="{p["name"]}">'
-            f'<span class="nav-icon">{initial}</span>'
-            f'<span class="nav-item-text">{p["name"]}</span>'
+            f'<a href="/project/{_e(p["alias"])}/board" class="nav-item {active}" title="{_e(p["name"])}">'
+            f'<span class="nav-icon">{_e(initial)}</span>'
+            f'<span class="nav-item-text">{_e(p["name"])}</span>'
             f'{badge}</a>'
         )
 
@@ -224,19 +239,19 @@ def _topbar(title: str, breadcrumbs: list[dict] = None, actions: str = "") -> st
     crumbs = ""
     for b in (breadcrumbs or []):
         if b.get("href"):
-            crumbs += f'<a href="{b["href"]}">{b["label"]}</a><span class="sep">/</span>'
+            crumbs += f'<a href="{_e(b["href"])}">{_e(b["label"])}</a><span class="sep">/</span>'
         else:
-            crumbs += f'<span>{b["label"]}</span>'
+            crumbs += f'<span>{_e(b["label"])}</span>'
     return f'<div class="topbar-breadcrumb">{crumbs}</div><div class="topbar-actions">{actions}</div>'
 
 
 def _tabs(tabs: list[dict], current: str, base: str) -> str:
-    html = '<div class="tabs">'
+    out = '<div class="tabs">'
     for t in tabs:
         active = "active" if t["id"] == current else ""
-        html += f'<a href="{base}/{t["id"]}" class="tab {active}">{t["label"]}</a>'
-    html += "</div>"
-    return html
+        out += f'<a href="{_e(base)}/{_e(t["id"])}" class="tab {active}">{_e(t["label"])}</a>'
+    out += "</div>"
+    return out
 
 
 _PROJECT_TABS = [
@@ -261,7 +276,7 @@ def _render(title: str, content: str, *, projects: list[dict] | None = None,
 
 
 def _not_found_html(msg: str = "Not found") -> str:
-    return f'<div class="empty-state"><h3>{msg}</h3></div>'
+    return f'<div class="empty-state"><h3>{_e(msg)}</h3></div>'
 
 
 # ── page generators ───────────────────────────────────────────────────────────
@@ -272,23 +287,23 @@ def _home_page(projects: list[dict]) -> str:
     cards = ""
     for p in projects:
         counts = p.get("counts", {})
-        doing = counts.get("doing", 0)
-        backlog = counts.get("backlog", 0)
-        done = counts.get("done", 0)
-        total = max(p.get("ticketCount", 0), 1)
+        doing = int(counts.get("doing", 0))
+        backlog = int(counts.get("backlog", 0))
+        done = int(counts.get("done", 0))
+        total = max(int(p.get("ticketCount", 0)), 1)
         prefix = p.get("prefix", "")
-        targets = "".join(f'<span class="chip chip-target">{t}</span>' for t in p.get("targets", []))
+        targets = "".join(f'<span class="chip chip-target">{_e(t)}</span>' for t in p.get("targets", []))
         progress = f"""<div class="progress-bar">
   <div class="progress-segment done" style="width:{done/total*100:.0f}%"></div>
   <div class="progress-segment doing" style="width:{doing/total*100:.0f}%"></div>
   <div class="progress-segment backlog" style="width:{backlog/total*100:.0f}%"></div>
 </div>"""
-        cards += f"""<a href="/project/{p['alias']}/board" class="project-card">
+        cards += f"""<a href="/project/{_e(p['alias'])}/board" class="project-card">
   <div class="project-card-header">
-    <div class="project-card-icon">{prefix[:2]}</div>
+    <div class="project-card-icon">{_e(prefix[:2])}</div>
     <div>
-      <div class="project-card-name">{p['name']}</div>
-      <div class="project-card-sub">{p['alias']}</div>
+      <div class="project-card-name">{_e(p['name'])}</div>
+      <div class="project-card-sub">{_e(p['alias'])}</div>
     </div>
   </div>
   {progress}
@@ -314,29 +329,29 @@ def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
             agents = ", ".join(t.get("agent") or []) or "—"
             prio = t.get("priority", "p2")
             sprint = t.get("sprint") or ""
-            sprint_chip = f'<span class="chip chip-sprint">{sprint}</span>' if sprint else ""
-            cards += f"""<a href="/project/{alias}/board/{t['id']}" class="kanban-card" data-p="{prio}" data-projects="{','.join(t.get('projects') or [])}">
+            sprint_chip = f'<span class="chip chip-sprint">{_e(sprint)}</span>' if sprint else ""
+            cards += f"""<a href="/project/{_e(alias)}/board/{_e(t['id'])}" class="kanban-card" data-p="{_e(prio)}" data-projects="{_e(','.join(t.get('projects') or []))}">
   <div class="kanban-card-top">
-    <span class="kanban-card-id">{t['id']}</span>
-    <span class="p-badge {prio}">{prio}</span>
+    <span class="kanban-card-id">{_e(t['id'])}</span>
+    <span class="p-badge {_e(prio)}">{_e(prio)}</span>
   </div>
-  <div class="kanban-card-title">{t['title'][:60]}</div>
+  <div class="kanban-card-title">{_e(t['title'][:60])}</div>
   <div class="kanban-card-meta">
-    <span class="chip chip-agent">{agents}</span>{sprint_chip}
+    <span class="chip chip-agent">{_e(agents)}</span>{sprint_chip}
   </div>
 </a>"""
         if not cards:
             cards = '<div class="kanban-empty">No tickets</div>'
-        cols += f"""<div class="kanban-col" data-status="{status}">
+        cols += f"""<div class="kanban-col" data-status="{_e(status)}">
   <div class="kanban-col-header">
-    <span class="col-label">{status.upper()}</span>
+    <span class="col-label">{_e(status.upper())}</span>
     <span class="count">{len(col_tickets)}</span>
   </div>
   <div class="kanban-cards">{cards}</div>
 </div>"""
 
     live = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
-    path_el = f'<span class="board-path">{path_display}</span>'
+    path_el = f'<span class="board-path">{_e(path_display)}</span>'
     header = f'<div class="board-header">{live}{path_el}</div>'
     return f'{header}<div class="kanban" id="kanban">{cols}</div>'
 
@@ -353,15 +368,15 @@ def _agents_page(agents: list[dict], alias: str = "") -> str:
         tools = a.get("tools", [])
         if isinstance(tools, str):
             tools = [t.strip() for t in tools.split(",")]
-        tool_chips = "".join(f'<span class="tool-chip">{t}</span>' for t in tools)
-        link = f"/project/{alias}/agents/{a.get('file','').replace('.md','')}" if alias else "#"
+        tool_chips = "".join(f'<span class="tool-chip">{_e(t)}</span>' for t in tools)
+        link = f"/project/{_e(alias)}/agents/{_e(a.get('file','').replace('.md',''))}" if alias else "#"
         cards += f"""<a href="{link}" class="agent-card">
   <div class="agent-card-header">
-    <span class="agent-card-name">{name}</span>
-    <span class="trigger-badge">{trigger}</span>
-    <span class="model-badge {model}">{model}</span>
+    <span class="agent-card-name">{_e(name)}</span>
+    <span class="trigger-badge">{_e(trigger)}</span>
+    <span class="model-badge {_e(model)}">{_e(model)}</span>
   </div>
-  <div class="agent-card-desc">{desc}</div>
+  <div class="agent-card-desc">{_e(desc)}</div>
   <div class="agent-card-meta">{tool_chips}</div>
 </a>"""
     return f'<div class="agent-grid">{cards}</div>'
@@ -374,12 +389,12 @@ def _commands_page(commands: list[dict], alias: str) -> str:
     for c in commands:
         name = c.get("name", c.get("file", "?").replace(".md", ""))
         desc = c.get("description", "")
-        link = f"/project/{alias}/commands/{c.get('file','').replace('.md','')}"
+        link = f"/project/{_e(alias)}/commands/{_e(c.get('file','').replace('.md',''))}"
         items += f"""<a href="{link}" class="context-item">
   <div class="context-item-icon command">{_ICON_CMD}</div>
   <div>
-    <div class="context-item-name">/{name}</div>
-    <div class="context-item-desc">{desc}</div>
+    <div class="context-item-name">/{_e(name)}</div>
+    <div class="context-item-desc">{_e(desc)}</div>
   </div>
 </a>"""
     return f'<div class="context-list">{items}</div>'
@@ -402,12 +417,12 @@ def _context_page(docs: list[dict], alias: str) -> str:
         else:
             icon_cls = _icon_map.get(stem, "doc")
             icon_svg = _ICON_DOC
-        link = f"/project/{alias}/context/{d['name']}" if not d["isDir"] else "#"
+        link = f"/project/{_e(alias)}/context/{_e(d['name'])}" if not d["isDir"] else "#"
         items += f"""<a href="{link}" class="context-item">
   <div class="context-item-icon {icon_cls}">{icon_svg}</div>
   <div>
-    <div class="context-item-name">{d['name']}</div>
-    <div class="context-item-desc">{d['description']}</div>
+    <div class="context-item-name">{_e(d['name'])}</div>
+    <div class="context-item-desc">{_e(d['description'])}</div>
   </div>
 </a>"""
     return f'<div class="context-list">{items}</div>'
@@ -424,12 +439,12 @@ def _repos_page(repos: list[dict], alias: str) -> str:
         items += f"""<div class="context-item">
   <div class="context-item-icon doc">{_ICON_REPO}</div>
   <div style="flex:1">
-    <div class="context-item-name">{r['name']}</div>
-    <div class="context-item-desc">{r.get('path','')}</div>
+    <div class="context-item-name">{_e(r['name'])}</div>
+    <div class="context-item-desc">{_e(r.get('path',''))}</div>
   </div>
   <div style="display:flex;gap:6px;align-items:center">
-    <span class="chip chip-agent">{branch}{dirty}</span>
-    <span class="chip chip-sprint">{r.get('ticketCount',0)} tickets</span>
+    <span class="chip chip-agent">{_e(branch)}{dirty}</span>
+    <span class="chip chip-sprint">{int(r.get('ticketCount',0))} tickets</span>
   </div>
 </div>"""
     return f'<div class="context-list">{items}</div>'
@@ -502,17 +517,17 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str) -> str:
     sprint = ticket.get("sprint") or "—"
     created = ticket.get("created", "—")
     updated = ticket.get("updated", "—")
-    back = f'<a class="back-link" href="/project/{alias}/board"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to Board</a>'
+    back = f'<a class="back-link" href="/project/{_e(alias)}/board"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to Board</a>'
     body_html = _render_markdown(body)
     return f"""{back}
 <div class="detail-page">
   <div class="detail-header">
     <div class="detail-header-top">
-      <span class="detail-id">{ticket['id']}</span>
-      <span class="status-badge {status_color}">{status}</span>
-      <span class="p-badge {prio}">{prio}</span>
+      <span class="detail-id">{_e(ticket['id'])}</span>
+      <span class="status-badge {_e(status_color)}">{_e(status)}</span>
+      <span class="p-badge {_e(prio)}">{_e(prio)}</span>
     </div>
-    <div class="detail-title">{ticket['title']}</div>
+    <div class="detail-title">{_e(ticket['title'])}</div>
   </div>
   <div class="detail-grid">
     <div class="detail-main">
@@ -522,12 +537,12 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str) -> str:
       </div>
     </div>
     <div class="detail-sidebar">
-      <div><div class="detail-field-label">Agent</div><div class="detail-field-value">{agents}</div></div>
+      <div><div class="detail-field-label">Agent</div><div class="detail-field-value">{_e(agents)}</div></div>
       <hr class="detail-divider">
-      <div><div class="detail-field-label">Sprint</div><div class="detail-field-value mono">{sprint}</div></div>
+      <div><div class="detail-field-label">Sprint</div><div class="detail-field-value mono">{_e(sprint)}</div></div>
       <hr class="detail-divider">
-      <div><div class="detail-field-label">Created</div><div class="detail-field-value mono">{created}</div></div>
-      <div><div class="detail-field-label">Updated</div><div class="detail-field-value mono">{updated}</div></div>
+      <div><div class="detail-field-label">Created</div><div class="detail-field-value mono">{_e(created)}</div></div>
+      <div><div class="detail-field-label">Updated</div><div class="detail-field-value mono">{_e(updated)}</div></div>
     </div>
   </div>
 </div>"""
@@ -619,12 +634,12 @@ def project_ticket(alias: str, ticket_id: str):
 
 
 def _doc_detail_page(title: str, body: str, alias: str, kind: str, meta: dict | None = None) -> str:
-    back = f'<a class="back-link" href="/project/{alias}/{kind}"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to {kind.capitalize()}</a>'
+    back = f'<a class="back-link" href="/project/{_e(alias)}/{_e(kind)}"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to {_e(kind.capitalize())}</a>'
     body_html = _render_markdown(body)
     sidebar_html = ""
     if meta:
         rows = "".join(
-            f'<div><div class="detail-field-label">{k}</div><div class="detail-field-value mono">{v}</div></div>'
+            f'<div><div class="detail-field-label">{_e(k)}</div><div class="detail-field-value mono">{_e(v)}</div></div>'
             for k, v in meta.items() if v is not None and v != ""
         )
         if rows:
@@ -638,7 +653,7 @@ def _doc_detail_page(title: str, body: str, alias: str, kind: str, meta: dict | 
     return f"""{back}
 <div class="detail-page">
   <div class="detail-header">
-    <div class="detail-title">{title}</div>
+    <div class="detail-title">{_e(title)}</div>
   </div>
   {grid}
 </div>"""
@@ -649,7 +664,12 @@ def project_agent_detail(alias: str, slug: str):
     project = _get_project(alias)
     if not project:
         return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    f = Path(project["path"]) / ".holoctl" / "agents" / f"{slug}.md"
+    agents_root = (Path(project["path"]) / ".holoctl" / "agents").resolve()
+    f = (agents_root / f"{slug}.md").resolve()
+    try:
+        f.relative_to(agents_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not f.exists():
         return HTMLResponse(_render("Not Found", _not_found_html("Agent not found")), status_code=404)
     fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
@@ -673,7 +693,12 @@ def project_command_detail(alias: str, slug: str):
     project = _get_project(alias)
     if not project:
         return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    f = Path(project["path"]) / ".holoctl" / "commands" / f"{slug}.md"
+    commands_root = (Path(project["path"]) / ".holoctl" / "commands").resolve()
+    f = (commands_root / f"{slug}.md").resolve()
+    try:
+        f.relative_to(commands_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not f.exists():
         return HTMLResponse(_render("Not Found", _not_found_html("Command not found")), status_code=404)
     fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
