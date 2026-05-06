@@ -351,6 +351,13 @@ code {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* Without `min-width: 0`, a flex item defaults to `min-width: auto` and
+     grows to fit its widest child. That made the kanban (which is wider than
+     the viewport on multi-column boards) push the entire `.main` past the
+     viewport edge, causing the WHOLE page to scroll horizontally — sidebar
+     and all. With this, the overflow stays contained inside `.content`,
+     where `overflow-x: auto` actually does its job. */
+  min-width: 0;
 }
 
 .topbar {

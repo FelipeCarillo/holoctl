@@ -6,6 +6,7 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ### Fixed (dashboard)
 
+- **Horizontal scroll on the board is contained inside the content area, not the whole page.** With multi-column kanbans the `.kanban` flex container grows past the viewport. The `.main` area is a flex child without `min-width: 0`, so it inherited that growth and pushed the body itself wider than the screen — the sidebar slid out of view when you scrolled. Added `min-width: 0` to `.main` so `overflow-x: auto` on `.content` actually does its job. Sidebar stays fixed; only the board scrolls.
 - **Kanban now updates live without a page refresh.** SSE was already firing `board-update` events on every `index.json` mtime change but the JS handler only showed a toast. The handler now fetches a new `/api/project/<alias>/board-html` HTML fragment and atomically swaps the `<div id="kanban">` in place. New tickets, status moves, and ticket edits show up immediately. Falls back to the toast on fetch error and re-tries on the next event.
 - **Kanban card left border no longer looks "bitten" at the corners.** Was caused by mixing a 1px border with a 3px `border-left` under `border-radius` — the rounded corners only honored the smaller width and clipped the colored bar. Replaced the border with a `::before` pseudo-element so the priority stripe lives inside the rounded card and renders cleanly when the card is at rest.
 
