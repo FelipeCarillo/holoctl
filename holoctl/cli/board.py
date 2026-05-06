@@ -126,6 +126,56 @@ def add_cmd(ticket_json: str = typer.Argument(..., help="JSON ticket data")):
         raise typer.Exit(1)
 
 
+@app.command("batch")
+def batch_cmd(
+    payload: Optional[str] = typer.Argument(None, help="JSON: {\"shared\":{...},\"tickets\":[...]}"),
+    from_file: Optional[str] = typer.Option(None, "--from-file", "-f", help="Read JSON from a file instead of argv"),
+):
+    """Create N parallel-safe tickets in one call.
+
+    Validates that each ticket declares `files` and that file sets are
+    disjoint between siblings (no two tickets touch the same path). Aborts
+    atomically on any violation — no partial creation.
+    """
+    import sys
+    from pathlib import Path as _Path
+    board, _, _ = _get_board()
+
+    if from_file:
+        raw = _Path(from_file).read_text(encoding="utf-8")
+    elif payload is not None:
+        raw = payload
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read()
+    else:
+        console.print(
+            "[red]Pass JSON as argument, via --from-file <path>, or via stdin.[/red]\n"
+            "[dim]Example: hctl board batch '{\"shared\":{\"tags\":[\"par:auth\"]},\"tickets\":[{...},{...}]}'[/dim]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        console.print(f"[red]Invalid JSON: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not isinstance(data, dict):
+        console.print("[red]Expected an object with `shared` and `tickets` keys.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        result = board.batch_add(data.get("shared") or {}, data.get("tickets") or [])
+    except (ValueError, KeyError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Created {result['count']} parallel-safe ticket(s):[/green]")
+    for t in result["tickets"]:
+        agents = ",".join(t.get("agent") or []) or "—"
+        console.print(f"  [bold]{t['id']}[/bold]  {t['title'][:50]}  [dim](agent={agents}, files={len(t.get('files') or [])})[/dim]")
+
+
 @app.command("body")
 def body_cmd(
     ticket_id: str = typer.Argument(...),

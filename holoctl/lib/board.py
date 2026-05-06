@@ -240,6 +240,11 @@ class Board:
             projects = [patch["scope"]]
         projects = _normalize_array(projects)
 
+        # Files this ticket touches. Used by `batch_add` to detect overlap
+        # between siblings; also useful for the developer agent to confirm
+        # `Start` matches reality. Optional on regular `add`.
+        files = _normalize_array(patch.get("files"))
+
         data = self._load()
         next_num = data["meta"]["nextId"]
         ticket_id = self._generate_id(next_num)
@@ -251,6 +256,7 @@ class Board:
             "title": title,
             "agent": agents,
             "projects": projects,
+            "files": files,
             "status": status,
             "priority": priority,
             "sprint": patch.get("sprint"),
@@ -305,6 +311,103 @@ class Board:
         data = self._load()
         return self._generate_id(data["meta"]["nextId"])
 
+    def batch_add(self, shared: dict, tickets: list[dict]) -> dict:
+        """Create N tickets in one call after validating parallelism invariants.
+
+        `shared` fields (e.g. `tags`, `sprint`, `projects`) are merged into
+        each ticket; per-ticket fields override shared ones. The whole batch
+        is validated UP-FRONT — if any check fails, no ticket is created.
+
+        Parallelism invariants enforced:
+        1. Each ticket must declare `files: list[str]`. Without it the batch
+           cannot prove non-overlap.
+        2. No two tickets in the batch may declare the same file path.
+        3. No ticket in the batch may have a sibling-by-title in its
+           `depends`. (Inter-batch deps mean serial execution; create those
+           with regular `add` instead.)
+        4. Standard `add` validation (title, status, priority, agent) is
+           applied to each ticket. First failure aborts the whole batch.
+
+        On success, returns `{"count": N, "tickets": [...]}`.
+        """
+        if not tickets:
+            raise ValueError("Batch is empty. Pass at least one ticket.")
+        if not isinstance(tickets, list):
+            raise ValueError("`tickets` must be a JSON array.")
+
+        merged: list[dict] = []
+        for i, t in enumerate(tickets):
+            if not isinstance(t, dict):
+                raise ValueError(f"tickets[{i}] is not an object.")
+            m = {**(shared or {})}
+            # Per-ticket fields win over shared.
+            m.update(t)
+            # Merge array fields (tags / projects / depends / files / agent)
+            # additively — shared defaults + per-ticket extras.
+            for key in ("tags", "projects", "depends", "files", "agent"):
+                shared_val = _normalize_array((shared or {}).get(key))
+                ticket_val = _normalize_array(t.get(key))
+                merged_arr = list(dict.fromkeys(shared_val + ticket_val))  # dedupe, keep order
+                if merged_arr:
+                    m[key] = merged_arr
+            merged.append(m)
+
+        self._validate_batch_parallelism(merged)
+
+        # Pre-flight: validate every ticket through the same rules `add` uses,
+        # without creating anything yet.
+        statuses = self._config["board"]["statuses"]
+        priorities = self._config["board"]["priorities"]
+        for i, m in enumerate(merged):
+            if not (m.get("title") or "").strip():
+                raise ValueError(f"tickets[{i}]: title is required.")
+            self._validate_status(m.get("status", statuses[0]))
+            self._validate_priority(m.get("priority") or "p2")
+            agents = m.get("agent") or []
+            if isinstance(agents, str):
+                agents = [agents]
+            self._validate_agents(agents)
+
+        # All clear — create.
+        created = [self.add(m) for m in merged]
+        return {"count": len(created), "tickets": created}
+
+    def _validate_batch_parallelism(self, tickets: list[dict]) -> None:
+        """Enforce the file-overlap and intra-batch-dependency invariants."""
+        file_owner: dict[str, str] = {}
+        titles_in_batch = {(t.get("title") or "").strip() for t in tickets}
+
+        for t in tickets:
+            title = (t.get("title") or "<untitled>").strip()
+            files = _normalize_array(t.get("files"))
+            if not files:
+                raise ValueError(
+                    f"Ticket {title!r} has no `files` field. Parallel-safe "
+                    "tickets must declare which files they touch so the batch "
+                    "can prove non-overlap. Pass `files: [\"path/a\", ...]`."
+                )
+            for raw in files:
+                norm = raw.strip().rstrip("/")
+                if not norm:
+                    continue
+                if norm in file_owner and file_owner[norm] != title:
+                    raise ValueError(
+                        f"File overlap in batch: {norm!r} is claimed by both "
+                        f"{file_owner[norm]!r} and {title!r}. Parallel-safe "
+                        "tickets must touch disjoint files. Either merge them "
+                        "into one ticket or create one with `add` (serial)."
+                    )
+                file_owner[norm] = title
+
+            for dep in _normalize_array(t.get("depends")):
+                if dep.strip() in titles_in_batch:
+                    raise ValueError(
+                        f"Ticket {title!r} depends on sibling {dep!r} in the "
+                        "same batch. Sibling-by-title dependency means serial "
+                        "execution — create those tickets with `add`, not in "
+                        "a batch. (External deps to already-existing IDs are fine.)"
+                    )
+
     def rebuild_index(self) -> dict:
         self._tickets_dir.mkdir(parents=True, exist_ok=True)
         files = sorted(self._tickets_dir.glob("*.md"))
@@ -326,6 +429,7 @@ class Board:
                 "id": data_fm["id"],
                 "title": data_fm.get("title", ""),
                 "agent": _normalize_array(data_fm.get("agent")),
+                "files": _normalize_array(data_fm.get("files")),
                 "projects": _normalize_array(projects_fm),
                 "status": data_fm.get("status", "backlog"),
                 "priority": data_fm.get("priority", "p2"),
@@ -372,11 +476,13 @@ class Board:
 
         agents_val = ticket["agent"]
         projects_val = ticket.get("projects") or []
+        files_val = ticket.get("files") or []
         frontmatter = {
             "id": ticket["id"],
             "title": ticket["title"],
             "agent": ", ".join(agents_val) if agents_val else "null",
             "projects": ", ".join(projects_val) if projects_val else "null",
+            "files": ", ".join(files_val) if files_val else "null",
             "status": ticket["status"],
             "priority": ticket["priority"],
             "sprint": ticket["sprint"],

@@ -2,6 +2,19 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added (parallel decomposition)
+
+- **`hctl board batch` — create N parallel-safe tickets in one call.** Takes a JSON object `{shared: {...}, tickets: [...]}`. Shared fields are merged into each ticket; per-ticket fields override. Atomic — if any invariant fails, no ticket is created.
+- **Parallelism invariants enforced before creation:**
+  - Each ticket must declare `files: list[str]` — the file paths it will touch.
+  - No two tickets in the batch may share a file path (pre-flight overlap check). Forces the boardmaster to actually plan disjoint scopes.
+  - No ticket may have a sibling-by-title in its `depends` (sibling deps mean serial execution; create those with `add` instead). External deps to already-existing IDs are fine.
+  - Standard validators (`title`, `status`, `priority`, `agent`) run per ticket; first failure aborts the whole batch.
+- **`files: list[str]`** — new optional field on `Board.add()` and serialized into ticket frontmatter. Used by the batch validator and useful for the developer agent to confirm `Start` matches reality.
+- **`boardmaster` persona updated** with a "decomposing into a parallel-safe batch" section. Walks the agent through the invariants with a worked `hctl board batch` example, and tells it to retry on validation errors instead of falling back to raw `add` calls that would skip the checks.
+
 ## [0.7.0] — 2026-05-06
 
 ### Added (board agent + single-shot ticket creation)
