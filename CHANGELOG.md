@@ -4,22 +4,37 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
-### Fixed (dashboard)
-
-- **Horizontal scroll on the board is contained inside the content area, not the whole page.** With multi-column kanbans the `.kanban` flex container grows past the viewport. The `.main` area is a flex child without `min-width: 0`, so it inherited that growth and pushed the body itself wider than the screen — the sidebar slid out of view when you scrolled. Added `min-width: 0` to `.main` so `overflow-x: auto` on `.content` actually does its job. Sidebar stays fixed; only the board scrolls.
-- **Kanban now updates live without a page refresh.** SSE was already firing `board-update` events on every `index.json` mtime change but the JS handler only showed a toast. The handler now fetches a new `/api/project/<alias>/board-html` HTML fragment and atomically swaps the `<div id="kanban">` in place. New tickets, status moves, and ticket edits show up immediately. Falls back to the toast on fetch error and re-tries on the next event.
-- **Kanban card left border no longer looks "bitten" at the corners.** Was caused by mixing a 1px border with a 3px `border-left` under `border-radius` — the rounded corners only honored the smaller width and clipped the colored bar. Replaced the border with a `::before` pseudo-element so the priority stripe lives inside the rounded card and renders cleanly when the card is at rest.
-
 ### Added
 
-- `GET /api/project/<alias>/board-html` returns just the kanban fragment as HTML, used by the SSE swap above.
+- `GET /api/project/<alias>/board-html` returns just the kanban fragment as HTML, used by the SSE swap.
+- **Strict input validation in `Board.add()` and `Board.set()`.** Agents writing tickets via slash commands frequently passed values like `priority: "high"` or `status: "todo"` — both used to silently land in the index, leading to broken board filters and confusing dashboard views. Now:
+  - `title` must be non-empty (clear error otherwise, with a copy-pasteable example).
+  - `status` must be one of `config.board.statuses`.
+  - `priority` must be one of `config.board.priorities`.
+  - `agent` must reference a defined persona under `.holoctl/agents/*.md`.
+  - `Board.set()` now validates `priority` and `agent` (used to validate only `status`).
+- Each rejection includes the list of valid values so the agent can retry without guessing.
 
 ### Changed (default behavior)
 
 - **No more `git` subprocess by default, anywhere.** New config option `git.checkDirty` (default `false`) controls whether holoctl ever spawns `git status` / `git log`. When false, the dashboard Repos tab, `holoctl repo list`, `holoctl repo info`, and `holoctl overview` all run on the fast-path (`.git/` reads only) and the `dirty` flag + last-commit message/date are omitted from the output. Flip to `true` in `.holoctl/config.json` to restore the old behavior workspace-wide, or pass `--check-dirty` to any of the affected CLI commands for a single invocation.
 - Off-by-default eliminates the last bit of git-subprocess latency on Windows + corporate AV setups. Pre-PR #6 a dashboard click cost 14 subprocesses; PR #6 dropped that to ~12 (only on the Repos tab); this PR drops it to **0** by default.
 
-### Performance
+### Changed (schema)
+
+- **Ticket timestamps are now full ISO 8601 UTC** (`2026-05-06T17:14:55Z`) instead of date-only (`2026-05-06`). Applies to `created`, `updated`, `completed`, and `meta.updated` in `index.json`. Old tickets with date-only values continue to parse correctly thanks to `datetime.fromisoformat` accepting both forms; on the next `set` / `move` / `rebuild-index` they get rewritten with full timestamps. The `overview` stalled-calc handles either format transparently.
+
+### Changed (templates)
+
+- **`/ticket` slash command rewritten.** Lists the exact valid statuses + priorities pulled from config. Hard requirement: ASK the user once (single batched question) for any missing required field instead of guessing. Optional sections (Start / Context / Out of scope) are explicitly marked optional and the agent is instructed to **omit** them when there's no real content — no more `(placeholder)` text in tickets.
+- **`tickets/_template.md` cleaned up.** Sections now contain HTML comments as guidance instead of `(criterion 1)` / `(Why this exists)` placeholders. Header `# Goal — Definition of Done` is the only required section. Frontmatter shows the actual valid status / priority sets and indicates ISO 8601 UTC for timestamps.
+
+### Fixed (dashboard)
+
+- **Horizontal scroll on the board is contained inside the content area, not the whole page.** With multi-column kanbans the `.kanban` flex container grows past the viewport. The `.main` area is a flex child without `min-width: 0`, so it inherited that growth and pushed the body itself wider than the screen — the sidebar slid out of view when you scrolled. Added `min-width: 0` to `.main` so `overflow-x: auto` on `.content` actually does its job. Sidebar stays fixed; only the board scrolls.
+- **Kanban now updates live without a page refresh.** SSE was already firing `board-update` events on every `index.json` mtime change but the JS handler only showed a toast. The handler now fetches a new `/api/project/<alias>/board-html` HTML fragment and atomically swaps the `<div id="kanban">` in place. New tickets, status moves, and ticket edits show up immediately. Falls back to the toast on fetch error and re-tries on the next event.
+- **Kanban card left border no longer looks "bitten" at the corners.** Was caused by mixing a 1px border with a 3px `border-left` under `border-radius` — the rounded corners only honored the smaller width and clipped the colored bar. Replaced the border with a `::before` pseudo-element so the priority stripe lives inside the rounded card and renders cleanly when the card is at rest.
+- **Dashboard ticket detail hides empty/placeholder sections.** Sections whose content is blank, only HTML comments, only parenthetical hints (`(some hint)`), or only placeholder checklist items (`- [ ] (criteria)`) are now stripped before render. Tickets that have only a meaningful Goal section show only Goal in the dashboard — matching the user's expectation that absent info isn't displayed.
 
 ## [0.6.0] — 2026-05-06
 

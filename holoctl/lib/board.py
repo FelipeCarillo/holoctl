@@ -1,14 +1,20 @@
 ﻿from __future__ import annotations
 import json
 import re
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .markdown import parse_frontmatter, serialize_frontmatter
 
 
-def _today() -> str:
-    return date.today().isoformat()
+def _now() -> str:
+    """ISO 8601 UTC timestamp with `Z` suffix, e.g. `2026-05-06T13:42:18Z`.
+
+    Used for `created`, `updated`, `completed`, and the activity log.
+    Older tickets that still have date-only values (`2026-05-04`) are read
+    transparently — `datetime.fromisoformat` accepts both forms in 3.11+.
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class Board:
@@ -22,7 +28,7 @@ class Board:
     def _load(self) -> dict:
         if not self._index_path.exists():
             return {
-                "meta": {"version": 1, "updated": _today(), "nextId": 1, "counts": {}},
+                "meta": {"version": 1, "updated": _now(), "nextId": 1, "counts": {}},
                 "tickets": [],
             }
         return json.loads(self._index_path.read_text(encoding="utf-8"))
@@ -64,6 +70,43 @@ class Board:
             )
         full_path.write_text(content, encoding="utf-8")
 
+    def _valid_agents(self) -> set[str]:
+        """Names of agents the agent file system has defined.
+
+        Returns the stems of `.holoctl/agents/*.md`. Used for validating that
+        a ticket's `agent:` value refers to a real persona.
+        """
+        agents_dir = self._root / ".holoctl" / "agents"
+        if not agents_dir.exists():
+            return set()
+        return {f.stem for f in agents_dir.glob("*.md")}
+
+    def _validate_status(self, status: str) -> None:
+        valid = self._config["board"]["statuses"]
+        if status not in valid:
+            raise ValueError(f"Invalid status: {status!r}. Valid: {', '.join(valid)}")
+
+    def _validate_priority(self, priority: str) -> None:
+        valid = self._config["board"]["priorities"]
+        if priority not in valid:
+            raise ValueError(f"Invalid priority: {priority!r}. Valid: {', '.join(valid)}")
+
+    def _validate_agents(self, agents: list[str]) -> None:
+        if not agents:
+            return
+        defined = self._valid_agents()
+        if not defined:
+            raise ValueError(
+                "No agents defined in .holoctl/agents/. "
+                "Run `holoctl agent add <name>` (or restore the templates with `holoctl sync --agents`) before assigning a ticket."
+            )
+        unknown = [a for a in agents if a not in defined]
+        if unknown:
+            raise ValueError(
+                f"Unknown agent(s): {', '.join(unknown)}. "
+                f"Defined: {', '.join(sorted(defined))}"
+            )
+
     def stat(self) -> dict:
         data = self._load()
         return {**data["meta"]["counts"], "nextId": data["meta"]["nextId"]}
@@ -103,19 +146,19 @@ class Board:
             raise KeyError(f"Ticket {ticket_id} not found")
 
         old_status = ticket["status"]
-        today = _today()
+        now = _now()
         ticket["status"] = new_status
-        ticket["updated"] = today
+        ticket["updated"] = now
         if new_status == "done":
-            ticket["completed"] = today
+            ticket["completed"] = now
 
         data["meta"]["counts"] = self._recount(data["tickets"])
-        data["meta"]["updated"] = today
+        data["meta"]["updated"] = now
         self._save(data)
 
-        patches = {"status": new_status, "updated": today}
+        patches = {"status": new_status, "updated": now}
         if new_status == "done":
-            patches["completed"] = today
+            patches["completed"] = now
         if ticket.get("file"):
             self._patch_ticket_md(ticket["file"], patches)
 
@@ -132,9 +175,9 @@ class Board:
             raise ValueError(f"Field '{field}' is not editable. Allowed: {allowed}")
 
         if field == "status":
-            valid = self._config["board"]["statuses"]
-            if value not in valid:
-                raise ValueError(f"Invalid status: {value}. Valid: {'|'.join(valid)}")
+            self._validate_status(value)
+        elif field == "priority":
+            self._validate_priority(value)
 
         data = self._load()
         ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
@@ -144,34 +187,48 @@ class Board:
         parsed = _parse_set_value(value)
         if field in ("agent", "depends", "tags", "projects"):
             parsed = _normalize_array(parsed if isinstance(parsed, (list, str)) else value)
+            if field == "agent":
+                self._validate_agents(parsed)
 
-        today = _today()
+        now = _now()
         ticket[field] = parsed
-        ticket["updated"] = today
-        data["meta"]["updated"] = today
+        ticket["updated"] = now
+        data["meta"]["updated"] = now
         if field == "status":
             data["meta"]["counts"] = self._recount(data["tickets"])
         self._save(data)
 
         if ticket.get("file"):
-            self._patch_ticket_md(ticket["file"], {field: parsed, "updated": today})
+            self._patch_ticket_md(ticket["file"], {field: parsed, "updated": now})
 
         return {"id": ticket_id, "field": field, "value": parsed}
 
     def add(self, patch: dict) -> dict:
-        data = self._load()
-        next_num = data["meta"]["nextId"]
-        ticket_id = self._generate_id(next_num)
-        slug = self._slugify(patch.get("title", ""))
-        today = _today()
+        title = (patch.get("title") or "").strip()
+        if not title:
+            raise ValueError(
+                "Ticket title is required. Pass `title` in the JSON, e.g. "
+                '`holoctl board add \'{"title":"Add auth flow","agent":"developer"}\'`.'
+            )
+
+        # Defaults are the first valid value from config; reject anything else.
+        # The agent must pass valid status / priority / agent names — no silent
+        # coercion, so malformed tickets fail loud and the agent retries.
+        statuses = self._config["board"]["statuses"]
+        priorities = self._config["board"]["priorities"]
+        status = patch.get("status", statuses[0])
+        priority = patch.get("priority") or "p2"
+        self._validate_status(status)
+        self._validate_priority(priority)
 
         agents = patch.get("agent", [])
         if isinstance(agents, str):
             agents = [agents]
+        self._validate_agents(agents)
 
         tags = patch.get("tags", [])
         if isinstance(tags, str):
-            tags = [t.strip() for t in tags.split(",")]
+            tags = [t.strip() for t in tags.split(",") if t.strip()]
 
         depends = patch.get("depends", [])
         if isinstance(depends, str):
@@ -183,16 +240,22 @@ class Board:
             projects = [patch["scope"]]
         projects = _normalize_array(projects)
 
+        data = self._load()
+        next_num = data["meta"]["nextId"]
+        ticket_id = self._generate_id(next_num)
+        slug = self._slugify(title)
+        now = _now()
+
         ticket: dict = {
             "id": ticket_id,
-            "title": patch.get("title", ""),
+            "title": title,
             "agent": agents,
             "projects": projects,
-            "status": patch.get("status", "backlog"),
-            "priority": patch.get("priority", "p2"),
+            "status": status,
+            "priority": priority,
             "sprint": patch.get("sprint"),
-            "created": today,
-            "updated": today,
+            "created": now,
+            "updated": now,
             "completed": None,
             "depends": depends,
             "tags": tags,
@@ -202,7 +265,7 @@ class Board:
         data["tickets"].append(ticket)
         data["meta"]["nextId"] = next_num + 1
         data["meta"]["counts"] = self._recount(data["tickets"])
-        data["meta"]["updated"] = today
+        data["meta"]["updated"] = now
         self._save(data)
 
         self._create_ticket_md(ticket)
@@ -218,7 +281,7 @@ class Board:
         self._tickets_dir.mkdir(parents=True, exist_ok=True)
         files = sorted(self._tickets_dir.glob("*.md"))
         tickets = []
-        today = _today()
+        now = _now()
 
         for f in files:
             if f.name.startswith("_"):
@@ -239,8 +302,8 @@ class Board:
                 "status": data_fm.get("status", "backlog"),
                 "priority": data_fm.get("priority", "p2"),
                 "sprint": data_fm.get("sprint"),
-                "created": data_fm.get("created", today),
-                "updated": data_fm.get("updated", today),
+                "created": data_fm.get("created", now),
+                "updated": data_fm.get("updated", now),
                 "completed": data_fm.get("completed"),
                 "depends": _normalize_array(data_fm.get("depends")),
                 "tags": _normalize_array(data_fm.get("tags")),
@@ -253,7 +316,7 @@ class Board:
         index = {
             "meta": {
                 "version": 1,
-                "updated": today,
+                "updated": now,
                 "nextId": max_num + 1,
                 "counts": self._recount(tickets),
             },

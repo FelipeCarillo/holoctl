@@ -30,6 +30,16 @@ def workspace(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (tmp_path / ".holoctl" / "activity.jsonl").write_text("", encoding="utf-8")
+
+    # Plant minimal agent files so Board.add() validation passes — same set of
+    # personas `holoctl init` ships with.
+    agents_dir = tmp_path / ".holoctl" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("developer", "reviewer", "architect", "researcher"):
+        (agents_dir / f"{name}.md").write_text(
+            f"---\nname: {name}\ndescription: test agent\n---\n", encoding="utf-8"
+        )
+
     return tmp_path
 
 
