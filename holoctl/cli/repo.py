@@ -6,6 +6,7 @@ import typer
 from ._console import console
 
 from ..lib.config import find_project_root, load_config, save_config
+from ..lib.discover import discover_repos
 from ..lib.git import get_git_info
 
 app = typer.Typer(help="Manage repos (sub-directories) within a project root")
@@ -66,26 +67,27 @@ def repo_remove(name: str = typer.Argument(...)):
 
 @app.command("list")
 def repo_list():
-    """List registered repos."""
+    """List repos: auto-discovered subprojects merged with manual overrides."""
     root, config = _require_ctx()
-    repos = config["project"].get("repos", [])
+    repos = discover_repos(root, include_manual=config["project"].get("repos", []))
     if not repos:
-        console.print("[dim]No repos registered. Run `holoctl repo add <path>`.[/dim]")
+        console.print("[dim]No subprojects discovered. Add markers (.git, package.json, …) or run `holoctl repo add <path>`.[/dim]")
         return
     for r in repos:
         abs_path = root / r["path"]
-        git = get_git_info(abs_path)
+        git = r.get("git") or {"isGit": False}
         exists = abs_path.exists()
         status = "[green]●[/green]" if exists else "[red]●[/red]"
-        branch = ""
-        if git["isGit"]:
+        if git.get("isGit"):
             dirty = "[yellow] *[/yellow]" if git.get("dirty") else ""
             branch = f"[cyan][{git['branch']}][/cyan]{dirty}"
             if git.get("commitHash"):
-                branch += f" [dim]{git['commitHash']} {git['lastCommit'][:40]}[/dim]"
+                branch += f" [dim]{git['commitHash']} {git.get('lastCommit', '')[:40]}[/dim]"
         else:
             branch = "[dim][no git][/dim]"
-        console.print(f"  {status} [bold]{r['name']:<20}[/bold] {branch}")
+        source = r.get("source", "auto")
+        source_tag = "" if source == "auto" else f"  [dim]({source})[/dim]"
+        console.print(f"  {status} [bold]{r['name']:<20}[/bold] {branch}{source_tag}")
         console.print(f"     [dim]{r['path']}[/dim]")
 
 

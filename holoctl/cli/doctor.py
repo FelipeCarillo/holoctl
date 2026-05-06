@@ -11,7 +11,7 @@ app = typer.Typer()
 
 _TARGET_OUTPUTS = {
     "claude": ["CLAUDE.md", ".claude/commands"],
-    "cursor": [".cursor/commands", ".cursor/rules/holoctl.md"],
+    "cursor": [".cursorrules"],
     "windsurf": [".windsurfrules"],
     "copilot": [".github/copilot-instructions.md"],
     "devin": ["AGENTS.md", ".devin/skills"],

@@ -11,7 +11,6 @@ from ..lib.config import find_project_root, load_config
 from ..lib.board import Board
 from ..lib.discover import discover_repos
 from ..lib.markdown import parse_frontmatter
-from ..lib.filetree import scan_dir
 
 
 def _list_workspace_compat() -> list[dict]:
@@ -436,19 +435,6 @@ def _repos_page(repos: list[dict], alias: str) -> str:
     return f'<div class="context-list">{items}</div>'
 
 
-def _files_page(alias: str, entries: list[dict]) -> str:
-    def render_entries(items: list[dict]) -> str:
-        html = ""
-        for e in items:
-            if e["type"] == "dir":
-                badges = "".join(f'<span class="tree-badge" style="color:{b.get("color","var(--text-2)")}">{b["label"]}</span>' for b in e.get("badges", []))
-                html += f'<details class="tree-dir"><summary class="tree-row tree-dir-row" data-path="{e["path"]}"><span class="tree-chevron">▶</span><span class="tree-icon">📁</span><span class="tree-name">{e["name"]}</span>{badges}</summary><div class="tree-children tree-lazy" id="children-{e["path"].replace("/","-")}" data-path="{e["path"]}" data-loaded="false" style="display:none"></div></details>'
-            else:
-                html += f'<div class="tree-row tree-file-row"><span class="tree-icon">📄</span><span class="tree-name tree-file-name" data-path="{e.get("path",e["name"])}">{e["name"]}</span></div>'
-        return html
-    return f'<div class="file-tree" id="file-tree" data-alias="{alias}">{render_entries(entries)}</div>'
-
-
 def _render_markdown(body: str) -> str:
     """Minimal markdown renderer for ticket bodies. Handles h1-h3, ul, ol, [ ]/[x], code, bold."""
     import html as _html
@@ -709,8 +695,12 @@ def project_context_detail(alias: str, filename: str):
     project = _get_project(alias)
     if not project:
         return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    safe = filename.replace("..", "").lstrip("/\\")
-    f = Path(project["path"]) / ".holoctl" / "context" / safe
+    context_root = (Path(project["path"]) / ".holoctl" / "context").resolve()
+    f = (context_root / filename).resolve()
+    try:
+        f.relative_to(context_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not f.exists() or not f.is_file():
         return HTMLResponse(_render("Not Found", _not_found_html("Context document not found")), status_code=404)
     raw = f.read_text(encoding="utf-8")
@@ -737,20 +727,6 @@ def project_repos(alias: str):
         project["name"], _repos_page(project.get("repos", []), alias),
         current_alias=alias, current_tab="repos",
         breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Repos"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/files", response_class=HTMLResponse)
-def project_files(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    entries = scan_dir(Path(project["path"]), max_depth=1)
-    return _render(
-        project["name"], _files_page(alias, entries),
-        current_alias=alias, current_tab="files",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Files"}],
         tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
     )
 
@@ -791,18 +767,6 @@ def api_board(alias: str):
     if index_path.exists():
         return json.loads(index_path.read_text(encoding="utf-8"))
     return {"meta": {}, "tickets": []}
-
-
-@app.get("/api/project/{alias}/files")
-def api_files(alias: str, path: str = ""):
-    project = _get_project(alias)
-    if not project:
-        raise HTTPException(status_code=404, detail="Not found")
-    safe = path.replace("..", "").lstrip("/\\")
-    abs_path = Path(project["path"]) / safe if safe else Path(project["path"])
-    if not str(abs_path).startswith(project["path"]):
-        raise HTTPException(status_code=403, detail="Forbidden")
-    return {"entries": scan_dir(abs_path, max_depth=1)}
 
 
 @app.get("/api/project/{alias}/events")

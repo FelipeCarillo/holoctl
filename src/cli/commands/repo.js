@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import fs from 'node:fs';
 import path from 'node:path';
 import { findProjectRoot, loadConfig, saveConfig } from '../../lib/config.js';
+import { discoverRepos } from '../../lib/discover.js';
 import { getGitInfo } from '../../lib/git.js';
 
 function getProjectContext() {
@@ -68,24 +69,25 @@ export function registerRepoCommand(program) {
   repo
     .command('list')
     .alias('ls')
-    .description('List registered repos')
+    .description('List repos: auto-discovered subprojects merged with manual overrides')
     .action(() => {
       const { root, config } = getProjectContext();
-      const repos = config.project.repos;
+      const repos = discoverRepos(root, { includeManual: config.project.repos || [] });
       if (repos.length === 0) {
-        console.log(chalk.dim('No repos registered. Run `holoctl repo add <path>`.'));
+        console.log(chalk.dim('No subprojects discovered. Add markers (.git, package.json, …) or run `holoctl repo add <path>`.'));
         return;
       }
       for (const r of repos) {
         const abs = path.join(root, r.path);
-        const git = getGitInfo(abs);
+        const git = r.git || { isGit: false };
         const exists = fs.existsSync(abs);
         const status = exists ? chalk.green('●') : chalk.red('●');
         const branch = git.isGit
           ? chalk.cyan(`[${git.branch}]`) + (git.dirty ? chalk.yellow(' *') : '')
           : chalk.dim('[no git]');
-        const commit = git.commitHash ? chalk.dim(` ${git.commitHash} ${git.lastCommit.slice(0, 40)}`) : '';
-        console.log(`  ${status} ${chalk.bold(r.name.padEnd(20))} ${branch}${commit}`);
+        const commit = git.commitHash ? chalk.dim(` ${git.commitHash} ${(git.lastCommit || '').slice(0, 40)}`) : '';
+        const sourceTag = r.source && r.source !== 'auto' ? chalk.dim(`  (${r.source})`) : '';
+        console.log(`  ${status} ${chalk.bold(r.name.padEnd(20))} ${branch}${commit}${sourceTag}`);
         console.log(`     ${chalk.dim(r.path)}`);
       }
     });
