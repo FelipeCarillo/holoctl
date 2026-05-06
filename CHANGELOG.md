@@ -14,11 +14,12 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 - `GET /api/project/<alias>/board-html` returns just the kanban fragment as HTML, used by the SSE swap above.
 
-### Performance
+### Changed (default behavior)
 
-- **Dashboard hot path: ~14 git subprocess calls → 0.** `discover_repos()` no longer shells out to `git` for every subproject. Branch, commit hash, and remote URL are now read directly from `.git/HEAD`, `.git/refs/`, `.git/packed-refs`, and `.git/config` via a new `read_git_fast()` helper. The `dirty` flag (`git status --porcelain`) is the only call that genuinely requires git's working-tree scan; it now runs **only** on the explicit Repos tab and `holoctl repo info`. Massive win on Windows + corporate AV, where each subprocess spawn cost 100-300ms.
-- New `discover_repos(..., with_dirty=False)` parameter. Pass `with_dirty=True` to opt into the slow-but-complete path.
-- New tests in `tests/test_git.py` cover `read_git_fast()`: loose refs, packed-refs, detached HEAD, gitfile pointers (worktrees/submodules), missing remote.
+- **No more `git` subprocess by default, anywhere.** New config option `git.checkDirty` (default `false`) controls whether holoctl ever spawns `git status` / `git log`. When false, the dashboard Repos tab, `holoctl repo list`, `holoctl repo info`, and `holoctl overview` all run on the fast-path (`.git/` reads only) and the `dirty` flag + last-commit message/date are omitted from the output. Flip to `true` in `.holoctl/config.json` to restore the old behavior workspace-wide, or pass `--check-dirty` to any of the affected CLI commands for a single invocation.
+- Off-by-default eliminates the last bit of git-subprocess latency on Windows + corporate AV setups. Pre-PR #6 a dashboard click cost 14 subprocesses; PR #6 dropped that to ~12 (only on the Repos tab); this PR drops it to **0** by default.
+
+### Performance
 
 ## [0.6.0] — 2026-05-06
 

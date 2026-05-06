@@ -14,7 +14,13 @@ app = typer.Typer()
 
 
 @app.command("overview")
-def overview_cmd():
+def overview_cmd(
+    check_dirty: bool = typer.Option(
+        None,
+        "--check-dirty/--no-check-dirty",
+        help="Run `git status` per repo to show dirty flag (overrides config.git.checkDirty)",
+    ),
+):
     """One-screen project snapshot: board, repos, agents, commands, dashboard URL, suggested next."""
     root = find_project_root()
     if not root:
@@ -22,6 +28,8 @@ def overview_cmd():
         raise typer.Exit(1)
 
     config = load_config(root)
+    if check_dirty is None:
+        check_dirty = config.get("git", {}).get("checkDirty", False)
     project = config["project"]
     name = project["name"]
     prefix = project["prefix"]
@@ -61,7 +69,7 @@ def overview_cmd():
     console.print()
 
     # Projects (auto-discovered subdirs + manual overrides from config.project.repos[])
-    repos = discover_repos(root, include_manual=project.get("repos", []))
+    repos = discover_repos(root, include_manual=project.get("repos", []), with_dirty=check_dirty)
     if repos:
         console.print("  [bold]📁 Projects[/bold]")
         all_tickets = board.ls()

@@ -754,12 +754,14 @@ def project_repos(alias: str):
     project = _get_project(alias)
     if not project:
         return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    # The Repos tab is the only place that shows dirty state, so this is the
-    # only route that pays the `git status` subprocess cost (one per subrepo).
+    # Dirty-flag fetching is opt-in via config.git.checkDirty (default false).
+    # When off, this route still works — it just won't show the dirty asterisk.
+    # When on, each subrepo costs one `git status --porcelain` subprocess.
+    check_dirty = project["config"].get("git", {}).get("checkDirty", False)
     repos = discover_repos(
         Path(project["path"]),
         include_manual=project["config"]["project"].get("repos", []),
-        with_dirty=True,
+        with_dirty=check_dirty,
     )
     board = Board(Path(project["path"]), project["config"])
     all_tickets = board.ls()

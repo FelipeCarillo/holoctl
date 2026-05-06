@@ -7,7 +7,7 @@ from ._console import console
 
 from ..lib.config import find_project_root, load_config, save_config
 from ..lib.discover import discover_repos
-from ..lib.git import get_git_info
+from ..lib.git import get_git_info, read_git_fast
 
 app = typer.Typer(help="Manage repos (sub-directories) within a project root")
 
@@ -66,10 +66,18 @@ def repo_remove(name: str = typer.Argument(...)):
 
 
 @app.command("list")
-def repo_list():
+def repo_list(
+    check_dirty: bool = typer.Option(
+        None,
+        "--check-dirty/--no-check-dirty",
+        help="Run `git status` per repo to show dirty flag (overrides config.git.checkDirty)",
+    ),
+):
     """List repos: auto-discovered subprojects merged with manual overrides."""
     root, config = _require_ctx()
-    repos = discover_repos(root, include_manual=config["project"].get("repos", []))
+    if check_dirty is None:
+        check_dirty = config.get("git", {}).get("checkDirty", False)
+    repos = discover_repos(root, include_manual=config["project"].get("repos", []), with_dirty=check_dirty)
     if not repos:
         console.print("[dim]No subprojects discovered. Add markers (.git, package.json, …) or run `holoctl repo add <path>`.[/dim]")
         return
@@ -92,7 +100,14 @@ def repo_list():
 
 
 @app.command("info")
-def repo_info(name: str = typer.Argument(...)):
+def repo_info(
+    name: str = typer.Argument(...),
+    check_dirty: bool = typer.Option(
+        None,
+        "--check-dirty/--no-check-dirty",
+        help="Run `git status` and `git log` (overrides config.git.checkDirty)",
+    ),
+):
     """Show git info for a repo."""
     root, config = _require_ctx()
     entry = next((r for r in config["project"].get("repos", []) if r["name"] == name), None)
@@ -100,8 +115,11 @@ def repo_info(name: str = typer.Argument(...)):
         console.print(f"[red]Repo \"{name}\" not found.[/red]")
         raise typer.Exit(1)
 
+    if check_dirty is None:
+        check_dirty = config.get("git", {}).get("checkDirty", False)
+
     abs_path = root / entry["path"]
-    git = get_git_info(abs_path)
+    git = get_git_info(abs_path) if check_dirty else read_git_fast(abs_path)
 
     console.print(f"\n  [bold]{name}[/bold]\n")
     console.print(f"  Path:    [dim]{abs_path}[/dim]")
@@ -111,8 +129,13 @@ def repo_info(name: str = typer.Argument(...)):
 
     dirty_str = "[yellow]  (dirty)[/yellow]" if git.get("dirty") else ""
     console.print(f"  Branch:  [cyan]{git['branch']}[/cyan]{dirty_str}")
-    console.print(f"  Commit:  [dim]{git['commitHash']}[/dim] {git['lastCommit']}")
-    console.print(f"  Date:    [dim]{git['commitDate']}[/dim]")
+    if git.get("commitHash"):
+        last_commit = git.get("lastCommit", "")
+        console.print(f"  Commit:  [dim]{git['commitHash']}[/dim]" + (f" {last_commit}" if last_commit else ""))
+    if git.get("commitDate"):
+        console.print(f"  Date:    [dim]{git['commitDate']}[/dim]")
     if git.get("remote"):
         console.print(f"  Remote:  [dim]{git['remote']}[/dim]")
+    if not check_dirty:
+        console.print(f"\n  [dim](dirty / last commit hidden — set [bold]git.checkDirty[/bold] in config or pass [bold]--check-dirty[/bold])[/dim]")
     console.print("")
