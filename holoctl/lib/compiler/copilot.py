@@ -42,4 +42,12 @@ def compile_copilot(project_root: Path, config: dict, dry_run: bool = False) -> 
             (project_root / out_path).write_text(bootstrap, encoding="utf-8")
         files.append(out_path)
 
+    upgrade_bootstrap = load_bootstrap("hctl-upgrade-copilot.prompt.md")
+    if upgrade_bootstrap:
+        out_path = ".github/prompts/hctl-upgrade.prompt.md"
+        if not dry_run:
+            prompts_dir.mkdir(parents=True, exist_ok=True)
+            (project_root / out_path).write_text(upgrade_bootstrap, encoding="utf-8")
+        files.append(out_path)
+
     return {"files": files}

@@ -41,4 +41,12 @@ def compile_cursor(project_root: Path, config: dict, dry_run: bool = False) -> d
             (project_root / out_path).write_text(bootstrap, encoding="utf-8")
         files.append(out_path)
 
+    upgrade_bootstrap = load_bootstrap("hctl-upgrade-cursor.md")
+    if upgrade_bootstrap:
+        out_path = ".cursor/commands/hctl-upgrade.md"
+        if not dry_run:
+            cursor_commands_dir.mkdir(parents=True, exist_ok=True)
+            (project_root / out_path).write_text(upgrade_bootstrap, encoding="utf-8")
+        files.append(out_path)
+
     return {"files": files}

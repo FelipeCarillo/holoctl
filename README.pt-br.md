@@ -223,7 +223,7 @@ Nomes anteriores deste projeto. holoctl lê pastas `.projctl/` e `.projhub/` e r
 
 ## Documentação
 
-- [CHANGELOG.md](CHANGELOG.md) — notas de release
+- [CHANGELOG.md](holoctl/CHANGELOG.md) — notas de release
 - [ARCHITECTURE.md](ARCHITECTURE.md) — design interno, pipeline de compile
 - [SECURITY.md](SECURITY.md) — relato de vulnerabilidades + threat model
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup de dev, convenções, como adicionar um compile target

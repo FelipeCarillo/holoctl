@@ -102,7 +102,7 @@ Breaking a field is a **major bump**. Adding a field with a sensible default is 
 1. `board.rebuild_index` reads the old field and the new field, prefers the new one (with fallback).
 2. The next write uses the new field exclusively.
 
-When you add a field, mirror that pattern — see how `scope: string` → `projects: string[]` was migrated in 0.5.0 ([CHANGELOG](CHANGELOG.md)).
+When you add a field, mirror that pattern — see how `scope: string` → `projects: string[]` was migrated in 0.5.0 ([CHANGELOG](holoctl/CHANGELOG.md)).
 
 ### Templates and `sync`
 
@@ -123,7 +123,7 @@ Semantic versioning. The version in `pyproject.toml` and `holoctl/__init__.py` (
 Release ritual:
 
 ```bash
-# 1. Bump version in pyproject.toml + holoctl/__init__.py fallback + CHANGELOG.md
+# 1. Bump version in pyproject.toml + holoctl/__init__.py fallback + holoctl/CHANGELOG.md
 # 2. Build
 rm -rf dist && uv build
 # 3. Validate

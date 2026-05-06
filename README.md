@@ -225,7 +225,7 @@ Earlier names of this project. holoctl reads `.projctl/` and `.projhub/` directo
 
 ## Documentation
 
-- [CHANGELOG.md](CHANGELOG.md) — release notes
+- [CHANGELOG.md](holoctl/CHANGELOG.md) — release notes
 - [ARCHITECTURE.md](ARCHITECTURE.md) — internal design, compile pipeline
 - [SECURITY.md](SECURITY.md) — vulnerability reporting + threat model
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, conventions, how to add a compile target

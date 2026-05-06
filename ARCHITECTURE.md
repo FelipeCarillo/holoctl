@@ -40,7 +40,7 @@ holoctl is a single Python package distributed via PyPI (`pip install holoctl`, 
 
 `find_project_root` walks up from cwd looking for `.holoctl/config.json`. For backwards compat it also accepts `.projctl/` and `.projhub/` (older names of this product) and **renames them in place** to `.holoctl/` on the next config save.
 
-There is **no machine-wide registry**. The workspace IS the directory you `init`ed in. This is deliberate: removing the global registry was the headline change in 0.5.0 (see [CHANGELOG.md](CHANGELOG.md)).
+There is **no machine-wide registry**. The workspace IS the directory you `init`ed in. This is deliberate: removing the global registry was the headline change in 0.5.0 (see [CHANGELOG.md](holoctl/CHANGELOG.md)).
 
 ### Subprojects = direct subdirs with project markers
 

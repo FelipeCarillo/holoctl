@@ -51,6 +51,7 @@ include = ["holoctl*"]
 holoctl = [
     "templates/commands/*.md",
     "server/static/*",
+    "CHANGELOG.md",
 ]
 
 [tool.uv]
