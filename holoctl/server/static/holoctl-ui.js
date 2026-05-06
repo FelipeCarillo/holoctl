@@ -74,21 +74,40 @@
     if (!kanban) return;
 
     const path = window.location.pathname;
-    const match = path.match(/\/project\/([^/]+)\/board/);
-    if (!match) return;
+    const match = path.match(/\/project\/([^/]+)\/board(?:\/[^/]+)?$/);
+    // Skip on /board/<ticket-id> detail pages (no kanban there).
+    if (!match || !document.getElementById('kanban')) return;
 
     const alias = match[1];
     const source = new EventSource(`/api/project/${alias}/events`);
     let lastData = null;
+    let inflight = false;
 
-    source.addEventListener('board-update', (e) => {
+    source.addEventListener('board-update', async (e) => {
+      // First event is the initial state — same as what's already on screen.
       if (lastData === null) {
         lastData = e.data;
         return;
       }
-      if (e.data !== lastData) {
-        lastData = e.data;
-        showToast('Board updated — click to refresh');
+      if (e.data === lastData || inflight) return;
+      lastData = e.data;
+      inflight = true;
+      try {
+        const resp = await fetch(`/api/project/${alias}/board-html`, {
+          cache: 'no-store',
+        });
+        if (!resp.ok) return;
+        const html = (await resp.text()).trim();
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = html;
+        const fresh = wrapper.firstElementChild;
+        const current = document.getElementById('kanban');
+        if (fresh && current) current.replaceWith(fresh);
+        showToast('Board updated');
+      } catch (_) {
+        // Fall through; next event retries.
+      } finally {
+        inflight = false;
       }
     });
 
