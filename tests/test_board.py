@@ -163,3 +163,51 @@ def test_activity_log_records_create(workspace: Path, workspace_config: dict):
     log = (workspace / ".holoctl" / "activity.jsonl").read_text(encoding="utf-8")
     entries = [json.loads(line) for line in log.strip().splitlines() if line]
     assert any(e["type"] == "ticket.created" for e in entries)
+
+
+def test_add_rejects_invalid_status(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    with pytest.raises(ValueError, match="Invalid status"):
+        board.add({"title": "X", "status": "todo"})
+
+
+def test_add_rejects_invalid_priority(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    with pytest.raises(ValueError, match="Invalid priority"):
+        board.add({"title": "X", "priority": "high"})
+
+
+def test_add_rejects_unknown_agent(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    with pytest.raises(ValueError, match="Unknown agent"):
+        board.add({"title": "X", "agent": "intern"})
+
+
+def test_add_rejects_empty_title(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    with pytest.raises(ValueError, match="title is required"):
+        board.add({"title": "  "})
+
+
+def test_set_rejects_invalid_priority(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    with pytest.raises(ValueError, match="Invalid priority"):
+        board.set(t["id"], "priority", "high")
+
+
+def test_set_rejects_unknown_agent(workspace: Path, workspace_config: dict):
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    with pytest.raises(ValueError, match="Unknown agent"):
+        board.set(t["id"], "agent", "intern")
+
+
+def test_created_and_updated_use_iso_8601_utc(workspace: Path, workspace_config: dict):
+    """Timestamps must be full ISO 8601 with UTC `Z` suffix, not date-only."""
+    import re
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    iso_z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+    assert iso_z.match(t["created"]), f"created not ISO+Z: {t['created']!r}"
+    assert iso_z.match(t["updated"]), f"updated not ISO+Z: {t['updated']!r}"

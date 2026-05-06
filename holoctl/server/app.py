@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -456,6 +457,50 @@ def _repos_page(repos: list[dict], alias: str) -> str:
     return f'<div class="context-list">{items}</div>'
 
 
+_PLACEHOLDER_PATTERNS = (
+    re.compile(r"^\([^)]*\)\s*$"),                        # `(some hint)`
+    re.compile(r"^[-*]\s*\[\s*[xX ]?\s*\]\s+\([^)]*\)\s*$"),  # `- [ ] (criteria)`
+    re.compile(r"^<!--.*-->\s*$"),                         # `<!-- HTML comment hint -->`
+)
+
+
+def _strip_empty_sections(body: str) -> str:
+    """Remove ticket body sections whose content is blank or only placeholders.
+
+    A section is `# Header` followed by content until the next `# `. If every
+    non-blank line in the content matches a placeholder pattern (parenthetical
+    hint, checklist item with parenthetical content, or HTML comment), the
+    whole section is dropped before rendering. Keeps the dashboard tidy when
+    agents leave the template defaults in place instead of filling them in.
+    """
+    parts = re.split(r"^(# .+)$", body, flags=re.MULTILINE)
+    if len(parts) <= 1:
+        return body
+    out = [parts[0]]
+    i = 1
+    while i < len(parts):
+        header = parts[i]
+        content = parts[i + 1] if i + 1 < len(parts) else ""
+        if not _is_placeholder_only(content):
+            out.append(header)
+            out.append(content)
+        i += 2
+    return "".join(out)
+
+
+def _is_placeholder_only(content: str) -> bool:
+    lines = [l.rstrip() for l in content.splitlines()]
+    real = [l for l in lines if l.strip()]
+    if not real:
+        return True
+    for line in real:
+        stripped = line.strip()
+        if any(p.match(stripped) for p in _PLACEHOLDER_PATTERNS):
+            continue
+        return False
+    return True
+
+
 def _render_markdown(body: str) -> str:
     """Minimal markdown renderer for ticket bodies. Handles h1-h3, ul, ol, [ ]/[x], code, bold."""
     import html as _html
@@ -524,7 +569,7 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str) -> str:
     created = ticket.get("created", "—")
     updated = ticket.get("updated", "—")
     back = f'<a class="back-link" href="/project/{_e(alias)}/board"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to Board</a>'
-    body_html = _render_markdown(body)
+    body_html = _render_markdown(_strip_empty_sections(body))
     return f"""{back}
 <div class="detail-page">
   <div class="detail-header">
@@ -641,7 +686,7 @@ def project_ticket(alias: str, ticket_id: str):
 
 def _doc_detail_page(title: str, body: str, alias: str, kind: str, meta: dict | None = None) -> str:
     back = f'<a class="back-link" href="/project/{_e(alias)}/{_e(kind)}"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to {_e(kind.capitalize())}</a>'
-    body_html = _render_markdown(body)
+    body_html = _render_markdown(_strip_empty_sections(body))
     sidebar_html = ""
     if meta:
         rows = "".join(

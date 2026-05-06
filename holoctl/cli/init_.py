@@ -65,7 +65,7 @@ def init_cmd(
         full_path.write_text(content, encoding="utf-8")
 
     index_data = {
-        "meta": {"version": 1, "updated": _today(), "nextId": 1, "counts": {}},
+        "meta": {"version": 1, "updated": _now(), "nextId": 1, "counts": {}},
         "tickets": [],
     }
     (cwd / ".holoctl" / "board" / "index.json").write_text(
@@ -92,9 +92,9 @@ def init_cmd(
     console.print("")
 
 
-def _today() -> str:
-    from datetime import date
-    return date.today().isoformat()
+def _now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _derive_prefix(name: str) -> str:

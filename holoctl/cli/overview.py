@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -136,17 +136,22 @@ def _first_paragraph(text: str) -> str:
 
 
 def _suggest_next(board: Board, counts: dict) -> str:
-    today = date.today()
+    now = datetime.now(timezone.utc)
     doing = board.ls({"status": "doing"})
 
-    # Stalled tickets (>5 days in doing)
+    # Stalled tickets (>5 days in doing).
+    # `updated` may be a date-only string (`2026-05-04`) on legacy tickets or
+    # a full ISO 8601 timestamp on new ones — both parse via fromisoformat
+    # in 3.11+.
     for t in doing:
         upd = t.get("updated")
         if not upd:
             continue
         try:
-            d = date.fromisoformat(upd)
-            age = (today - d).days
+            parsed = datetime.fromisoformat(upd.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            age = (now - parsed).days
             if age > 5:
                 return f"[yellow]⚠[/yellow] [bold]{t['id']}[/bold] [dim]has been in `doing` for {age} days — review or unblock?[/dim]"
         except (ValueError, TypeError):

@@ -13,7 +13,7 @@ def get_templates(config: dict) -> dict[str, str]:
         ".holoctl/agents/architect.md": _agent_architect_md(p),
         ".holoctl/agents/researcher.md": _agent_researcher_md(p),
         ".holoctl/commands/status.md": _cmd_status_md(cli, p),
-        ".holoctl/commands/ticket.md": _cmd_ticket_md(cli, p),
+        ".holoctl/commands/ticket.md": _cmd_ticket_md(config),
         ".holoctl/commands/board.md": _cmd_board_md(cli, p),
         ".holoctl/commands/sprint.md": _cmd_sprint_md(cli),
         ".holoctl/commands/decision.md": _cmd_decision_md(),
@@ -214,7 +214,11 @@ Maximum 10 lines. No prose.
 """
 
 
-def _cmd_ticket_md(cli: str, p: dict) -> str:
+def _cmd_ticket_md(config: dict) -> str:
+    p = config["project"]
+    cli = config["commands"]["boardCli"]
+    statuses = " | ".join(config["board"]["statuses"])
+    priorities = " | ".join(config["board"]["priorities"])
     return f"""---
 name: ticket
 description: "Create a new ticket on the board"
@@ -223,18 +227,39 @@ arguments: "<title>"
 
 # /ticket — Create a ticket
 
-1. Run `{cli} next-id` to get the next number.
-2. Fill in:
-   - **title**: from the user's argument (verb + object)
-   - **agent**: infer from the type of work, or ask
-   - **projects**: list of subdir names this ticket touches (`{cli} repo list` to see them); empty if workspace-wide
-   - **priority**: infer or ask (p0|p1|p2|p3)
-   - **Start**: fill if enough context, otherwise ask
-   - **Goal (DoD)**: derive from title + context, each item as `[ ]`
-3. Save the ticket: `{cli} add '<json>'`
-4. Confirm: "Ticket {p['prefix']}-NNN created: {{title}}. Agent: {{name}}. Priority: {{pN}}."
+The board CLI rejects malformed values. Pass exact strings from the lists below.
 
-If the user gave enough context, don't ask — fill and confirm.
+## Valid values
+
+- **status**: `{statuses}` (default: `{config["board"]["statuses"][0]}` — omit unless the user explicitly asks)
+- **priority**: `{priorities}`
+- **agent**: must match a file under `.holoctl/agents/` (run `{cli.split()[0]} agent list` to see them)
+
+## Required fields the user must supply
+
+If any of the below is missing **and** you can't infer it from clear context, ASK the user **once** in a single batched question. Don't guess. Don't pick a default silently.
+
+- **title** (verb + object — derive from the slash command argument)
+- **priority** (`p0`-`p3`)
+- **agent** (one of the defined agents, single value preferred)
+- **Goal — Definition of Done** (at least one `- [ ]` item)
+
+## Optional, fill if you have it
+
+- **projects**: subdir names this ticket touches (run `{cli.split()[0]} repo list` to see them); leave empty if workspace-wide.
+- **Start**: state of the codebase before work begins, files that will be touched.
+- **Context**: why this exists, non-obvious info.
+- **Out of scope**: what NOT to do.
+
+If you don't have content for an optional section, **omit it entirely** — don't write `(...)` placeholders.
+
+## Procedure
+
+1. Run `{cli} next-id` to get the next number.
+2. Build the ticket JSON with the fields above.
+3. Create it: `{cli} add '<json>'`. The CLI will reject invalid status/priority/agent — re-ask the user if it does.
+4. If you have body content (Start / Goal / Context), append it to `.holoctl/board/tickets/{p['prefix']}-NNN-<slug>.md` after creation.
+5. Confirm: "Ticket {p['prefix']}-NNN created: {{title}}. Agent: {{name}}. Priority: {{pN}}."
 """
 
 
@@ -589,48 +614,52 @@ When the agent reports back:
 
 def _ticket_template_md(config: dict) -> str:
     p = config["project"]
+    statuses = " | ".join(config["board"]["statuses"])
+    priorities = " | ".join(config["board"]["priorities"])
+    agents_dir = "./agents/*.md"
     return f"""---
 id: {p['prefix']}-XXX
 title: <verb + object>
-agent: <developer | reviewer | architect | researcher>
+agent: <one of {agents_dir}>
 projects: null
-status: backlog
-priority: <p0 | p1 | p2 | p3>
+status: <{statuses}>
+priority: <{priorities}>
 sprint: null
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
+created: <ISO 8601 UTC, e.g. 2026-05-06T13:42:18Z>
+updated: <ISO 8601 UTC>
 completed: null
 depends: null
 tags: null
 ---
 
-# Start
+<!--
+Replace each section below with real content, OR delete the entire section
+(header + body) if it doesn't apply to this ticket. Don't leave HTML comments
+or `(placeholder)` text — the dashboard hides empty/placeholder sections, but
+the ticket .md should be clean for git diffs.
 
-Current state verified BEFORE starting. List:
-
-- Files that will be touched (relative paths)
-- Current relevant state
-- Dependencies on other tickets (cite IDs)
+Goal — Definition of Done is REQUIRED. Everything else is optional.
+-->
 
 # Goal — Definition of Done
 
-Objective criteria. Each item will be marked `[x]` or `[ ]` in the final report.
+- [ ] <objective criterion>
 
-- [ ] criterion 1
-- [ ] criterion 2
-- [ ] lint and build pass
+# Start
+
+<!-- Files that will be touched, current state, dependencies on other tickets. -->
 
 # Context
 
-Why this ticket exists. Non-obvious info the agent needs.
+<!-- Why this ticket exists. Non-obvious info the agent needs. -->
 
 # Out of scope
 
-What NOT to do in this task.
+<!-- What NOT to do in this task. -->
 
 # Execution notes
 
-(Agent fills: blockers, decisions made, pending questions)
+<!-- Agent fills during work: blockers, decisions made, pending questions. -->
 """
 
 
