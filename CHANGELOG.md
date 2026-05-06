@@ -2,6 +2,30 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Removed (breaking)
+
+- **Node implementation removed.** The parallel Node mirror under `src/`, `bin/holoctl.js`, `scripts/`, `package.json`, and `package-lock.json` is gone. holoctl was never published to npm; the Node tree was a stale historical mirror that diverged from Python and doubled the maintenance cost. Python (PyPI) is the only implementation going forward. If you need the old JS entrypoint, check out tag `v0.5.1`.
+
+### Added
+
+- **`/holoctl` slash command is now actually emitted by `compile` for every target.** Previously only the (unpublished) Node tree wrote it for cursor/windsurf/copilot. Python now writes it for **claude / cursor / windsurf / copilot / devin** at compile time, loaded from `holoctl/templates/commands/holoctl-<target>.md` via `compiler.template.load_bootstrap()`.
+- `compile_cursor` now writes to `.cursor/rules/holoctl.md` (modern Cursor rules format) instead of the legacy `.cursorrules`, plus `.cursor/commands/<name>.md` for every slash command and `.cursor/commands/holoctl.md` bootstrap. Matches the README "Pick your AI tool" table.
+- `compile_windsurf` now writes `.windsurf/workflows/<name>.md` per command + `.windsurf/workflows/holoctl.md` bootstrap, alongside the existing `.windsurfrules`.
+- `compile_copilot` now writes `.github/prompts/<name>.prompt.md` per command + `.github/prompts/holoctl.prompt.md` bootstrap, alongside the existing `.github/copilot-instructions.md`.
+- `compile_devin` now writes a `.devin/skills/holoctl/SKILL.md` bootstrap.
+- `holoctl sync` now refreshes `.holoctl/board/tickets/_template.md` (it was missing from `_SYNC_TARGETS`).
+
+### Fixed
+
+- `holoctl repo list` now merges auto-discovered subprojects with manual overrides from `config.project.repos[]`, matching the README/CHANGELOG 0.5.0 promise. Previously it only listed manual entries — same bug 0.5.1 fixed for `overview`.
+- `holoctl doctor` `_TARGET_OUTPUTS` now matches what each compiler actually writes, so doctor stops false-flagging targets as broken right after `holoctl compile`.
+- `__version__` fallback in `holoctl/__init__.py` bumped from `"0.3.0"` to a current value; only used when `importlib.metadata` can't read package metadata.
+- Path-traversal hardening in the dashboard's `/project/<alias>/context/<filename>` route — uses `Path.resolve()` + `relative_to()` instead of stripping `..` from the raw filename (which `....//` could escape).
+- Removed the orphaned `/project/<alias>/files` route, `/api/.../files` endpoint, and `_files_page()` helper. The Files tab was officially removed in 0.4.2 — only dead code remained in the FastAPI server.
+- Dropped stale reference to `holoctl setup-global` (removed in 0.5.0) from the `/holoctl` Claude bootstrap template.
+
 ## [0.5.1] — 2026-05-05
 
 ### Fixed

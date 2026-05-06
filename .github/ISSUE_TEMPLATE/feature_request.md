@@ -38,4 +38,4 @@ holoctl <new-command> ...
 
 ## Notes
 
-<!-- Anything else worth flagging — backwards compat concerns, dual-stack impact (Node + Python both?), etc. -->
+<!-- Anything else worth flagging — backwards compat concerns, performance, etc. -->

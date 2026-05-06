@@ -54,41 +54,8 @@ jobs:
           uv run --project .. holoctl board ls --project app | grep -q "CI-001"
           uv run --project .. holoctl board ls --project api | grep -q "CI-001"
 
-      - name: Run pytest if tests/ exists
-        shell: bash
-        run: |
-          if [ -d tests ] && [ -n "$(ls tests/*.py 2>/dev/null)" ]; then
-            uv run pytest tests/ -q
-          else
-            echo "No tests/ yet — skipping pytest"
-          fi
-
-  node:
-    name: Node ${{ matrix.node-version }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        node-version: ["18", "20", "22"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Install
-        run: npm install --no-audit --no-fund
-
-      - name: Smoke test — CLI loads
-        run: |
-          node bin/holoctl.js --version
-          node bin/holoctl.js --help
-
-      - name: Run tests
-        run: npm test
+      - name: Run pytest
+        run: uv run pytest tests/ -q
 
   build:
     name: Build wheel + sdist
