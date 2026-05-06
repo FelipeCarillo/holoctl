@@ -890,7 +890,16 @@ async def api_events(alias: str):
                     mtime = index_path.stat().st_mtime
                     if mtime != last_mtime:
                         last_mtime = mtime
-                        data = index_path.read_text(encoding="utf-8")
+                        # The on-disk index.json is pretty-printed (indent="\t"),
+                        # but the SSE protocol treats every newline inside the
+                        # `data:` field as a record terminator — the browser
+                        # would only see "{" before the first newline. Compact
+                        # it onto a single line so e.data is the full JSON.
+                        raw = index_path.read_text(encoding="utf-8")
+                        try:
+                            data = json.dumps(json.loads(raw), separators=(",", ":"))
+                        except (json.JSONDecodeError, ValueError):
+                            data = raw.replace("\n", " ").replace("\r", "")
                         yield f"event: board-update\ndata: {data}\n\n"
             except Exception:
                 pass
