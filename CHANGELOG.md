@@ -2,7 +2,7 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.7.0] — 2026-05-06
 
 ### Added (board agent + single-shot ticket creation)
 
@@ -198,6 +198,7 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 ### Fixed
 - Windows: `sys.stdout.reconfigure(encoding="utf-8")` so Rich can render `✓` / `✗` characters on `cp1252` consoles.
 
+[0.7.0]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.7.0
 [0.6.0]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.6.0
 [0.5.1]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.5.1
 [0.5.0]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.5.0
