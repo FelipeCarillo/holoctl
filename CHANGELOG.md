@@ -2,6 +2,15 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.1] — 2026-05-06
+
+### Fixed (templates)
+
+- **`tickets/_template.md` was missing the `files:` frontmatter field.** PR #14 (0.7.1) introduced `files: list[str]` as the field `Board.add()` reads and `hctl board batch` requires for parallel-overlap validation, but I forgot to add the corresponding line to the human-facing `_template.md` example. Users running `hctl sync` got the new template but it didn't show `files:`, leaving them confused about the contract. Now it's there with a comment explaining when it's required.
+- **`/ticket` slash command** updated to mention `files` in the recognized fields list and include it in the worked JSON example. Boardmaster persona was already correct from PR #14.
+
+Run `hctl sync` to refresh `_template.md` in existing workspaces.
+
 ## [0.8.0] — 2026-05-06
 
 ### Added (board controls UI)
@@ -220,6 +229,7 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 ### Fixed
 - Windows: `sys.stdout.reconfigure(encoding="utf-8")` so Rich can render `✓` / `✗` characters on `cp1252` consoles.
 
+[0.8.1]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.8.1
 [0.8.0]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.8.0
 [0.7.1]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.7.1
 [0.7.0]: https://github.com/FelipeCarillo/holoctl/releases/tag/v0.7.0

@@ -410,6 +410,7 @@ The CLI accepts body content directly in the JSON. **Do not** create a bare tick
   "agent": "developer",
   "priority": "p1",
   "projects": ["backend"],
+  "files": ["src/auth/jwt.py", "tests/test_jwt.py"],
   "goal": [
     "JWT signing implemented with HS256",
     "Tests cover happy path + invalid token",
@@ -427,6 +428,9 @@ Recognized body fields (all optional except `title`):
 - `outOfScope: str` — what NOT to do.
 - `executionNotes: str` — kept blank at creation; agents fill it during work.
 - `body: str` — full markdown override; if set, all the above are ignored.
+
+Frontmatter scope field (used by parallel batch validation):
+- `files: [str, ...]` — explicit list of file paths this ticket will touch. Optional for single `add`; **required** for `{cli} batch` (the validator uses it to prove non-overlap between sibling tickets). Even on single tickets, populating `files` helps downstream agents (developer, reviewer) confirm `Start` matches the codebase.
 
 If you genuinely don't have content for an optional section, **omit the field**. The dashboard already hides empty/placeholder sections.
 
@@ -800,6 +804,7 @@ id: {p['prefix']}-XXX
 title: <verb + object>
 agent: <one of {agents_dir}>
 projects: null
+files: <comma-separated paths this ticket touches, or null; required for `hctl board batch`>
 status: <{statuses}>
 priority: <{priorities}>
 sprint: null
