@@ -2,6 +2,25 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.0] — 2026-05-06
+
+### Added (workspace upgrade flow)
+
+- **`hctl upgrade` — single-command workspace upgrade.** Orchestrates the four steps users used to run by hand after every release: `sync --agents` (refresh template-managed files in `.holoctl/`), `compile` for every target in `config["targets"]` (regenerate `CLAUDE.md`, `.cursor/rules/*`, etc), `board rebuild-index` (migrates ticket schemas — `scope`→`projects`, date-only → ISO 8601, etc), and `doctor` (final health check). Bumps `holoctlVersion` in `.holoctl/config.json` on success.
+- **`hctl upgrade --check`** — diagnostic mode. Prints `workspace_version`, `installed_version` and the slice of `CHANGELOG.md` between them (sections strictly greater than workspace, up to and including installed). Writes nothing.
+- **`hctl upgrade --dry-run`** — propagates `dry_run=True` through `sync` and `compile`, skips `rebuild-index`, skips the version bump. Useful for previewing what a release would touch in CI.
+- **Auto-downgrade refusal.** If `installed_version < workspace_version`, the command exits 2 with a warning. Rolling the workspace back to an older release is a manual edit, not a one-button operation.
+- **`/hctl-upgrade` slash command published to all five targets** (claude, cursor, windsurf, copilot, devin). `hctl-` prefix avoids colliding with native or third-party `/upgrade` in the AI tool's namespace. The bootstrap walks the agent through diagnostic → ASK-once suggestion of the right install command (`uv tool upgrade holoctl` / `pipx upgrade holoctl` / `pip install -U holoctl`) → run `hctl upgrade` → `hctl overview`. Hard rule: **never** runs the package install without explicit user confirmation.
+- **`holoctlVersion` field in `.holoctl/config.json`.** Stamped at `hctl init` to the version that initialized the workspace; bumped by `hctl upgrade` after a successful sync. Default `"0.0.0"` for workspaces created before this release — `hctl upgrade --check` will treat them as fully stale and surface the entire CHANGELOG slice.
+
+### Changed (CHANGELOG distribution)
+
+- **`CHANGELOG.md` moved to `holoctl/CHANGELOG.md` and bundled via `[tool.setuptools.package-data]`.** `hctl upgrade` reads it offline through `importlib.resources` so the diff is available without network. Doc references in `README.md`, `README.pt-br.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, and `.github/PULL_REQUEST_TEMPLATE.md` updated to point at the new path.
+
+### Preserved
+
+- **User content is never touched by `hctl upgrade`.** The sync set is the same allow-list as `cli.sync_._SYNC_TARGETS` — bootstraps and the ticket `_template.md`. Files under `.holoctl/board/tickets/<ID>-*.md` and `.holoctl/context/*` are user-authored and survive untouched. Covered by regression test `test_full_run_preserves_user_ticket_bodies`.
+
 ## [0.8.1] — 2026-05-06
 
 ### Fixed (templates)
