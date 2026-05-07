@@ -14,6 +14,7 @@ from .cli.sync_ import app as _sync_app, sync_cmd
 from .cli.upgrade_ import app as _upgrade_app, upgrade_cmd
 from .cli.doctor import app as _doctor_app, doctor_cmd
 from .cli.agent import app as _agent_app
+from .cli.memory import app as _memory_app
 from .cli.repo import app as _repo_app
 from .cli.serve import app as _serve_app, serve_cmd
 from .cli.overview import app as _overview_app, overview_cmd
@@ -28,6 +29,7 @@ app = typer.Typer(
 # Sub-group commands
 app.add_typer(_board_app, name="board", help="Manage the project board")
 app.add_typer(_agent_app, name="agent", help="Manage agent definitions")
+app.add_typer(_memory_app, name="memory", help="Manage workspace memory")
 app.add_typer(_repo_app, name="repo", help="Manage repos within a project")
 
 # Direct commands

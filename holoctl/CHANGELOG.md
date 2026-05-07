@@ -2,6 +2,28 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.0] — 2026-05-07
+
+### Added (durable cross-assistant memory)
+
+- **`.holoctl/memory/` — single source of durable, cross-assistant context.** New tree at workspace root: `MEMORY.md` (always-on index, ≤200 lines) plus `topics/<name>.md` (lazy/glob-scoped). Each topic carries canonical frontmatter (`scope: always_on | lazy | glob`, optional `globs:`, optional `description:`) that compilers translate to each target's native primitive — no per-topic translation code needed.
+- **`hctl memory` subcommand** — `list`, `get`, `add`, `search`, `archive`, `seed`. Body comes from `--from-file` or stdin; topic frontmatter is set by flags. Validation refuses `scope=lazy` without `description:` (the model uses it to decide when to load) and `scope=glob` without `globs:`.
+- **All five compilers emit native memory primitives.** Same `.holoctl/memory/` tree compiles to:
+  - Claude Code: `.claude/skills/holoctl-memory/SKILL.md` (index) + `.claude/skills/holoctl-memory-<topic>/SKILL.md` (per topic, with `description:` for lazy and `paths:` for glob — model decides via progressive disclosure).
+  - Cursor: `.cursor/rules/holoctl-memory.mdc` (`alwaysApply: true`) + per-topic `.mdc` with `description:` (Apply Intelligently) or `globs:` (Apply to Specific Files).
+  - Windsurf: `.windsurf/rules/holoctl-memory.md` (`trigger: always_on`) + per-topic with `trigger: model_decision` (lazy) or `trigger: glob` (path-scoped). Hard 12k-char limit per file enforced. **Not** writing to `~/.codeium/windsurf/memories/` — that path is Cascade's auto-memory and the doc explicitly recommends `.windsurf/rules/` for durable knowledge.
+  - Copilot: `.github/instructions/holoctl-memory-<topic>.instructions.md` with `applyTo:` glob.
+  - Devin: `.devin/rules/holoctl-memory*.md` (best-effort given doc sparseness; same content layout as Windsurf).
+- **`hctl init` seeds an empty `MEMORY.md`** with a project-named header and creates `.holoctl/memory/.gitignore` defaulting to "everything committed except `topics/_archived/`". Privacy-strict workspaces can uncomment two lines to make the whole tree local-only.
+
+### Coexists with native auto-memory
+
+- **Claude Code's auto-memory is NOT disabled.** The compiler appends a "Workspace memory" pointer block to the generated `CLAUDE.md` referencing `@.holoctl/memory/MEMORY.md` so Claude reads both sources. If conflict, Claude's normal context-ordering applies. Disabling `autoMemoryEnabled` is left to the user — out of scope for the compiler.
+
+### Tests
+
+- 26 new tests covering `Memory` CRUD, archive flow, search, and per-target compile output (validating frontmatter shape for each of the 5 emitters). Suite stays green: 171 passing.
+
 ## [0.9.0] — 2026-05-06
 
 ### Added (workspace upgrade flow)

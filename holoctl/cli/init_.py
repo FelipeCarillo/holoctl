@@ -54,11 +54,20 @@ def init_cmd(
         ".holoctl/context",
         ".holoctl/context/decisions",
         ".holoctl/context/documents",
+        ".holoctl/memory",
+        ".holoctl/memory/topics",
     ]
     for d in dirs:
         (cwd / d).mkdir(parents=True, exist_ok=True)
 
     save_config(cwd, config)
+
+    # Seed an empty memory index + .gitignore. Topics are added by the user
+    # (`hctl memory add`) or proposed by the curator (0.14).
+    from ..lib.memory import Memory
+    mem = Memory(cwd)
+    mem.ensure_seed(project_name)
+    mem.ensure_gitignore()
 
     templates = get_templates(config)
     for rel_path, content in templates.items():
