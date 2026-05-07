@@ -1122,26 +1122,236 @@ def _render_markdown(body: str) -> str:
     return "\n".join(out)
 
 
-def _ticket_detail_page(ticket: dict, body: str, alias: str) -> str:
-    agents = ", ".join(ticket.get("agent") or []) or "—"
+def _format_iso_datetime(iso: str) -> str:
+    """Pretty-print an ISO timestamp as `YYYY-MM-DD HH:MM` (UTC, no seconds).
+
+    Used in the detail page's Activity / Properties cards where the full
+    ISO + microsecond is too noisy.
+    """
+    if not iso:
+        return ""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})", str(iso))
+    if not m:
+        return str(iso)[:19]
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}:{m.group(5)}"
+
+
+def _read_ticket_activity(project_root: Path, ticket_id: str) -> list[dict]:
+    """Pull ticket-scoped events out of `.holoctl/activity.jsonl`.
+
+    Returns a list of `{ts, type, actor}` dicts in chronological order.
+    Best-effort — corrupt lines are skipped silently. The Activity card
+    falls back to derived events (created / updated / completed) when the
+    log is missing or empty.
+    """
+    log = project_root / ".holoctl" / "activity.jsonl"
+    if not log.exists():
+        return []
+    out: list[dict] = []
+    try:
+        for line in log.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if ev.get("ticket") != ticket_id:
+                continue
+            out.append({
+                "ts": ev.get("ts", ""),
+                "type": ev.get("type", "event"),
+                "actor": ev.get("actor", ""),
+            })
+    except OSError:
+        return []
+    return out
+
+
+def _ticket_detail_page(ticket: dict, body: str, alias: str,
+                        all_tickets: list[dict] | None = None,
+                        project_root: Path | None = None) -> str:
+    """Detail page for a single ticket (Phase-4 redesign).
+
+    Layout: breadcrumb-level action bar above a large header (priority
+    dot + ID + status pill + priority pill + title), then a two-column
+    grid with the markdown body on the left and a stack of three info
+    cards (Properties / Linked / Activity) on the right. Both columns
+    scroll independently — long descriptions don't push the activity
+    log off-screen, and vice versa.
+    """
+    agents_list = [a for a in (ticket.get("agent") or []) if a]
     status = ticket.get("status", "backlog")
-    status_color = {"doing": "blue", "done": "green", "review": "yellow", "cancelled": "red"}.get(status, "muted")
     prio = ticket.get("priority", "p2")
-    sprint = ticket.get("sprint") or "—"
-    created = ticket.get("created", "—")
-    updated = ticket.get("updated", "—")
-    back = f'<a class="back-link" href="/project/{_e(alias)}/board"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to Board</a>'
+    sprint = ticket.get("sprint") or ""
+    tags_list = [t for t in (ticket.get("tags") or []) if t]
+    depends_list = [d for d in (ticket.get("depends") or []) if d]
+    blocks_list: list[str] = []
+    if all_tickets is not None:
+        ours = ticket.get("id")
+        for t in all_tickets:
+            if t.get("id") == ours:
+                continue
+            if ours in (t.get("depends") or []):
+                blocks_list.append(t.get("id", ""))
+    created = ticket.get("created", "")
+    updated = ticket.get("updated", "")
+    completed = ticket.get("completed", "")
+
     body_html = _render_markdown(_strip_empty_sections(body))
-    return f"""{back}
-<div class="detail-page">
-  <div class="detail-header">
-    <div class="detail-header-top">
-      <span class="detail-id">{_e(ticket['id'])}</span>
-      <span class="status-badge {_e(status_color)}">{_e(status)}</span>
-      <span class="p-badge {_e(prio)}">{_e(prio)}</span>
-    </div>
-    <div class="detail-title">{_e(ticket['title'])}</div>
+
+    # ── Breadcrumb-level action bar ─────────────────────────────────────
+    actions = f"""<div class="detail-toolbar">
+  <a class="back-link" href="/project/{_e(alias)}/board">
+    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+    Back to Board
+  </a>
+  <div class="detail-actions">
+    <button type="button" class="btn-sm lr-edit lr-status" data-edit-field="status" data-status="{_e(status)}" data-detail-row data-id="{_e(ticket['id'])}">
+      Move ▾
+    </button>
+    <button type="button" class="btn-sm" data-card-menu data-detail-menu data-id="{_e(ticket['id'])}" data-status="{_e(status)}" aria-label="More actions">⋯</button>
   </div>
+</div>"""
+
+    # ── Header ─────────────────────────────────────────────────────────
+    header = f"""<div class="detail-header">
+  <div class="detail-header-row" data-id="{_e(ticket['id'])}" data-status="{_e(status)}" data-p="{_e(prio)}">
+    <span class="kc-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
+    <span class="detail-id">{_e(ticket['id'])}</span>
+    <span class="lr-status" data-status="{_e(status)}">{_e(status)}</span>
+    <span class="lr-prio-pill" data-p="{_e(prio)}">{_e(prio)}</span>
+  </div>
+  <h1 class="detail-title">{_e(ticket['title'])}</h1>
+</div>"""
+
+    # ── Right rail: Properties card ────────────────────────────────────
+    if agents_list:
+        avs = "".join(
+            f'<span class="avatar-initials" data-hue="{_avatar_hue(a)}" '
+            f'title="{_e(a)}">{_e(_initials(a))}</span>'
+            for a in agents_list
+        )
+        agents_value = f'<span class="avatar-stack">{avs}</span><span class="dr-prop-text">{_e(", ".join(agents_list))}</span>'
+    else:
+        agents_value = '<span class="dr-prop-empty">—</span>'
+
+    sprint_display = f'#{_e(sprint)}' if sprint else '<span class="dr-prop-empty">—</span>'
+    tags_display = (", ".join(_e(t) for t in tags_list)
+                    if tags_list else '<span class="dr-prop-empty">—</span>')
+    created_disp = _format_iso_datetime(created) or "—"
+    updated_disp = _format_iso_datetime(updated) or "—"
+
+    properties = f"""<div class="dr-card" data-detail-row data-id="{_e(ticket['id'])}">
+  <div class="dr-card-title">Properties</div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Status</span>
+    <button type="button" class="dr-prop-edit lr-edit lr-status" data-edit-field="status" data-status="{_e(status)}">{_e(status)}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Priority</span>
+    <button type="button" class="dr-prop-edit lr-edit lr-prio-pill" data-edit-field="priority" data-p="{_e(prio)}">{_e(prio)}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Agents</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="agent" data-current="{_e(','.join(agents_list))}">{agents_value}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Sprint</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="sprint" data-current="{_e(sprint)}">{sprint_display}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Tags</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="tags" data-current="{_e(','.join(tags_list))}">{tags_display}</button>
+  </div>
+  <hr class="dr-divider">
+  <div class="dr-prop dr-prop-readonly">
+    <span class="dr-prop-label">Created</span>
+    <span class="dr-prop-value mono" title="{_e(created)}">{_e(created_disp)}</span>
+  </div>
+  <div class="dr-prop dr-prop-readonly">
+    <span class="dr-prop-label">Updated</span>
+    <span class="dr-prop-value mono" title="{_e(updated)}">{_e(updated_disp)}</span>
+  </div>
+</div>"""
+
+    # ── Right rail: Linked card ────────────────────────────────────────
+    if depends_list or blocks_list:
+        dep_items = "".join(
+            f'<a class="dr-linked-item" href="/project/{_e(alias)}/board/{_e(d)}">'
+            f'<span class="dr-linked-arrow">↳</span> depends on {_e(d)}</a>'
+            for d in depends_list
+        )
+        blk_items = "".join(
+            f'<a class="dr-linked-item" href="/project/{_e(alias)}/board/{_e(b)}">'
+            f'<span class="dr-linked-arrow">↳</span> blocks {_e(b)}</a>'
+            for b in blocks_list
+        )
+        linked_body = dep_items + blk_items
+    else:
+        linked_body = '<div class="dr-empty">No linked tickets</div>'
+
+    linked = f"""<div class="dr-card">
+  <div class="dr-card-title">Linked</div>
+  <div class="dr-linked">{linked_body}</div>
+</div>"""
+
+    # ── Right rail: Activity card ──────────────────────────────────────
+    # Combine derived events (always available) with anything matching in
+    # activity.jsonl, then sort newest-first.
+    derived: list[tuple[str, str, str]] = []  # (ts, label, type)
+    if created:
+        derived.append((created, "Created", "ticket.created"))
+    if updated and updated != created:
+        derived.append((updated, "Updated", "ticket.updated"))
+    if completed:
+        derived.append((completed, "Marked done", "ticket.completed"))
+    if project_root is not None:
+        for ev in _read_ticket_activity(project_root, ticket.get("id", "")):
+            tp = ev.get("type", "")
+            # The "ticket.created" event in the log mirrors `created`; skip
+            # the duplicate since it'd be the same timestamp.
+            if tp == "ticket.created":
+                continue
+            label = {
+                "ticket.body_updated": "Body edited",
+            }.get(tp, tp.replace("ticket.", "").replace("_", " ").capitalize())
+            derived.append((ev.get("ts", ""), label, tp))
+    # Newest first; on equal timestamps (Board.add → Board.move can happen
+    # in the same wall-clock second), break the tie so the more-advanced
+    # state wins — completed > body_updated > updated > created.
+    _TYPE_RANK = {
+        "ticket.completed": 0,
+        "ticket.body_updated": 1,
+        "ticket.updated": 2,
+        "ticket.created": 3,
+    }
+    derived.sort(
+        key=lambda x: (x[0], -_TYPE_RANK.get(x[2], 99)),
+        reverse=True,
+    )
+    if derived:
+        items = "".join(
+            f'<li class="dr-act-item" data-type="{_e(t)}">'
+            f'<span class="dr-act-dot"></span>'
+            f'<span class="dr-act-label">{_e(label)}</span>'
+            f'<span class="dr-act-time mono" title="{_e(ts)}">{_e(_format_iso_datetime(ts) or ts)}</span>'
+            f'</li>'
+            for ts, label, t in derived
+        )
+        activity_body = f'<ol class="dr-activity">{items}</ol>'
+    else:
+        activity_body = '<div class="dr-empty">No activity yet</div>'
+
+    activity = f"""<div class="dr-card">
+  <div class="dr-card-title">Activity</div>
+  {activity_body}
+</div>"""
+
+    return f"""<div class="detail-page" data-detail-page>
+  {actions}
+  {header}
   <div class="detail-grid">
     <div class="detail-main">
       <div class="detail-section">
@@ -1149,14 +1359,11 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str) -> str:
         <div class="detail-section-body">{body_html}</div>
       </div>
     </div>
-    <div class="detail-sidebar">
-      <div><div class="detail-field-label">Agent</div><div class="detail-field-value">{_e(agents)}</div></div>
-      <hr class="detail-divider">
-      <div><div class="detail-field-label">Sprint</div><div class="detail-field-value mono">{_e(sprint)}</div></div>
-      <hr class="detail-divider">
-      <div><div class="detail-field-label">Created</div><div class="detail-field-value mono">{_e(created)}</div></div>
-      <div><div class="detail-field-label">Updated</div><div class="detail-field-value mono">{_e(updated)}</div></div>
-    </div>
+    <aside class="detail-rail">
+      {properties}
+      {linked}
+      {activity}
+    </aside>
   </div>
 </div>"""
 
@@ -1238,14 +1445,20 @@ def project_ticket(alias: str, ticket_id: str):
     project = _get_project(alias)
     if not project:
         return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    board = Board(Path(project["path"]), project["config"])
+    project_root = Path(project["path"])
+    board = Board(project_root, project["config"])
     ticket = board.get(ticket_id)
     if not ticket:
         return HTMLResponse(_render("Not Found", _not_found_html("Ticket not found")), status_code=404)
-    ticket_file = Path(project["path"]) / ".holoctl" / "board" / ticket["file"]
+    ticket_file = project_root / ".holoctl" / "board" / ticket["file"]
     _, body = parse_frontmatter(ticket_file.read_text(encoding="utf-8")) if ticket_file.exists() else ({}, "")
+    # Pull the rest of the tickets so the detail page can compute the
+    # `blocks` reverse links without a second pass at click time.
+    all_tickets = board.ls()
     return _render(
-        f"{ticket_id} — {project['name']}", _ticket_detail_page(ticket, body, alias),
+        f"{ticket_id} — {project['name']}",
+        _ticket_detail_page(ticket, body, alias,
+                            all_tickets=all_tickets, project_root=project_root),
         current_alias=alias, current_tab="board",
         breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board", "href": f"/project/{alias}/board"}, {"label": ticket_id}],
         tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",

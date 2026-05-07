@@ -23,10 +23,13 @@ from holoctl.server.app import (
     _avatar_hue,
     _board_page,
     _format_due,
+    _format_iso_datetime,
     _format_relative_date,
     _initials,
     _kanban_html,
     _list_html,
+    _read_ticket_activity,
+    _ticket_detail_page,
     _ticket_preview,
     _timeline_html,
     app,
@@ -798,3 +801,227 @@ class TestApiTimelineHtmlFragment:
     def test_unknown_project_404(self, client: TestClient):
         r = client.get("/api/project/no-such/timeline-html")
         assert r.status_code == 404
+
+
+# ── Helper: _format_iso_datetime ──────────────────────────────────────────────
+
+
+class TestFormatIsoDatetime:
+    def test_iso_z(self):
+        assert _format_iso_datetime("2026-05-07T14:22:00Z") == "2026-05-07 14:22"
+
+    def test_iso_no_tz(self):
+        assert _format_iso_datetime("2026-05-07T14:22:00") == "2026-05-07 14:22"
+
+    def test_invalid(self):
+        # Returns the first 19 chars when it can't parse.
+        assert _format_iso_datetime("not a date") == "not a date"
+
+    def test_empty(self):
+        assert _format_iso_datetime("") == ""
+
+
+# ── Helper: _read_ticket_activity ─────────────────────────────────────────────
+
+
+class TestReadTicketActivity:
+    def test_returns_only_matching_ticket(self, workspace: Path):
+        log = workspace / ".holoctl" / "activity.jsonl"
+        log.write_text(
+            '{"ts":"2026-05-04T10:00:00Z","type":"ticket.created","ticket":"TST-001","actor":"cli"}\n'
+            '{"ts":"2026-05-05T10:00:00Z","type":"ticket.body_updated","ticket":"TST-001","actor":"cli"}\n'
+            '{"ts":"2026-05-06T10:00:00Z","type":"ticket.created","ticket":"TST-002","actor":"cli"}\n',
+            encoding="utf-8",
+        )
+        out = _read_ticket_activity(workspace, "TST-001")
+        assert len(out) == 2
+        assert all(e["type"].startswith("ticket.") for e in out)
+
+    def test_skips_corrupt_lines(self, workspace: Path):
+        log = workspace / ".holoctl" / "activity.jsonl"
+        log.write_text(
+            'not-json\n'
+            '{"ts":"2026-05-04T10:00:00Z","type":"ticket.created","ticket":"TST-001"}\n'
+            '\n',
+            encoding="utf-8",
+        )
+        out = _read_ticket_activity(workspace, "TST-001")
+        assert len(out) == 1
+
+    def test_missing_log(self, tmp_path: Path):
+        # Bare directory, no .holoctl/activity.jsonl.
+        assert _read_ticket_activity(tmp_path, "TST-001") == []
+
+
+# ── _ticket_detail_page: markup contract ──────────────────────────────────────
+
+
+class TestTicketDetailPage:
+    def test_renders_toolbar_header_grid(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer", "priority": "p1"})
+        html = _ticket_detail_page(ticket, "## Description\n\nReal body.\n", "test", project_root=workspace)
+        # Wrapper carries the data-flag the CSS uses to swap layout mode.
+        assert "data-detail-page" in html
+        assert 'class="detail-toolbar"' in html
+        assert 'class="detail-header"' in html
+        assert 'class="detail-grid"' in html
+        # Two scroll columns.
+        assert 'class="detail-main"' in html
+        assert 'class="detail-rail"' in html
+
+    def test_header_has_dot_id_pills_title(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "Hello world", "priority": "p1", "agent": "developer"})
+        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        # Priority dot, ID, status pill, priority pill, h1 title.
+        assert 'class="kc-prio-dot" data-p="p1"' in html
+        assert f'>{ticket["id"]}</span>' in html
+        assert 'class="lr-status" data-status="backlog"' in html
+        assert 'class="lr-prio-pill" data-p="p1"' in html
+        assert '<h1 class="detail-title">Hello world</h1>' in html
+
+    def test_toolbar_has_back_link_and_actions(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer"})
+        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        assert 'href="/project/test/board"' in html
+        assert 'data-edit-field="status"' in html  # Move ▾
+        assert 'data-card-menu' in html             # ⋯ menu
+
+    def test_properties_card_has_editable_fields(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({
+            "title": "T", "agent": "developer", "priority": "p1",
+            "sprint": "s1", "tags": "auth,api",
+        })
+        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        # Status/priority via .lr-edit; agents/sprint/tags via the new
+        # text popover.
+        assert 'data-edit-field="status"' in html
+        assert 'data-edit-field="priority"' in html
+        assert 'data-edit-text-field="agent"' in html
+        assert 'data-edit-text-field="sprint"' in html
+        assert 'data-edit-text-field="tags"' in html
+        # data-current carries the existing value for prefill.
+        assert 'data-current="developer"' in html
+        assert 'data-current="s1"' in html
+        assert 'data-current="auth,api"' in html
+
+    def test_properties_dates_pretty_formatted(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer"})
+        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        # Pretty `YYYY-MM-DD HH:MM` shows up; full ISO sits in the title attr.
+        assert "Created" in html
+        assert "Updated" in html
+        assert ticket["created"][:10] in html  # YYYY-MM-DD prefix
+
+    def test_linked_card_renders_depends(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        a = b.add({"title": "A", "agent": "developer"})
+        ticket_b = b.add({"title": "B", "agent": "developer", "depends": a["id"]})
+        all_t = b.ls()
+        html = _ticket_detail_page(ticket_b, "", "test", all_tickets=all_t, project_root=workspace)
+        assert "depends on" in html
+        assert f'href="/project/test/board/{a["id"]}"' in html
+
+    def test_linked_card_renders_blocks_reverse(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        a = b.add({"title": "A", "agent": "developer"})
+        ticket_b = b.add({"title": "B", "agent": "developer", "depends": a["id"]})
+        # Detail page for A should surface "blocks B" via reverse scan.
+        a_full = b.get(a["id"])
+        all_t = b.ls()
+        html = _ticket_detail_page(a_full, "", "test", all_tickets=all_t, project_root=workspace)
+        assert "blocks" in html
+        assert f'href="/project/test/board/{ticket_b["id"]}"' in html
+
+    def test_linked_card_empty_state(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer"})
+        html = _ticket_detail_page(ticket, "", "test", all_tickets=b.ls(), project_root=workspace)
+        assert "No linked tickets" in html
+
+    def test_activity_card_includes_created(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer"})
+        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        assert 'class="dr-activity"' in html
+        assert "Created" in html  # derived event always present
+
+    def test_activity_card_includes_completed_when_done(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer"})
+        b.move(ticket["id"], "done")
+        ticket = b.get(ticket["id"])
+        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        assert "Marked done" in html
+        # Activity is sorted newest-first; scope the position check to the
+        # <ol class="dr-activity"> block so the Properties card's "Created"
+        # date label doesn't muddy the comparison.
+        import re
+        m = re.search(r'<ol class="dr-activity">(.*?)</ol>', html, re.S)
+        assert m, "activity ol not found"
+        activity = m.group(1)
+        assert activity.find("Marked done") < activity.find("Created")
+
+    def test_activity_includes_log_entries(self, workspace: Path, workspace_config: dict):
+        # Seed an activity log entry for our ticket so the helper picks it up.
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer"})
+        log = workspace / ".holoctl" / "activity.jsonl"
+        log.write_text(
+            log.read_text(encoding="utf-8") +
+            f'{{"ts":"2026-05-08T10:00:00Z","type":"ticket.body_updated","ticket":"{ticket["id"]}","actor":"cli"}}\n',
+            encoding="utf-8",
+        )
+        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        assert "Body edited" in html
+
+    def test_renders_markdown_body(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer"})
+        html = _ticket_detail_page(
+            ticket,
+            "## Description\n\nThis is the **body**.\n",
+            "test", project_root=workspace,
+        )
+        assert "<strong>body</strong>" in html
+
+
+# ── Route: /project/{alias}/board/{ticket_id} ────────────────────────────────
+
+
+class TestTicketDetailRoute:
+    def test_renders_detail_page(self, client: TestClient, alias: str):
+        created = client.post(
+            f"/api/project/{alias}/tickets",
+            json={"title": "Live ticket", "agent": "developer", "priority": "p1"},
+        ).json()
+        r = client.get(f"/project/{alias}/board/{created['id']}")
+        assert r.status_code == 200
+        body = r.text
+        assert "data-detail-page" in body
+        assert 'class="detail-toolbar"' in body
+        assert 'class="detail-rail"' in body
+        # Properties card holds the new editable controls.
+        assert 'data-edit-text-field="sprint"' in body
+
+    def test_unknown_ticket_404(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board/TST-999")
+        assert r.status_code == 404
+
+    def test_blocks_link_appears(self, client: TestClient, alias: str):
+        a = client.post(
+            f"/api/project/{alias}/tickets",
+            json={"title": "A", "agent": "developer"},
+        ).json()
+        client.post(
+            f"/api/project/{alias}/tickets",
+            json={"title": "B", "agent": "developer", "depends": [a["id"]]},
+        )
+        # A should advertise "blocks <B-id>" on its detail page.
+        r = client.get(f"/project/{alias}/board/{a['id']}")
+        assert r.status_code == 200
+        assert "blocks" in r.text

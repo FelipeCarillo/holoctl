@@ -640,8 +640,11 @@
 
   function openCardMenu(btn, card) {
     closeCardMenu();
-    const id = card.getAttribute('data-id');
-    const currentStatus = card.getAttribute('data-status');
+    // Card may be a .kanban-card ancestor (cards in any view) OR the button
+    // itself when the menu lives outside a card (detail-page toolbar).
+    const source = card || btn;
+    const id = source.getAttribute('data-id');
+    const currentStatus = source.getAttribute('data-status');
     const alias = projectAlias();
     if (!id || !alias) return;
     const statuses = statusList();
@@ -724,8 +727,10 @@
         // stopPropagation stops the rest of the document handler closing the menu.
         e.preventDefault();
         e.stopPropagation();
+        // Card menu can be inside a .kanban-card (kanban / list / timeline)
+        // or stand alone (detail-page toolbar) — pass null in the latter
+        // case so openCardMenu falls back to the trigger's own data-* attrs.
         const card = trigger.closest('.kanban-card');
-        if (!card) return;
         const wasOpen = trigger.getAttribute('aria-expanded') === 'true';
         if (wasOpen) closeCardMenu();
         else openCardMenu(trigger, card);
@@ -1027,9 +1032,14 @@
   function openEditPopover(btn) {
     closeEditPopover();
     const field = btn.getAttribute('data-edit-field');
-    const row = btn.closest('.ticket-row');
-    if (!row || !field) return;
-    const id = row.getAttribute('data-id');
+    if (!field) return;
+    // Trigger lives inside a list-view row (.ticket-row), inside a
+    // detail-page row container (.detail-header-row / .dr-card), or
+    // is a stand-alone toolbar button carrying its own data-id.
+    const owner = btn.closest('[data-detail-row], .ticket-row, [data-id]');
+    if (!owner) return;
+    const id = owner.getAttribute('data-id');
+    if (!id) return;
     let options;
     let current;
     if (field === 'status') {
@@ -1080,6 +1090,98 @@
     });
   }
 
+  // Free-form text edit popover (sprint / tags / agent CSV) — used by
+  // the detail page's right rail. Saves via PATCH; agent CSV strings are
+  // server-parsed by Board.set's _normalize_array.
+  function closeTextEditPopover() {
+    document.querySelectorAll('.lr-edit-text-popover').forEach(p => p.remove());
+    document.querySelectorAll('[data-edit-text-field][aria-expanded="true"]').forEach(b =>
+      b.setAttribute('aria-expanded', 'false'));
+  }
+
+  function openTextEditPopover(btn) {
+    closeTextEditPopover();
+    closeEditPopover();
+    const field = btn.getAttribute('data-edit-text-field');
+    const current = btn.getAttribute('data-current') || '';
+    if (!field) return;
+    // Detail page is the only host today, so the parent row carries the id.
+    const row = btn.closest('[data-detail-row], [data-id]');
+    const id = row ? row.getAttribute('data-id') : null;
+    if (!id) return;
+
+    const labelText = {
+      agent:  'Agents (comma-separated)',
+      sprint: 'Sprint',
+      tags:   'Tags (comma-separated)',
+    }[field] || field;
+    const hintText = {
+      agent:  'Use names from active agents (e.g. developer, reviewer)',
+      sprint: 'Free-form sprint name (e.g. sprint-1)',
+      tags:   'Free-form, comma-separated',
+    }[field] || '';
+
+    const pop = document.createElement('div');
+    pop.className = 'lr-edit-text-popover';
+    pop.setAttribute('role', 'dialog');
+    pop.innerHTML = `
+      <div class="lr-edit-text-popover-label">${labelText}</div>
+      <input type="text" value="${String(current).replace(/"/g, '&quot;')}" autocomplete="off" spellcheck="false">
+      ${hintText ? `<div class="lr-edit-text-popover-hint">${hintText}</div>` : ''}
+      <div class="lr-edit-text-popover-error" data-error></div>
+      <div class="lr-edit-text-popover-row">
+        <button type="button" class="btn-sm" data-cancel>Cancel</button>
+        <button type="submit" class="btn-sm btn-primary" data-save>Save</button>
+      </div>
+    `;
+    document.body.appendChild(pop);
+    btn.setAttribute('aria-expanded', 'true');
+    const r = btn.getBoundingClientRect();
+    pop.style.top = (window.scrollY + r.bottom + 4) + 'px';
+    pop.style.left = Math.max(8, window.scrollX + r.left) + 'px';
+    if (r.bottom + pop.offsetHeight + 8 > window.innerHeight) {
+      pop.style.top = (window.scrollY + r.top - pop.offsetHeight - 4) + 'px';
+    }
+    const input = pop.querySelector('input');
+    input.focus();
+    input.select();
+
+    async function save() {
+      const raw = input.value.trim();
+      const errEl = pop.querySelector('[data-error]');
+      errEl.textContent = '';
+      const saveBtn = pop.querySelector('[data-save]');
+      saveBtn.disabled = true;
+      // Multi-value fields get sent as a JSON array so Board.set's
+      // normalizer treats them as lists (and validates agents).
+      let value;
+      if (field === 'agent' || field === 'tags') {
+        value = raw === '' ? [] : raw.split(',').map(s => s.trim()).filter(Boolean);
+      } else {
+        value = raw === '' ? null : raw;
+      }
+      try {
+        await patchTicket(id, field, value);
+        showToast(`${field} updated`);
+        closeTextEditPopover();
+        // Trigger a quick re-render of the page: SSE will pick the change
+        // up within ~2s, but a full reload feels snappier on the detail
+        // page where most edits happen.
+        setTimeout(() => window.location.reload(), 250);
+      } catch (err) {
+        errEl.textContent = err.message || 'Update failed';
+        saveBtn.disabled = false;
+      }
+    }
+
+    pop.querySelector('[data-save]').addEventListener('click', save);
+    pop.querySelector('[data-cancel]').addEventListener('click', closeTextEditPopover);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); save(); }
+      if (e.key === 'Escape') { e.preventDefault(); closeTextEditPopover(); }
+    });
+  }
+
   function initInlineEdit() {
     document.addEventListener('click', (e) => {
       const trigger = e.target.closest('.lr-edit');
@@ -1091,10 +1193,23 @@
         else openEditPopover(trigger);
         return;
       }
+      const textTrigger = e.target.closest('[data-edit-text-field]');
+      if (textTrigger) {
+        e.preventDefault();
+        e.stopPropagation();
+        const wasOpen = textTrigger.getAttribute('aria-expanded') === 'true';
+        if (wasOpen) closeTextEditPopover();
+        else openTextEditPopover(textTrigger);
+        return;
+      }
       if (!e.target.closest('.lr-edit-popover')) closeEditPopover();
+      if (!e.target.closest('.lr-edit-text-popover')) closeTextEditPopover();
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeEditPopover();
+      if (e.key === 'Escape') {
+        closeEditPopover();
+        closeTextEditPopover();
+      }
     });
   }
 
