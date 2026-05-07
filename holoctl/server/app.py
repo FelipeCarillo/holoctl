@@ -832,6 +832,7 @@ def _timeline_html(tickets: list[dict], statuses: list[str], alias: str,
   <div class="tl-control-group">
     <span class="tl-control-label">Zoom</span>
     <div class="tl-zoom-switcher" role="tablist" aria-label="Timeline zoom">
+      <button type="button" class="tl-zoom-tab" data-tl-zoom="day">Day</button>
       <button type="button" class="tl-zoom-tab" data-tl-zoom="week">Week</button>
       <button type="button" class="tl-zoom-tab active" data-tl-zoom="month" aria-selected="true">Month</button>
       <button type="button" class="tl-zoom-tab" data-tl-zoom="quarter">Quarter</button>
@@ -1236,7 +1237,8 @@ def _read_ticket_activity(project_root: Path, ticket_id: str) -> list[dict]:
 
 def _ticket_detail_page(ticket: dict, body: str, alias: str,
                         all_tickets: list[dict] | None = None,
-                        project_root: Path | None = None) -> str:
+                        project_root: Path | None = None,
+                        statuses: list[str] | None = None) -> str:
     """Detail page for a single ticket (Phase-4 redesign).
 
     Layout: breadcrumb-level action bar above a large header (priority
@@ -1421,7 +1423,11 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
   {activity_body}
 </div>"""
 
-    return f"""<div class="detail-page" data-detail-page>
+    # Embed the configured status list as a CSV so the JS popover for the
+    # toolbar Move ▾ / ⋯ menu has something to populate with — on the
+    # detail page there are no `.kanban-col[data-status]` elements to mine.
+    statuses_csv = ",".join(_e(s) for s in (statuses or []))
+    return f"""<div class="detail-page" data-detail-page data-statuses="{statuses_csv}">
   {actions}
   {header}
   <div class="detail-grid">
@@ -1530,7 +1536,8 @@ def project_ticket(alias: str, ticket_id: str):
     return _render(
         f"{ticket_id} — {project['name']}",
         _ticket_detail_page(ticket, body, alias,
-                            all_tickets=all_tickets, project_root=project_root),
+                            all_tickets=all_tickets, project_root=project_root,
+                            statuses=project["config"]["board"]["statuses"]),
         current_alias=alias, current_tab="board",
         breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board", "href": f"/project/{alias}/board"}, {"label": ticket_id}],
         tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",

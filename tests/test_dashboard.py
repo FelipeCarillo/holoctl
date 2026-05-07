@@ -1259,3 +1259,129 @@ class TestDependsChip:
             html = renderer(b.ls(), statuses, "test") if renderer is not _kanban_html \
                 else renderer(b.ls(), statuses, "test", project_root=workspace)
             assert f'data-depends="{a["id"]}"' in html, f"{renderer.__name__} missed data-depends"
+
+
+# ── Post-merge follow-up #2: detail scroll, Move popover, Day zoom ────────────
+
+
+class TestDetailPageScrollContainment:
+    """Regression for "card detail has no vertical scroll".
+
+    `.content-body:has(> [data-detail-page])` was set to `overflow:
+    hidden` but not `display: flex; flex-direction: column`, so the
+    detail page's `flex: 1; min-height: 0` failed (parent wasn't flex).
+    Page rendered at natural height and anything past the viewport got
+    clipped silently. Independent column scrolls inside `.detail-main`
+    and `.detail-rail` couldn't even start.
+    """
+
+    def test_content_body_becomes_flex_column_for_detail(self):
+        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+        # Find the rule and assert it carries both overflow:hidden and the
+        # flex-column setup. Without flex column on the parent, the
+        # detail-page's flex children don't get sized correctly.
+        m = re.search(
+            r"\.content-body:has\(> \[data-detail-page\]\)\s*\{[^}]*\}",
+            css,
+        )
+        assert m, "content-body :has(detail-page) rule must exist"
+        block = m.group(0)
+        assert "overflow: hidden" in block
+        assert "display: flex" in block
+        assert "flex-direction: column" in block
+
+    def test_detail_main_and_rail_scroll_independently(self):
+        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+        # Sanity: each column still has its own overflow-y: auto so the
+        # parent flex chain actually delivers usable scroll.
+        m_main = re.search(
+            r"\[data-detail-page\]\s*\.detail-main\s*\{[^}]*\}", css,
+        )
+        assert m_main and "overflow-y: auto" in m_main.group(0)
+        m_rail = re.search(r"\.detail-rail\s*\{[^}]*\}", css)
+        assert m_rail and "overflow-y: auto" in m_rail.group(0)
+
+
+class TestDetailPageStatusList:
+    """Regression for "Move ▾ button does nothing" on the detail page.
+
+    The JS `statusList()` originally mined `.kanban-col[data-status]` to
+    populate the Move/⋯ popovers. The detail page has no kanban columns,
+    so the popover rendered empty — visually identical to "the button
+    doesn't work". Server now stamps a `data-statuses` CSV onto the
+    `[data-detail-page]` wrapper and the JS prefers that source.
+    """
+
+    def test_detail_wrapper_carries_data_statuses(self, client: TestClient, alias: str):
+        created = client.post(
+            f"/api/project/{alias}/tickets",
+            json={"title": "T", "agent": "developer"},
+        ).json()
+        r = client.get(f"/project/{alias}/board/{created['id']}")
+        assert r.status_code == 200
+        # The default config ships 5 statuses — find them in the CSV.
+        for s in ("backlog", "doing", "review", "done", "cancelled"):
+            assert s in r.text
+        # And the attribute itself, on the wrapper.
+        assert 'data-detail-page data-statuses="' in r.text
+
+    def test_detail_page_emits_status_csv(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer"})
+        statuses = workspace_config["board"]["statuses"]
+        html = _ticket_detail_page(
+            ticket, "", "test", project_root=workspace, statuses=statuses,
+        )
+        assert f'data-statuses="{",".join(statuses)}"' in html
+
+    def test_status_list_js_prefers_data_statuses(self):
+        js = (Path(app_module.__file__).parent / "static" / "holoctl-ui.js").read_text("utf-8")
+        # Both lookups must ship — `[data-statuses]` is the new fallback
+        # used outside the kanban view, the old kanban-col query stays
+        # for views that mine the columns directly.
+        assert "[data-statuses]" in js
+        assert ".kanban-col[data-status]" in js
+        # And `[data-statuses]` must appear *before* the column query in
+        # the file so the new path takes precedence.
+        i_attr = js.find("[data-statuses]")
+        i_col = js.find(".kanban-col[data-status]")
+        assert 0 <= i_attr < i_col, (
+            "data-statuses lookup must come before the .kanban-col fallback "
+            "in statusList() so the detail page's wrapper attr wins"
+        )
+
+
+class TestTimelineDayZoom:
+    """User asked for a Day-level zoom on the timeline (each day a tick)."""
+
+    def test_day_zoom_tab_present(self, client: TestClient, alias: str):
+        client.post(f"/api/project/{alias}/tickets",
+                    json={"title": "T", "sprint": "s1", "agent": "developer"})
+        r = client.get(f"/project/{alias}/board?view=timeline")
+        assert r.status_code == 200
+        assert 'data-tl-zoom="day"' in r.text
+        # Order: Day → Week → Month (active by default) → Quarter.
+        i_day = r.text.find('data-tl-zoom="day"')
+        i_week = r.text.find('data-tl-zoom="week"')
+        i_month = r.text.find('data-tl-zoom="month"')
+        i_quarter = r.text.find('data-tl-zoom="quarter"')
+        assert -1 < i_day < i_week < i_month < i_quarter
+
+    def test_day_zoom_config_present_in_js(self):
+        js = (Path(app_module.__file__).parent / "static" / "holoctl-ui.js").read_text("utf-8")
+        # `day` config must be in TL_ZOOM with sensible per-day pixel value
+        # so each day reads as its own column.
+        m = re.search(r"const TL_ZOOM\s*=\s*\{[^}]*?\}", js, re.S)
+        assert m
+        block = m.group(0)
+        assert "day:" in block
+        # tickEveryDays: 1 → one tick per day (sanity check that we wired
+        # the granularity, not just renamed an existing zoom).
+        assert re.search(r"day:\s*\{[^}]*tickEveryDays:\s*1", block)
+
+    def test_day_zoom_label_styling_class(self):
+        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+        # Day labels stack a smaller day-of-week glyph above the date —
+        # the supporting class must ship so the second line doesn't
+        # render at full label size and crash the spacing.
+        assert ".tl-axis-tick-dow" in css
