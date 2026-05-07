@@ -619,9 +619,20 @@
 
   // ── Card hover menu (⋯) ──
 
-  // Statuses come from the server via the kanban columns themselves —
-  // honors per-project config without hardcoding the default 5.
+  // Statuses come from the server. On the kanban view we mine the column
+  // elements (which carry `data-status`); everywhere else (list, timeline,
+  // detail page) the server stamps a CSV onto the closest enclosing
+  // wrapper via `data-statuses`. Without this fallback, the detail-page
+  // toolbar Move ▾ + ⋯ menus would render an empty popover (no kanban
+  // cols on that page → empty list → invisible UI → "button does
+  // nothing").
   function statusList() {
+    const wrap = document.querySelector('[data-statuses]');
+    if (wrap) {
+      const csv = wrap.getAttribute('data-statuses') || '';
+      const fromAttr = csv.split(',').map(s => s.trim()).filter(Boolean);
+      if (fromAttr.length) return fromAttr;
+    }
     return [...document.querySelectorAll('.kanban-col[data-status]')]
       .map(col => col.getAttribute('data-status'))
       .filter((v, i, arr) => v && arr.indexOf(v) === i);
@@ -1219,10 +1230,12 @@
   // ── Timeline (roadmap) view ──
 
   // Pixels per day per zoom level. Tuned for legibility:
+  //   day     → 1 day visible per ~64px (every day labelled)
   //   week    → ~1 week visible per ~125px (ticks every week, day labels)
   //   month   → ~1 month visible per ~150px (ticks every month)
   //   quarter → ~1 quarter visible per ~200px (ticks every quarter, broad strokes)
   const TL_ZOOM = {
+    day:     { pxPerDay: 64, tickEveryDays: 1,  labelEveryDays: 1  },
     week:    { pxPerDay: 18, tickEveryDays: 7,  labelEveryDays: 7  },
     month:   { pxPerDay: 5,  tickEveryDays: 7,  labelEveryDays: 30 },
     quarter: { pxPerDay: 2,  tickEveryDays: 30, labelEveryDays: 90 },
@@ -1294,7 +1307,12 @@
       tick.className = 'tl-axis-tick' + (isLabel ? ' tl-axis-tick-major' : '');
       tick.style.left = left + 'px';
       if (isLabel) {
-        if (_tlZoom === 'week') {
+        if (_tlZoom === 'day') {
+          // Day mode: stack day-of-week over MMM DD so each tick reads
+          // unambiguously without crowding (Mon / 07 May).
+          const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][cur.getDay()];
+          tick.innerHTML = `<span class="tl-axis-tick-dow">${dow}</span><br>${_fmtDay(cur)} ${_fmtMonth(cur)}`;
+        } else if (_tlZoom === 'week') {
           tick.textContent = `${_fmtMonth(cur)} ${_fmtDay(cur)}`;
         } else if (_tlZoom === 'month') {
           tick.textContent = `${_fmtMonth(cur)} ${cur.getFullYear()}`;

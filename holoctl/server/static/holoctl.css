@@ -1564,7 +1564,17 @@ code {
    Scoped via `[data-detail-page]` so the doc detail pages
    (/agents/{slug}, /commands/{slug}) keep their existing layout. */
 
-.content-body:has(> [data-detail-page]) { overflow: hidden; }
+/* Detail page manages its own height via the flex children below; the
+   parent must be flex column for `[data-detail-page] { flex: 1; min-height: 0 }`
+   to actually claim the remaining space. Without this, .content-body falls
+   back to its block layout, the detail page renders at natural height, and
+   anything past the viewport is silently clipped — the user-visible bug
+   was "no vertical scroll on the card detail page". */
+.content-body:has(> [data-detail-page]) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
 [data-detail-page] {
   max-width: none;
@@ -2974,6 +2984,17 @@ details[open] > summary .tree-icon { content: '📂'; }
   color: var(--text-1);
   font-weight: 600;
   border-left-color: var(--border-hover);
+}
+
+/* Day-of-week glyph stacked above the date in Day-zoom — softer, smaller,
+   so the date stays the dominant reading. */
+.tl-axis-tick-dow {
+  display: inline-block;
+  font-size: 8px;
+  font-weight: 500;
+  color: var(--text-3);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
 }
 
 /* Lane group + lane header (full-row). */
