@@ -174,12 +174,29 @@ def test_write_tools_have_write_flag():
     assert "holoctl.board_list" not in write_names
 
 
-def test_curate_suggestions_returns_stub():
-    """Until 0.14 the curator returns an empty placeholder."""
+def test_curate_suggestions_returns_open_curate_tickets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """0.14: curate_suggestions reads open meta:curate tickets from the board."""
+    _seed_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    # Empty workspace: no meta:curate tickets → empty list.
     resp = mcp.handle({
         "jsonrpc": "2.0", "id": 13, "method": "tools/call",
         "params": {"name": "holoctl.curate_suggestions", "arguments": {}},
     })
     parsed = json.loads(resp["result"]["content"][0]["text"])
     assert parsed["suggestions"] == []
-    assert "0.14" in parsed["note"]
+
+
+def test_curate_silence_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _seed_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    resp = mcp.handle({
+        "jsonrpc": "2.0", "id": 14, "method": "tools/call",
+        "params": {
+            "name": "holoctl.curate_silence",
+            "arguments": {"pattern_id": "abc123"},
+        },
+    })
+    parsed = json.loads(resp["result"]["content"][0]["text"])
+    assert parsed["silenced"] is True
+    assert parsed["pattern_id"] == "abc123"

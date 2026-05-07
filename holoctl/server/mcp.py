@@ -231,16 +231,38 @@ def _tool_agent_add(args: dict) -> Any:
 
 
 def _tool_curate_suggestions(args: dict) -> Any:
-    """Stub until 0.14 implements the curator engine. Returns empty list."""
-    return {
-        "suggestions": [],
-        "note": "Curator engine arrives in 0.14. Use `hctl curate show` once available.",
-    }
+    from ..lib.curator import _load_ticket_meta
+    import json as _json
+    root = _project_root()
+    index_path = root / ".holoctl" / "board" / "index.json"
+    if not index_path.exists():
+        return {"suggestions": []}
+    data = _json.loads(index_path.read_text(encoding="utf-8"))
+    out = []
+    for t in data.get("tickets", []) or []:
+        if "meta:curate" not in (t.get("tags") or []):
+            continue
+        if t.get("status") in ("done", "cancelled"):
+            continue
+        meta = _load_ticket_meta(root, t.get("id", "")) or {}
+        out.append({
+            "id": t.get("id"),
+            "title": t.get("title"),
+            "pattern_id": meta.get("curator_pattern_id"),
+            "action": meta.get("curator_action"),
+            "rule": meta.get("curator_rule"),
+        })
+    return {"suggestions": out}
 
 
 def _tool_curate_silence(args: dict) -> Any:
-    """Stub until 0.14."""
-    return {"silenced": False, "note": "Curator engine arrives in 0.14."}
+    from ..lib.curator import silence_pattern, SUPPRESSION_DAYS
+    pid = args.get("pattern_id")
+    if not pid:
+        raise ValueError("missing required arg: pattern_id")
+    days = int(args.get("days", SUPPRESSION_DAYS))
+    silence_pattern(_project_root(), pid, days=days)
+    return {"silenced": True, "pattern_id": pid, "days": days}
 
 
 TOOLS: list[dict] = [

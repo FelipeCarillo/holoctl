@@ -22,6 +22,7 @@ from .cli.overview import app as _overview_app, overview_cmd
 from .cli.setup import setup_cmd
 from .cli.boot import boot_cmd
 from .cli.handoff import handoff_cmd
+from .cli.curate import app as _curate_app
 from . import __version__
 
 app = typer.Typer(
@@ -35,6 +36,7 @@ app.add_typer(_board_app, name="board", help="Manage the project board")
 app.add_typer(_agent_app, name="agent", help="Manage agent definitions")
 app.add_typer(_memory_app, name="memory", help="Manage workspace memory")
 app.add_typer(_journal_app, name="journal", help="Record and inspect workspace events")
+app.add_typer(_curate_app, name="curate", help="Run the curator + inspect/silence suggestions")
 app.add_typer(_repo_app, name="repo", help="Manage repos within a project")
 
 # Direct commands

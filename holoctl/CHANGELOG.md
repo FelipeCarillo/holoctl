@@ -2,6 +2,44 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] — 2026-05-07
+
+### Added (autonomous curator — the "alive" of the system)
+
+- **`hctl curate {run, show, silence, apply}`** — the curator engine that watches the journal and proposes new agents/rules/topics as `meta:curate` tickets on the board. Per item 8A of the multi-assistant plan: when you approve a `meta:curate` ticket by moving it to **`done`**, the boardmaster auto-executes the action stored in the ticket's metadata (e.g. `agent_add`, `rule_extract`, `topic_archive`, `memory_promote`). One-click approval; reversible via the inverse command.
+- **5 built-in rules**, each in its own module under `holoctl/lib/curator_rules/`:
+  - `repeated_glob_edits` — N edits in same `a/b/**` path → propose a memory topic with `scope=glob` and the conventions for that area.
+  - `repeated_prompt` — same prompt asked N times → propose extracting it as a durable note (precursor to slash command). Uses token-hash matching by default; with `pip install holoctl[ml]` upgrades to `fastembed` ONNX embeddings (~250MB) for paraphrase detection at ≥0.85 cosine similarity (item 6 — opt-in extra avoids the 700MB torch from sentence-transformers).
+  - `unused_topic` — memory topic untouched ≥60 days → propose archiving. Skips `session-trail` (append-only by `hctl handoff`).
+  - `library_persona_match` — parses each library persona's `when_to_suggest:` frontmatter via PyYAML (item 7 — added as core dep) and counts matching journal events. When a heuristic fires, proposes activating that persona.
+  - `windsurf_memory_promote` — reads Cascade auto-memories at `~/.codeium/windsurf/memories/`. Topics that survived ≥7 days get a promote-to-versioned-topic suggestion. Closes the loop the Windsurf docs explicitly recommend (move durable knowledge from Memories to Rules).
+
+### Guardrails (rate limit + suppression)
+
+- **1 new suggestion per calendar day per workspace** (item 9). Avoids spam from rules that fire continuously.
+- **30-minute cooldown** between automatic curator runs (item 5A — Stop hook fires often, but the curator only computes once per cooldown window). `--bypass-cooldown` flag bypasses for testing or manual runs.
+- **14-day suppression** on `hctl curate silence <pattern_id>`. Stored in `.holoctl/curator/state.json` with the absolute `until` timestamp; expires automatically.
+- **Deduplication against open `meta:curate` tickets** — the same pattern can't generate duplicates while the original is still on the board.
+
+### Plumbing
+
+- **Auto-execute via `Board.move(..., 'done')`** when ticket has tag `meta:curate` and a parallel `.holoctl/curator/tickets/<id>.json` metadata file exists. Soft-import keeps the curator out of the board's hard dependency graph.
+- **MCP tools `holoctl.curate_suggestions` and `holoctl.curate_silence` are now functional** (were stubs in 0.13). Read tool returns open `meta:curate` tickets; write tool persists silences (lands in `permissions.ask`).
+- **PyYAML added as a core dependency** for parsing nested YAML frontmatter (`when_to_suggest:` in personas). Same parser is reusable in 0.15+ for other rule schemas.
+
+### Sanity validated
+
+- End-to-end in `SANITY-0.14.txt`:
+  1. 12 simulated `tool_use` Edit events in `src/api/**` → `repeated_glob_edits` fires → creates `CT-001` `meta:curate` ticket.
+  2. Same-day re-run → rate limit blocks (output: "No new suggestions").
+  3. `hctl board move CT-001 done` → auto-executes `rule_extract` → memory topic `convention-src-api` materialized with `scope=glob` and `globs: ["src/api/**"]`.
+  4. `hctl curate silence` persists in `state.json` with 14-day expiry timestamp.
+  5. Parallel metadata file `.holoctl/curator/tickets/CT-001.json` keeps the action+args separate from the board schema.
+
+### Tests
+
+- 17 new (260 total). Coverage: state persistence, suppression with time-based expiry, rate-limit one-per-day, silence dedup, every built-in rule (repeated_glob_edits, repeated_prompt hash mode, unused_topic, library_persona_match with YAML, session-trail exclusion), apply for `agent_add` / `topic_archive`, board.move auto-execute path, cooldown blocking.
+
 ## [0.13.0] — 2026-05-07
 
 ### Added (MCP server — board/memory accessible from any assistant)
