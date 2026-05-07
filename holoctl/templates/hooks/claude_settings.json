@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "{{HCTL_BIN}} journal record session_start --source claude --quiet"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "{{HCTL_BIN}} journal record tool_use --source claude --stdin --quiet"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "{{HCTL_BIN}} journal record stop --source claude --quiet"
+      }
+    ]
+  },
+  "permissions": {
+    "ask": [
+      "mcp__holoctl__board_create",
+      "mcp__holoctl__board_move",
+      "mcp__holoctl__board_set",
+      "mcp__holoctl__agent_add",
+      "mcp__holoctl__memory_add",
+      "mcp__holoctl__curate_silence"
+    ]
+  }
+}

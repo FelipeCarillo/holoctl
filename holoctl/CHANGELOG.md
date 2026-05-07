@@ -2,6 +2,36 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.0] — 2026-05-07
+
+### Added (event journal)
+
+- **`.holoctl/journal/<YYYY-MM-DD>.jsonl`** — append-safe daily JSONL of session events. Schema: `{ts, source, kind, payload}`. The journal is the input for the curator (0.14) — it doesn't act on it yet, but every record from now on will eventually be available for pattern detection. Locking is best-effort cross-process (msvcrt/fcntl) plus a per-process `threading.Lock` so concurrent writes from hooks running in parallel never corrupt the file.
+- **`hctl journal` subcommand** — `record`, `show`, `count`, `import`. `record --quiet` is the hot path used by hooks (no output, ~5ms per call). `show` and `count` are debugging helpers.
+
+### Added (setup-zero)
+
+- **`hctl setup`** — plants the `/holoctl` skill in every detected AI assistant in **user scope** (one-time, per machine). Detects Claude Code (`~/.claude`), Cursor (`~/.cursor`), Windsurf (`~/.codeium/windsurf`), Copilot (`~/.copilot`), Devin (`~/.config/devin` or `%APPDATA%\devin`). Resolves `hctl` absolute path via `shutil.which()` so the slash works regardless of installer (`uv tool install`, `pipx`, `pip` in venv). Idempotent — re-run updates content; `--force` to overwrite hand-edited skills.
+- **The `/holoctl` skill body** — same content across the 5 targets (only frontmatter differs to match each assistant's schema). Routes the agent through three flows based on `hctl doctor` output: **A** (not initialized → `hctl init`), **B** (outdated → `hctl upgrade`), **C** (ok → operate via `boot/board/handoff/curate/agent/memory`). Designed so the user never has to remember CLI commands — they just type `/holoctl` and the agent picks the right call.
+
+### Changed (init becomes idempotent)
+
+- **`hctl init` is now idempotent and version-aware.** Behavior matrix:
+  - `.holoctl/` absent → creates skeleton + compiles + plants hooks/MCP (existing behavior, unchanged).
+  - `.holoctl/` present, version equals installed → re-runs sync+recompile **non-destructively** (user-owned tickets/agents/memory preserved via the same allow-list `hctl upgrade` uses).
+  - Workspace version < installed → exits 0 with a clear hint pointing at `hctl upgrade`.
+  - Workspace version > installed → exits 2 (anti auto-downgrade — same guard `upgrade` enforces).
+  - New `--bare` flag creates only the directory skeleton without compile/hooks/MCP — used internally and by tests that need a workspace shell without side effects.
+
+### Added (hooks plumbing per target)
+
+- **All compiles now plant journal hooks.** Claude Code: `.claude/settings.json` gains `hooks.{SessionStart, PostToolUse, Stop}` calling `hctl journal record`. Cursor: `.cursor/hooks.json` gains `sessionStart` and `afterFileEdit`. Both merged **non-destructively** with any existing user hooks (deduplication by exact-content equality — re-running `compile` doesn't add duplicates).
+- **Write tools land in `permissions.ask`** in `.claude/settings.json`: every MCP write (`mcp__holoctl__board_create/move/set`, `agent_add`, `memory_add`, `curate_silence`) requires explicit user approval before the assistant can execute. Read tools auto-approve. Honors plan decision item 2A (write expostos com `permission: ask`).
+
+### Tests
+
+- 32 new (203 total). Coverage: journal record/recent/count, threaded write integrity, hook merge non-destructive, hook idempotency, `permissions.ask` write tools present, `hctl setup` body assembly, frontmatter shape per target, init idempotency at same/older/newer version, `--bare` flag, journal/memory dirs created at init.
+
 ## [0.10.0] — 2026-05-07
 
 ### Added (durable cross-assistant memory)

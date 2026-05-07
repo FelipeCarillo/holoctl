@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "holoctl"
-version = "0.10.0"
+version = "0.11.0"
 description = "Universal project operating system for AI coding assistants"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -51,6 +51,7 @@ include = ["holoctl*"]
 holoctl = [
     "templates/commands/*.md",
     "templates/agents/*.md",
+    "templates/hooks/*.json",
     "server/static/*",
     "CHANGELOG.md",
 ]
