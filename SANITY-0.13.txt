@@ -1,0 +1,114 @@
+=== 1. init com 5 alvos ===
+
+  Next steps:
+    $ hctl agent list                     # see latent personas you can activate
+    $ hctl agent add developer            # example: activate the 
+code-implementation persona
+    $ hctl board add '{"title":"My first ticket","agent":"boardmaster"}'
+    $ hctl serve
+
+
+=== 2. arquivos MCP gerados pelos compilers ===
+--- .claude/settings.json (mcpServers + hooks + permissions) ---
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "C:\\Users\\FelipeCarillo\\claudio\\projetos\\projctl\\.venv\\Scripts\\hctl.EXE journal record session_start --source claude --quiet"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "C:\\Users\\FelipeCarillo\\claudio\\projetos\\projctl\\.venv\\Scripts\\hctl.EXE journal record tool_use --source claude --stdin --quiet"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "C:\\Users\\FelipeCarillo\\claudio\\projetos\\projctl\\.venv\\Scripts\\hctl.EXE journal record stop --source claude --quiet"
+      }
+    ]
+  },
+  "permissions": {
+    "ask": [
+      "mcp__holoctl__board_create",
+      "mcp__holoctl__board_move",
+      "mcp__holoctl__board_set",
+      "mcp__holoctl__agent_add",
+      "mcp__holoctl__memory_add",
+      "mcp__holoctl__curate_silence"
+    ]
+  },
+  "mcpServers": {
+    "holoctl": {
+      "command": "C:\\Users\\FelipeCarillo\\claudio\\projetos\\projctl\\.venv\\Scripts\\hctl.EXE",
+      "args": [
+        "serve",
+        "--mcp"
+      ]
+    }
+  }
+}
+
+--- .cursor/mcp.json ---
+{
+  "mcpServers": {
+    "holoctl": {
+      "command": "C:\\Users\\FelipeCarillo\\claudio\\projetos\\projctl\\.venv\\Scripts\\hctl.EXE",
+      "args": [
+        "serve",
+        "--mcp"
+      ]
+    }
+  }
+}
+
+--- .windsurf/mcp.json ---
+{
+  "mcpServers": {
+    "holoctl": {
+      "command": "C:\\Users\\FelipeCarillo\\claudio\\projetos\\projctl\\.venv\\Scripts\\hctl.EXE",
+      "args": [
+        "serve",
+        "--mcp"
+      ]
+    }
+  }
+}
+
+--- .vscode/mcp.json (Copilot) ---
+{
+  "servers": {
+    "holoctl": {
+      "command": "C:\\Users\\FelipeCarillo\\claudio\\projetos\\projctl\\.venv\\Scripts\\hctl.EXE",
+      "args": [
+        "serve",
+        "--mcp"
+      ]
+    }
+  }
+}
+
+--- .devin/mcp.json ---
+{
+  "mcpServers": {
+    "holoctl": {
+      "command": "C:\\Users\\FelipeCarillo\\claudio\\projetos\\projctl\\.venv\\Scripts\\hctl.EXE",
+      "args": [
+        "serve",
+        "--mcp"
+      ]
+    }
+  }
+}
+
+=== 3. add ticket via CLI ===
+}
+
+=== 4. spawn MCP server via stdio + send 4 JSON-RPC requests ===
+{"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": false}}, "serverInfo": {"name": "holoctl", "version": "0.13.0"}}}
+{"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "holoctl.board_list", "description": "List tickets on the project board with optional filters.", "inputSchema": {"type": "object", "properties": {"status": {"type": "string"}, "priority": {"type": "string"}, "agent": {"type": "string"}, "tag": {"type": "string"}, "sprint": {"type": "string"}}}}, {"name": "holoctl.board_get", "description": "Get a single ticket by ID.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}, {"name": "holoctl.board_create", "description": "Create a new ticket. Pass title, agent, priority, goal, etc.", "inputSchema": {"type": "object", "properties": {"title": {"type": "string"}, "agent": {"type": "string"}, "priority": {"type": "string"}, "projects": {"type": "array", "items": {"type": "string"}}, "files": {"type": "array", "items": {"type": "string"}}, "goal": {"type": "array", "items": {"type": "string"}}, "context": {"type": "string"}, "outOfScope": {"type": "string"}, "executionNotes": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}, "sprint": {"type": "string"}, "status": {"type": "string"}}, "required": ["title"]}}, {"name": "holoctl.board_move", "description": "Transition a ticket's status (e.g. backlog→doing).", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "status": {"type": "string"}}, "required": ["id", "status"]}}, {"name": "holoctl.board_set", "description": "Set a single field on a ticket (e.g. priority, sprint).", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "field": {"type": "string"}, "value": {}}, "required": ["id", "field"]}}, {"name": "holoctl.memory_list_topics", "description": "List memory topics with their scope and description.", "inputSchema": {"type": "object", "properties": {}}}, {"name": "holoctl.memory_read_topic", "description": "Read the body of a memory topic (or 'MEMORY' for the index).", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}, {"name": "holoctl.memory_search", "description": "Substring-search memory index + topics.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}, {"name": "holoctl.memory_add", "description": "Create a memory topic. scope: always_on | lazy | glob.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "body": {"type": "string"}, "scope": {"type": "string"}, "description": {"type": "string"}, "globs": {"type": "array", "items": {"type": "string"}}, "overwrite": {"type": "boolean"}}, "required": ["name", "body"]}}, {"name": "holoctl.journal_recent", "description": "List recent journal records (session/tool events).", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer"}, "since": {"type": "string"}, "kind": {"type": "string"}, "source": {"type": "string"}}}}, {"name": "holoctl.agent_list_available", "description": "List active personas + the latent library catalog.", "inputSchema": {"type": "object", "properties": {}}}, {"name": "holoctl.agent_add", "description": "Activate a persona from the library into .holoctl/agents/.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}, {"name": "holoctl.curate_suggestions", "description": "Get current curator suggestions (stubbed in 0.13; engine in 0.14).", "inputSchema": {"type": "object", "properties": {}}}, {"name": "holoctl.curate_silence", "description": "Suppress a curator pattern for 14 days (stubbed in 0.13).", "inputSchema": {"type": "object", "properties": {"pattern_id": {"type": "string"}}, "required": ["pattern_id"]}}]}}
+{"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "{\"tickets\": [{\"id\": \"MT-001\", \"title\": \"do thing\", \"agent\": [\"boardmaster\"], \"projects\": [], \"files\": [], \"status\": \"backlog\", \"priority\": \"p1\", \"sprint\": null, \"created\": \"2026-05-07T03:52:00Z\", \"updated\": \"2026-05-07T03:52:00Z\", \"completed\": null, \"depends\": [], \"tags\": [], \"file\": \"tickets/MT-001-do-thing.md\"}]}"}]}}
+{"jsonrpc": "2.0", "id": 4, "result": {"content": [{"type": "text", "text": "{\"topics\": [], \"has_index\": true}"}]}}

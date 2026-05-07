@@ -2,6 +2,37 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.0] — 2026-05-07
+
+### Added (MCP server — board/memory accessible from any assistant)
+
+- **`hctl serve --mcp`** — runs the holoctl board/memory/journal/curator/agent surface as a stdio Model Context Protocol server. Per item 1 of the multi-assistant plan: stdio transport, NOT HTTP daemon. Each assistant spawns a short-lived `hctl serve --mcp` process when it needs to call a tool. No PID files, no daemon, works on Windows trivially.
+- **14 tools exposed**, split read vs write:
+  - **Read** (auto-approved): `holoctl.board_list`, `holoctl.board_get`, `holoctl.memory_list_topics`, `holoctl.memory_read_topic`, `holoctl.memory_search`, `holoctl.journal_recent`, `holoctl.agent_list_available`, `holoctl.curate_suggestions`.
+  - **Write** (user approval required via `permissions.ask`): `holoctl.board_create`, `holoctl.board_move`, `holoctl.board_set`, `holoctl.memory_add`, `holoctl.agent_add`, `holoctl.curate_silence`.
+- **Schema mirrors the CLI 1:1** (item 3 of the plan). Filters and arguments match `hctl board ls --status X --priority Y` exactly. Zero surprise; one mental model.
+- **Output is JSON-stringified** (item 4) inside MCP's `content: [{type: "text", text: "..."}]` — clients parse and render natively.
+- **No `mcp` package dependency** — minimal JSON-RPC implementation in `holoctl/server/mcp.py`. Reasons: install footprint, cold-start latency (each call spawns a Python process), and the protocol surface is small enough that depending on a 5MB+ package would be wasteful.
+
+### Added (per-target MCP config emission)
+
+- **All five compilers now emit native MCP server config**, merging non-destructively with any existing user MCP config:
+  - Claude Code: `.claude/settings.json:mcpServers.holoctl`
+  - Cursor: `.cursor/mcp.json`
+  - Copilot: `.vscode/mcp.json` (uses `servers:` key per VSCode's schema, not `mcpServers:`)
+  - Windsurf: `.windsurf/mcp.json`
+  - Devin: `.devin/mcp.json` (best-effort)
+- The absolute path of `hctl` is resolved at compile time via `shutil.which()` so the config works with `uv tool install`, `pipx`, or plain `pip` in venv.
+- Curator stubs return placeholders explaining the engine arrives in 0.14 — board/memory/agent calls are fully functional now.
+
+### Tests
+
+- 21 new tests (243 total). Coverage: protocol initialize/tools/list/tools/call, unknown method/tool error codes, missing-required-arg validation, board CRUD round-trip via MCP, memory add+list round-trip, agent materialize via MCP, write-flag categorization, JSON-text content shape, idempotent emission per target, user-MCP-server preservation on merge.
+
+### Sanity validated
+
+- Sanity in `SANITY-0.13.txt`: 4 JSON-RPC messages (`initialize`, `tools/list`, `board_list`, `memory_list_topics`) round-tripped through `hctl serve --mcp` via stdin/stdout. All 14 tools advertised with input schemas. Workspace ticket MT-001 retrieved via `board_list` matches the one created via CLI.
+
 ## [0.12.0] — 2026-05-07
 
 ### Added (token-economy boot + cross-session handoff)
