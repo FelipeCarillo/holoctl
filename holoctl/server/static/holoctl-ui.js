@@ -1112,14 +1112,16 @@
     if (!id) return;
 
     const labelText = {
-      agent:  'Agents (comma-separated)',
-      sprint: 'Sprint',
-      tags:   'Tags (comma-separated)',
+      agent:    'Agents (comma-separated)',
+      sprint:   'Sprint',
+      tags:     'Tags (comma-separated)',
+      projects: 'Repo / projects (comma-separated)',
     }[field] || field;
     const hintText = {
-      agent:  'Use names from active agents (e.g. developer, reviewer)',
-      sprint: 'Free-form sprint name (e.g. sprint-1)',
-      tags:   'Free-form, comma-separated',
+      agent:    'Use names from active agents (e.g. developer, reviewer)',
+      sprint:   'Free-form sprint name (e.g. sprint-1)',
+      tags:     'Free-form, comma-separated',
+      projects: 'Subprojects this ticket touches (e.g. backend, web)',
     }[field] || '';
 
     const pop = document.createElement('div');
@@ -1156,7 +1158,7 @@
       // Multi-value fields get sent as a JSON array so Board.set's
       // normalizer treats them as lists (and validates agents).
       let value;
-      if (field === 'agent' || field === 'tags') {
+      if (field === 'agent' || field === 'tags' || field === 'projects') {
         value = raw === '' ? [] : raw.split(',').map(s => s.trim()).filter(Boolean);
       } else {
         value = raw === '' ? null : raw;

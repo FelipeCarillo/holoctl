@@ -427,6 +427,45 @@ def _format_due(due_iso: str) -> str:
         return ""
 
 
+def _repo_chip_html(projects_list: list[str]) -> str:
+    """Compact repo / project pill for the card top row.
+
+    Surfaces *which* repo a ticket belongs to without dragging a multi-line
+    list onto the card. Shows the first project name and `+N` if more.
+    Returns "" when the ticket has no `projects` (so the card stays clean
+    for tickets that aren't repo-scoped).
+    """
+    projects_list = [p for p in projects_list if p]
+    if not projects_list:
+        return ""
+    head = projects_list[0]
+    extra = f' <span class="kc-repo-extra">+{len(projects_list) - 1}</span>' if len(projects_list) > 1 else ""
+    title = ", ".join(projects_list)
+    return (f'<span class="kc-repo" title="repo: {_e(title)}">'
+            f'<span class="kc-repo-glyph" aria-hidden="true">▸</span>'
+            f'{_e(head)}{extra}</span>')
+
+
+def _deps_chip_html(depends_list: list[str], alias: str) -> str:
+    """Inline `↳ HOL-001 +N` indicator linking to the first dependency.
+
+    Surfaces "this ticket is blocked by …" on the card without clicking
+    through to the detail page. The linked target uses preventDefault on
+    cards so navigation still goes to the parent card link unless the
+    user middle-clicks the dep itself; we keep it as plain text inside
+    the card to avoid that subtlety.
+    """
+    depends_list = [d for d in depends_list if d]
+    if not depends_list:
+        return ""
+    head = depends_list[0]
+    extra = f' <span class="kc-deps-extra">+{len(depends_list) - 1}</span>' if len(depends_list) > 1 else ""
+    title = ", ".join(depends_list)
+    return (f'<span class="kc-deps" title="depends on: {_e(title)}">'
+            f'<span class="kc-deps-glyph" aria-hidden="true">↳</span>'
+            f'{_e(head)}{extra}</span>')
+
+
 def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
                  project_root: Path | None = None) -> str:
     """Build the `<div class="kanban">` block. Used by both the full board page
@@ -447,7 +486,10 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
             prio = t.get("priority", "p2")
             sprint = t.get("sprint") or ""
             tags_csv = ",".join(t.get("tags") or [])
-            projects_csv = ",".join(t.get("projects") or [])
+            projects_list = [p for p in (t.get("projects") or []) if p]
+            projects_csv = ",".join(projects_list)
+            depends_list = [d for d in (t.get("depends") or []) if d]
+            depends_csv = ",".join(depends_list)
             preview = _ticket_preview(project_root, t) if project_root else ""
             due = _format_due(t.get("due") or "")
             data_attrs = (
@@ -458,6 +500,7 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
                 f' data-sprint="{_e(sprint)}"'
                 f' data-tags="{_e(tags_csv)}"'
                 f' data-projects="{_e(projects_csv)}"'
+                f' data-depends="{_e(depends_csv)}"'
                 f' data-title="{_e(t.get("title", ""))}"'
                 f' data-created="{_e(t.get("created", ""))}"'
                 f' data-updated="{_e(t.get("updated", ""))}"'
@@ -472,13 +515,16 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
                 avatars_html = f'<span class="avatar-stack">{avs}</span>'
             sprint_html = f'<span class="kc-sprint">#{_e(sprint)}</span>' if sprint else ""
             due_html = f'<span class="kc-due">⏱ {_e(due)}</span>' if due else ""
+            repo_html = _repo_chip_html(projects_list)
+            deps_html = _deps_chip_html(depends_list, alias)
             preview_html = f'<div class="kc-preview">{_e(preview)}</div>' if preview else ""
-            meta_inner = avatars_html + sprint_html + due_html
+            meta_inner = avatars_html + sprint_html + deps_html + due_html
             meta_html = f'<div class="kc-meta">{meta_inner}</div>' if meta_inner else ""
             cards += f"""<a href="/project/{_e(alias)}/board/{_e(t['id'])}" class="kanban-card" {data_attrs}>
   <div class="kc-top">
     <span class="kc-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
     <span class="kc-id">{_e(t['id'])}</span>
+    {repo_html}
     <button type="button" class="kc-menu" data-card-menu aria-label="Card actions" title="Actions">⋯</button>
   </div>
   <div class="kc-title">{_e(t['title'])}</div>
@@ -547,7 +593,10 @@ def _list_row_html(t: dict, alias: str) -> str:
     sprint = t.get("sprint") or ""
     status = t.get("status", "backlog")
     tags_csv = ",".join(t.get("tags") or [])
-    projects_csv = ",".join(t.get("projects") or [])
+    projects_list = [p for p in (t.get("projects") or []) if p]
+    projects_csv = ",".join(projects_list)
+    depends_list = [d for d in (t.get("depends") or []) if d]
+    depends_csv = ",".join(depends_list)
     upd_disp, upd_full = _format_relative_date(t.get("updated", ""))
     avatars_html = ""
     if agents_list:
@@ -558,6 +607,8 @@ def _list_row_html(t: dict, alias: str) -> str:
         )
         avatars_html = f'<span class="avatar-stack">{avs}</span>'
     sprint_html = f'<span class="lr-sprint">#{_e(sprint)}</span>' if sprint else '<span class="lr-empty">—</span>'
+    repo_html = _repo_chip_html(projects_list) or '<span class="lr-empty">—</span>'
+    deps_html = _deps_chip_html(depends_list, alias) or '<span class="lr-empty">—</span>'
     data_attrs = (
         f'data-id="{_e(t["id"])}"'
         f' data-status="{_e(status)}"'
@@ -566,6 +617,7 @@ def _list_row_html(t: dict, alias: str) -> str:
         f' data-sprint="{_e(sprint)}"'
         f' data-tags="{_e(tags_csv)}"'
         f' data-projects="{_e(projects_csv)}"'
+        f' data-depends="{_e(depends_csv)}"'
         f' data-title="{_e(t.get("title", ""))}"'
         f' data-created="{_e(t.get("created", ""))}"'
         f' data-updated="{_e(t.get("updated", ""))}"'
@@ -591,6 +643,8 @@ def _list_row_html(t: dict, alias: str) -> str:
   </div>
   <div class="lr-cell lr-cell-agents">{avatars_html or '<span class="lr-empty">—</span>'}</div>
   <div class="lr-cell lr-cell-sprint">{sprint_html}</div>
+  <div class="lr-cell lr-cell-repo">{repo_html}</div>
+  <div class="lr-cell lr-cell-deps">{deps_html}</div>
   <div class="lr-cell lr-cell-updated" title="{_e(upd_full)}">{_e(upd_disp)}</div>
   <div class="lr-cell lr-cell-menu">
     <button type="button" class="kc-menu" data-card-menu aria-label="Row actions" title="Actions">⋯</button>
@@ -629,6 +683,8 @@ def _list_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
   <div class="lr-cell lr-cell-prio-pill">Priority</div>
   <div class="lr-cell lr-cell-agents">Agents</div>
   <div class="lr-cell lr-cell-sprint">Sprint</div>
+  <div class="lr-cell lr-cell-repo">Repo</div>
+  <div class="lr-cell lr-cell-deps">Deps</div>
   <div class="lr-cell lr-cell-updated">Updated</div>
   <div class="lr-cell lr-cell-menu"></div>
 </div>"""
@@ -738,6 +794,10 @@ def _timeline_html(tickets: list[dict], statuses: list[str], alias: str,
             status = t.get("status", "backlog")
             sprint = t.get("sprint") or ""
             tags_csv = ",".join(t.get("tags") or [])
+            projects_list = [p for p in (t.get("projects") or []) if p]
+            projects_csv = ",".join(projects_list)
+            depends_list = [d for d in (t.get("depends") or []) if d]
+            depends_csv = ",".join(depends_list)
             data_attrs = (
                 f'data-id="{_e(t["id"])}"'
                 f' data-status="{_e(status)}"'
@@ -745,17 +805,22 @@ def _timeline_html(tickets: list[dict], statuses: list[str], alias: str,
                 f' data-agent="{_e(agents_csv)}"'
                 f' data-sprint="{_e(sprint)}"'
                 f' data-tags="{_e(tags_csv)}"'
-                f' data-projects=""'
+                f' data-projects="{_e(projects_csv)}"'
+                f' data-depends="{_e(depends_csv)}"'
                 f' data-title="{_e(t.get("title", ""))}"'
                 f' data-created="{_e(t.get("created", ""))}"'
                 f' data-updated="{_e(t.get("updated", ""))}"'
                 f' data-completed="{_e(t.get("completed", "") or "")}"'
             )
+            repo_html = _repo_chip_html(projects_list)
+            deps_html = _deps_chip_html(depends_list, alias)
             rows_html.append(f"""<div class="tl-row kanban-card" {data_attrs}>
   <a class="tl-row-name" href="/project/{_e(alias)}/board/{_e(t['id'])}">
     <span class="kc-prio-dot" data-p="{_e(prio)}"></span>
     <span class="tl-row-id">{_e(t['id'])}</span>
     <span class="tl-row-title">{_e(t.get('title', ''))}</span>
+    {repo_html}
+    {deps_html}
   </a>
   <div class="tl-row-track" data-track></div>
 </div>""")
@@ -1186,6 +1251,7 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
     prio = ticket.get("priority", "p2")
     sprint = ticket.get("sprint") or ""
     tags_list = [t for t in (ticket.get("tags") or []) if t]
+    projects_list = [p for p in (ticket.get("projects") or []) if p]
     depends_list = [d for d in (ticket.get("depends") or []) if d]
     blocks_list: list[str] = []
     if all_tickets is not None:
@@ -1240,6 +1306,8 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
     sprint_display = f'#{_e(sprint)}' if sprint else '<span class="dr-prop-empty">—</span>'
     tags_display = (", ".join(_e(t) for t in tags_list)
                     if tags_list else '<span class="dr-prop-empty">—</span>')
+    projects_display = (", ".join(_e(p) for p in projects_list)
+                        if projects_list else '<span class="dr-prop-empty">—</span>')
     created_disp = _format_iso_datetime(created) or "—"
     updated_disp = _format_iso_datetime(updated) or "—"
 
@@ -1264,6 +1332,10 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
   <div class="dr-prop">
     <span class="dr-prop-label">Tags</span>
     <button type="button" class="dr-prop-edit-text" data-edit-text-field="tags" data-current="{_e(','.join(tags_list))}">{tags_display}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Repo</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="projects" data-current="{_e(','.join(projects_list))}">{projects_display}</button>
   </div>
   <hr class="dr-divider">
   <div class="dr-prop dr-prop-readonly">

@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import re
+
 from holoctl.lib.board import Board
 from holoctl.server import app as app_module
 from holoctl.server.app import (
@@ -1090,3 +1092,170 @@ class TestCssCleanup:
         # The new card uses `.kc-prio-dot` and the list view uses
         # `.lr-prio-pill`.
         assert ".p-badge " not in css and ".p-badge\n" not in css and ".p-badge{" not in css
+
+
+# ── Post-merge follow-up: horizontal scroll + repo + deps ─────────────────────
+
+
+class TestKanbanHorizontalScroll:
+    """Regression for the user-reported "horizontal scroll doesn't work".
+
+    The bug: `.kanban` carried `min-width: fit-content`, which expanded the
+    container to the sum of its column widths. The flex-item grew past its
+    parent (`.content-body`) and `overflow-x: auto` had nothing left to
+    scroll — the viewport just clipped the rightmost columns.
+    """
+
+    def test_min_width_fit_content_removed(self):
+        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+        # Find the `.kanban {` block and assert the bad declaration is gone.
+        m = re.search(r"\.kanban\s*\{[^}]*\}", css)
+        assert m, ".kanban block must exist in the served CSS"
+        block = m.group(0)
+        assert "min-width: fit-content" not in block, (
+            "fit-content makes .kanban grow past its parent and silently kills "
+            "the horizontal scroll between columns"
+        )
+
+    def test_kanban_uses_zero_min_width(self):
+        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+        m = re.search(r"\.kanban\s*\{[^}]*\}", css)
+        block = m.group(0)
+        # `min-width: 0` is the explicit override of flex's default
+        # `min-width: auto` (content-sized) — without it, fixed-width
+        # column children push the kanban past its parent again.
+        assert "min-width: 0" in block
+        # Sanity: overflow-x:auto stays so the scroll bar appears when the
+        # columns collectively exceed the visible width.
+        assert "overflow-x: auto" in block
+
+
+class TestRepoChip:
+    """Phase-6 follow-up: surface `projects` (repo / subproject) on cards.
+
+    Tickets that touch a specific subproject can now declare it via
+    `projects: [...]` and the dashboard shows it as a small mono pill on
+    the card top row, in the list view, in the timeline row name, and as
+    an editable property in the detail page Properties card.
+    """
+
+    def test_kanban_card_renders_repo_chip(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer",
+               "projects": ["backend"]})
+        statuses = workspace_config["board"]["statuses"]
+        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        assert 'class="kc-repo"' in html
+        # Single-project chip closes immediately after the name; multi adds
+        # a trailing `<span class="kc-repo-extra">`.
+        assert ">backend</span>" in html
+
+    def test_kanban_card_no_chip_when_empty(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer"})
+        statuses = workspace_config["board"]["statuses"]
+        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        assert 'class="kc-repo"' not in html
+
+    def test_kanban_card_extra_count_when_multiple(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer",
+               "projects": ["backend", "web", "shared"]})
+        statuses = workspace_config["board"]["statuses"]
+        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        # Head project + `+N` indicator for the rest.
+        assert ">backend " in html
+        assert "+2" in html
+        # Tooltip lists all of them so hover gives the full picture.
+        assert 'title="repo: backend, web, shared"' in html
+
+    def test_list_view_has_repo_column(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer", "projects": ["backend"]})
+        statuses = workspace_config["board"]["statuses"]
+        html = _list_html(b.ls(), statuses, "test")
+        # New column header + cell.
+        assert "lr-cell-repo" in html
+        assert ">Repo<" in html
+        assert ">backend</span>" in html
+
+    def test_timeline_row_name_includes_repo(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer", "sprint": "s1",
+               "projects": ["backend"]})
+        statuses = workspace_config["board"]["statuses"]
+        html = _timeline_html(b.ls(), statuses, "test")
+        # The repo chip lives inside the row's sticky-left .tl-row-name.
+        assert "tl-row-name" in html
+        assert "kc-repo" in html
+
+    def test_detail_page_properties_card_has_repo_field(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "T", "agent": "developer",
+                        "projects": ["backend", "web"]})
+        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        assert 'data-edit-text-field="projects"' in html
+        assert 'data-current="backend,web"' in html
+        # Visible label.
+        assert "Repo" in html
+
+
+class TestDependsChip:
+    """Phase-6 follow-up: surface `depends` (blocked-by IDs) on cards.
+
+    Each card / row now shows the first dep ID and a `+N` count for the
+    rest, plus a tooltip with the full list. Detail page already covered
+    this in the Linked card.
+    """
+
+    def test_kanban_card_renders_deps(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        first = b.add({"title": "First", "agent": "developer"})
+        b.add({"title": "Second", "agent": "developer",
+               "depends": [first["id"]]})
+        statuses = workspace_config["board"]["statuses"]
+        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        assert 'class="kc-deps"' in html
+        assert first["id"] in html  # the dep ID itself
+        assert "↳" in html
+
+    def test_kanban_card_deps_extra_count(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        a = b.add({"title": "A", "agent": "developer"})
+        c = b.add({"title": "C", "agent": "developer"})
+        b.add({"title": "B", "agent": "developer",
+               "depends": [a["id"], c["id"]]})
+        statuses = workspace_config["board"]["statuses"]
+        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        # First dep visible, +1 indicator for the second.
+        assert "+1" in html
+        assert f"depends on: {a['id']}, {c['id']}" in html
+
+    def test_kanban_card_no_deps_chip_when_empty(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer"})
+        statuses = workspace_config["board"]["statuses"]
+        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        assert 'class="kc-deps"' not in html
+
+    def test_list_view_has_deps_column(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        a = b.add({"title": "A", "agent": "developer"})
+        b.add({"title": "B", "agent": "developer", "depends": [a["id"]]})
+        statuses = workspace_config["board"]["statuses"]
+        html = _list_html(b.ls(), statuses, "test")
+        assert "lr-cell-deps" in html
+        assert ">Deps<" in html
+        assert a["id"] in html
+
+    def test_data_attrs_carry_depends_csv(self, workspace: Path, workspace_config: dict):
+        """Filter / search logic reads data-* — `data-depends` must round-trip
+        across all three views so future filters can pivot on dependency too."""
+        b = Board(workspace, workspace_config)
+        a = b.add({"title": "A", "agent": "developer"})
+        b.add({"title": "B", "agent": "developer", "depends": [a["id"]]})
+        statuses = workspace_config["board"]["statuses"]
+        for renderer in (_kanban_html, _list_html, _timeline_html):
+            html = renderer(b.ls(), statuses, "test") if renderer is not _kanban_html \
+                else renderer(b.ls(), statuses, "test", project_root=workspace)
+            assert f'data-depends="{a["id"]}"' in html, f"{renderer.__name__} missed data-depends"
