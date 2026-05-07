@@ -126,6 +126,53 @@ body {
 
 a { color: inherit; text-decoration: none; }
 
+/* ── Accessibility: keyboard focus ring ──
+   Single rule covers every interactive control. `:focus-visible` only
+   fires for keyboard navigation, so mouse clicks don't draw the ring.
+   Individual components can opt out with their own override (e.g. the
+   kanban-card sets a tighter ring offset). */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+button:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible {
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+}
+
+/* For users who prefer reduced motion, drop animation entrance effects. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visually-hide a label/text while keeping it accessible to screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 code {
   font-family: var(--font-mono);
   font-size: 0.82em;
@@ -1188,30 +1235,6 @@ code {
 }
 .kanban-col-add-form-error:empty { display: none; }
 
-/* Legacy classes kept so other templates (project cards, list rows, etc.)
-   that still reference .kanban-card-* don't break. The new cards use
-   .kc-* classes above. */
-.kanban-card-top    { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
-.kanban-card-id     { font-size: 10px; font-weight: 700; color: var(--text-2); font-family: var(--font-mono); white-space: nowrap; letter-spacing: -0.2px; }
-.kanban-card-title  { font-size: 13px; font-weight: 500; line-height: 1.4; flex: 1; }
-.kanban-card-meta   { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
-
-.p-badge {
-  font-size: 9px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  letter-spacing: 0.3px;
-}
-
-.p-badge.p0 { background: var(--red-subtle);    color: var(--red); }
-.p-badge.p1 { background: var(--yellow-subtle); color: var(--yellow); }
-.p-badge.p2 { background: var(--blue-subtle);   color: var(--blue); }
-.p-badge.p3 { background: var(--bg-3);          color: var(--text-2); }
-
 .kanban-empty {
   text-align: center;
   padding: 24px 12px;
@@ -1411,15 +1434,6 @@ code {
   line-height: 1.25;
 }
 
-.detail-args { font-weight: 400; color: var(--text-2); font-size: 20px; }
-
-.detail-desc {
-  font-size: 14px;
-  color: var(--text-1);
-  margin-top: 8px;
-  line-height: 1.6;
-}
-
 .detail-grid {
   display: grid;
   grid-template-columns: 1fr 240px;
@@ -1497,24 +1511,7 @@ code {
   letter-spacing: -0.3px;
 }
 
-.detail-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
 .detail-empty { color: var(--text-3); font-style: italic; font-size: 12px; }
-
-.status-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-family: var(--font-mono);
-}
-
-.status-badge.green { background: var(--green-subtle); color: var(--green); }
-.status-badge.blue { background: var(--blue-subtle); color: var(--blue); }
-.status-badge.yellow { background: var(--yellow-subtle); color: var(--yellow); }
-.status-badge.red { background: var(--red-subtle); color: var(--red); }
-.status-badge.muted { background: var(--bg-3); color: var(--text-2); }
 
 /* ── Ticket detail page (Phase-4 redesign) ───────────────────────────────────
    Wrapper for /project/{alias}/board/{ticket_id}. Fills the content area's

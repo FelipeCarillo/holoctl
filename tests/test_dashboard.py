@@ -1025,3 +1025,68 @@ class TestTicketDetailRoute:
         r = client.get(f"/project/{alias}/board/{a['id']}")
         assert r.status_code == 200
         assert "blocks" in r.text
+
+
+# ── Phase 5: a11y + cleanup ───────────────────────────────────────────────────
+
+
+class TestAccessibility:
+    def test_lr_edit_status_has_aria(self, client: TestClient, alias: str):
+        client.post(f"/api/project/{alias}/tickets", json={"title": "T"})
+        r = client.get(f"/project/{alias}/board?view=list")
+        # Status / priority chips advertise themselves as listbox triggers.
+        assert 'aria-haspopup="listbox"' in r.text
+        assert 'aria-expanded="false"' in r.text
+
+    def test_list_group_header_role_button(self, client: TestClient, alias: str):
+        client.post(f"/api/project/{alias}/tickets", json={"title": "T"})
+        r = client.get(f"/project/{alias}/board?view=list")
+        # Group headers are clickable divs — must be keyboard-reachable.
+        assert 'class="list-group-header"' in r.text
+        assert 'role="button"' in r.text
+        assert 'tabindex="0"' in r.text
+
+    def test_timeline_lane_header_role_button(self, client: TestClient, alias: str):
+        client.post(f"/api/project/{alias}/tickets",
+                    json={"title": "T", "sprint": "s1", "agent": "developer"})
+        r = client.get(f"/project/{alias}/board?view=timeline")
+        # Lane headers ditto.
+        assert 'class="tl-lane-header"' in r.text
+        # Both list group + timeline lane headers carry the role; this
+        # snippet must appear in the timeline view too.
+        assert r.text.count('role="button"') >= 1
+
+    def test_kc_menu_has_aria_label(self, client: TestClient, alias: str):
+        client.post(f"/api/project/{alias}/tickets", json={"title": "T"})
+        r = client.get(f"/project/{alias}/board")
+        # Icon-only ⋯ buttons need an accessible name.
+        assert 'aria-label="Card actions"' in r.text
+
+    def test_focus_visible_styles_present(self, client: TestClient):
+        # Tag the rule by its keyword so CSS-format changes don't break us.
+        r = client.get("/static/holoctl.css")
+        assert r.status_code == 200
+        assert ":focus-visible" in r.text
+        assert "prefers-reduced-motion" in r.text
+
+
+class TestCssCleanup:
+    def test_legacy_kanban_card_classes_removed(self):
+        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+        # These were Phase-1-era aliases; nothing emits them anymore.
+        for sel in (".kanban-card-top", ".kanban-card-id",
+                    ".kanban-card-title", ".kanban-card-meta",
+                    ".kanban-card-dates"):
+            assert sel + " " not in css, f"legacy selector {sel} should be removed"
+
+    def test_legacy_status_badge_removed(self):
+        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+        # `.status-badge` was used by the old detail page; gone since Phase 4.
+        assert ".status-badge" not in css
+
+    def test_legacy_p_badge_in_card_removed(self):
+        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+        # `.p-badge` was the kanban card's old inline priority chip.
+        # The new card uses `.kc-prio-dot` and the list view uses
+        # `.lr-prio-pill`.
+        assert ".p-badge " not in css and ".p-badge\n" not in css and ".p-badge{" not in css

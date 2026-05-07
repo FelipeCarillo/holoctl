@@ -584,10 +584,10 @@ def _list_row_html(t: dict, alias: str) -> str:
     <a class="lr-title-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t.get('title', ''))}</a>
   </div>
   <div class="lr-cell lr-cell-status">
-    <button type="button" class="lr-edit lr-status" data-edit-field="status" data-status="{_e(status)}">{_e(status)}</button>
+    <button type="button" class="lr-edit lr-status" data-edit-field="status" data-status="{_e(status)}" aria-haspopup="listbox" aria-expanded="false">{_e(status)}</button>
   </div>
   <div class="lr-cell lr-cell-prio-pill">
-    <button type="button" class="lr-edit lr-prio-pill" data-edit-field="priority" data-p="{_e(prio)}">{_e(prio)}</button>
+    <button type="button" class="lr-edit lr-prio-pill" data-edit-field="priority" data-p="{_e(prio)}" aria-haspopup="listbox" aria-expanded="false">{_e(prio)}</button>
   </div>
   <div class="lr-cell lr-cell-agents">{avatars_html or '<span class="lr-empty">—</span>'}</div>
   <div class="lr-cell lr-cell-sprint">{sprint_html}</div>
@@ -636,7 +636,7 @@ def _list_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
     body_chunks = []
     for status, rows in grouped.items():
         body_chunks.append(f"""<div class="list-group" data-bucket="{_e(status)}">
-  <div class="list-group-header" data-status="{_e(status)}">
+  <div class="list-group-header" data-status="{_e(status)}" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle {_e(status)} group">
     <span class="lg-toggle" aria-hidden="true">▾</span>
     <span class="lg-label">{_e(status)}</span>
     <span class="lg-count">{len(rows)}</span>
@@ -725,7 +725,7 @@ def _timeline_html(tickets: list[dict], statuses: list[str], alias: str,
         # reads top-to-bottom in chronological order.
         lane_tickets.sort(key=lambda t: t.get("created", ""))
         rows_html.append(f"""<div class="tl-lane" data-bucket="{_e(bucket)}">
-  <div class="tl-lane-header">
+  <div class="tl-lane-header" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle {_e(labels[bucket])} lane">
     <span class="tl-lane-toggle" aria-hidden="true">▾</span>
     <span class="tl-lane-label">{_e(labels[bucket])}</span>
     <span class="tl-lane-count">{len(lane_tickets)}</span>

@@ -1014,6 +1014,7 @@
         const collapsed = group.dataset.collapsed === 'true';
         if (collapsed) delete group.dataset.collapsed;
         else group.dataset.collapsed = 'true';
+        groupHdr.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
         return;
       }
     });
@@ -1486,8 +1487,10 @@
       h.addEventListener('click', () => {
         const lane = h.closest('.tl-lane');
         if (!lane) return;
-        if (lane.dataset.collapsed === 'true') delete lane.dataset.collapsed;
+        const collapsed = lane.dataset.collapsed === 'true';
+        if (collapsed) delete lane.dataset.collapsed;
         else lane.dataset.collapsed = 'true';
+        h.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
       });
     });
 
@@ -1519,6 +1522,21 @@
 
   // ── Init ──
 
+  // Keyboard activation for elements with role="button" — Enter/Space
+  // dispatch a synthetic click. Native <button>/<a> already do this; this
+  // covers the few <div role="button"> headers (group/lane collapsers)
+  // that we couldn't make actual buttons due to grid layout.
+  function initRoleButtonKeys() {
+    document.addEventListener('keydown', (e) => {
+      const el = e.target.closest('[role="button"]');
+      if (!el || el.tagName === 'BUTTON' || el.tagName === 'A') return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        el.click();
+      }
+    });
+  }
+
   initTheme();
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -1533,5 +1551,6 @@
     initListSelection();
     initInlineEdit();
     initTimeline();
+    initRoleButtonKeys();
   });
 })();
