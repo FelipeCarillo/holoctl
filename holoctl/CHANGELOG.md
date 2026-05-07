@@ -2,6 +2,23 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.12.0] — 2026-05-07
+
+### Added (token-economy boot + cross-session handoff)
+
+- **`hctl boot`** — minimal session-zero context, target ≤ 1KB. Prints the project name, top 3 pendings filtered to `p0|p1` (in-flight first), 0–2 most recent decisions, active topic names, active persona names, and an `⚡` line listing open `meta:curate` tickets. Designed to be the FIRST thing the assistant prints in a fresh session — the full content stays on disk and is loaded only when the agent asks for a specific topic/ticket. Records a `boot` event in the journal so the curator can correlate sessions.
+- **`hctl handoff`** — end-of-session persistence. Reads today's journal records + git diff HEAD, computes session duration / event count / files-changed brief, and appends ONE line to `.holoctl/memory/topics/session-trail.md`. The trail topic is auto-created on first call with a description that makes Claude/Cursor lazy-load it when the user asks "where did we stop?" — direct token-economy: a session line costs ~150 chars but gives full context recall.
+- Both commands plug into the `/holoctl` skill: Flow A → boot (after init), Flow B → boot (after upgrade), Flow C → boot (status request) / handoff (close request).
+- The `--plain` flag on boot strips Rich ANSI codes for embedding in tooling output.
+
+### Sanity validated
+
+- Sanity end-to-end captured in `SANITY-0.12.txt`: empty workspace → init → 3 tickets (p0 backlog, p1 doing, p3 backlog) → memory topic + persona + decision → `boot` returns 198 bytes (≤19% of the 1KB budget) → simulated session journal → `handoff` creates session-trail topic with the right scope/description → second `boot` shows the new topic + a `meta:curate` ticket as `⚡ 1 sugestão`.
+
+### Tests
+
+- 19 new (222 total). Coverage: pendency filtering by priority + status, in-flight surfacing, curate-ticket open/closed filter, topic listing excludes archived, persona listing, decision sort by mtime, full boot CLI invocation under 1KB, journal event recorded, duration formatting at sub-minute / minute / hour granularity, files-brief truncation, session-trail topic creation + append.
+
 ## [0.11.0] — 2026-05-07
 
 ### Added (event journal)

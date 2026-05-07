@@ -20,6 +20,8 @@ from .cli.repo import app as _repo_app
 from .cli.serve import app as _serve_app, serve_cmd
 from .cli.overview import app as _overview_app, overview_cmd
 from .cli.setup import setup_cmd
+from .cli.boot import boot_cmd
+from .cli.handoff import handoff_cmd
 from . import __version__
 
 app = typer.Typer(
@@ -44,6 +46,8 @@ app.command("upgrade")(upgrade_cmd)
 app.command("doctor")(doctor_cmd)
 app.command("serve")(serve_cmd)
 app.command("overview")(overview_cmd)
+app.command("boot")(boot_cmd)
+app.command("handoff")(handoff_cmd)
 
 
 def _version_callback(value: bool):
