@@ -509,7 +509,7 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
     return f'<div class="kanban" id="kanban">{cols}</div>'
 
 
-_VALID_VIEWS = {"kanban", "list"}  # timeline coming in phase 3
+_VALID_VIEWS = {"kanban", "list", "timeline"}
 
 
 def _format_relative_date(iso: str) -> tuple[str, str]:
@@ -668,6 +668,144 @@ def _list_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
 </div>"""
 
 
+def _timeline_lane_key(ticket: dict, group_by: str) -> tuple[str, str]:
+    """(bucket-id, display-label) for a ticket given the current group axis."""
+    if group_by == "agent":
+        agents = [a for a in (ticket.get("agent") or []) if a]
+        if not agents:
+            return ("(no agent)", "(no agent)")
+        return (agents[0], agents[0])
+    sprint = ticket.get("sprint") or ""
+    if not sprint:
+        return ("(backlog)", "(no sprint)")
+    return (sprint, sprint)
+
+
+def _timeline_html(tickets: list[dict], statuses: list[str], alias: str,
+                   group_by: str = "sprint") -> str:
+    """Roadmap-style timeline view.
+
+    Server emits the static shell — lane groups, ticket rows with empty
+    track cells, and the controls (zoom + group). The bars themselves are
+    positioned client-side from `data-created` / `data-completed` /
+    `data-status` so zoom changes don't need a re-fetch.
+
+    Layout strategy: a single horizontal+vertical scroll container holds
+    a sticky-top axis row and N lane rows. Each row's left "name" cell
+    is sticky-left (cross-sticky), so lane labels stay visible while
+    horizontal-scrolling and the time axis stays visible while
+    vertical-scrolling.
+
+    `group_by` selects the lane axis; the JS lets you flip it without a
+    reload, but the initial render uses the value passed in (default
+    "sprint", per spec).
+    """
+    if group_by not in ("sprint", "agent"):
+        group_by = "sprint"
+
+    # Group tickets into ordered lanes. Sprint groups follow alpha order
+    # for predictable display; "(no sprint/agent)" sinks to the bottom.
+    lanes: dict[str, list[dict]] = {}
+    labels: dict[str, str] = {}
+    for t in tickets:
+        bucket, label = _timeline_lane_key(t, group_by)
+        lanes.setdefault(bucket, []).append(t)
+        labels[bucket] = label
+
+    def _lane_sort_key(b: str) -> tuple[int, str]:
+        # Empty / "(no ...)" buckets last.
+        return (1 if b.startswith("(") else 0, b.lower())
+
+    lane_keys = sorted(lanes.keys(), key=_lane_sort_key)
+
+    rows_html = []
+    for bucket in lane_keys:
+        lane_tickets = lanes[bucket]
+        # Sort tickets inside lane by created date so the timeline
+        # reads top-to-bottom in chronological order.
+        lane_tickets.sort(key=lambda t: t.get("created", ""))
+        rows_html.append(f"""<div class="tl-lane" data-bucket="{_e(bucket)}">
+  <div class="tl-lane-header">
+    <span class="tl-lane-toggle" aria-hidden="true">▾</span>
+    <span class="tl-lane-label">{_e(labels[bucket])}</span>
+    <span class="tl-lane-count">{len(lane_tickets)}</span>
+  </div>
+  <div class="tl-lane-rows">""")
+        for t in lane_tickets:
+            agents_list = [a for a in (t.get("agent") or []) if a]
+            agents_csv = ",".join(agents_list)
+            prio = t.get("priority", "p2")
+            status = t.get("status", "backlog")
+            sprint = t.get("sprint") or ""
+            tags_csv = ",".join(t.get("tags") or [])
+            data_attrs = (
+                f'data-id="{_e(t["id"])}"'
+                f' data-status="{_e(status)}"'
+                f' data-p="{_e(prio)}"'
+                f' data-agent="{_e(agents_csv)}"'
+                f' data-sprint="{_e(sprint)}"'
+                f' data-tags="{_e(tags_csv)}"'
+                f' data-projects=""'
+                f' data-title="{_e(t.get("title", ""))}"'
+                f' data-created="{_e(t.get("created", ""))}"'
+                f' data-updated="{_e(t.get("updated", ""))}"'
+                f' data-completed="{_e(t.get("completed", "") or "")}"'
+            )
+            rows_html.append(f"""<div class="tl-row kanban-card" {data_attrs}>
+  <a class="tl-row-name" href="/project/{_e(alias)}/board/{_e(t['id'])}">
+    <span class="kc-prio-dot" data-p="{_e(prio)}"></span>
+    <span class="tl-row-id">{_e(t['id'])}</span>
+    <span class="tl-row-title">{_e(t.get('title', ''))}</span>
+  </a>
+  <div class="tl-row-track" data-track></div>
+</div>""")
+        rows_html.append("</div></div>")
+
+    # Zoom + group controls live above the scroll container so they
+    # never get clipped by sticky overlays.
+    controls = f"""<div class="tl-controls">
+  <div class="tl-control-group">
+    <span class="tl-control-label">Zoom</span>
+    <div class="tl-zoom-switcher" role="tablist" aria-label="Timeline zoom">
+      <button type="button" class="tl-zoom-tab" data-tl-zoom="week">Week</button>
+      <button type="button" class="tl-zoom-tab active" data-tl-zoom="month" aria-selected="true">Month</button>
+      <button type="button" class="tl-zoom-tab" data-tl-zoom="quarter">Quarter</button>
+    </div>
+  </div>
+  <div class="tl-control-group">
+    <span class="tl-control-label">Group</span>
+    <select class="tl-group-select" data-tl-group>
+      <option value="sprint"{' selected' if group_by == 'sprint' else ''}>Sprint</option>
+      <option value="agent"{' selected' if group_by == 'agent' else ''}>Agent</option>
+    </select>
+  </div>
+  <div class="tl-control-spacer"></div>
+  <button type="button" class="btn-sm" data-tl-today>Jump to today</button>
+</div>"""
+
+    empty = (not tickets)
+    body = "".join(rows_html) if not empty else (
+        '<div class="tl-empty">'
+        '<div class="tl-empty-glyph">⤳</div>'
+        '<div class="tl-empty-msg">No tickets to plot — create some first.</div>'
+        '</div>'
+    )
+
+    return f"""<div class="timeline-view" id="timeline-view" data-group="{_e(group_by)}">
+  {controls}
+  <div class="timeline" id="timeline">
+    <div class="tl-axis-row">
+      <div class="tl-axis-corner"></div>
+      <div class="tl-axis" id="tl-axis"></div>
+    </div>
+    <div class="tl-body">
+      {body}
+    </div>
+    <div class="tl-today-line" id="tl-today-line" hidden></div>
+  </div>
+</div>"""
+
+
 def _board_page(project: dict, tickets: list[dict], config: dict, view: str = "kanban") -> str:
     """Board page body: header (h1 + path + CTA) → controls → kanban.
 
@@ -690,6 +828,8 @@ def _board_page(project: dict, tickets: list[dict], config: dict, view: str = "k
     statuses = config["board"]["statuses"]
     if view == "list":
         body = _list_html(tickets, statuses, alias)
+    elif view == "timeline":
+        body = _timeline_html(tickets, statuses, alias)
     else:
         body = _kanban_html(tickets, statuses, alias, project_root=project_root)
     return header + _board_controls_html(view=view) + body
@@ -721,16 +861,23 @@ def _board_controls_html(view: str = "kanban") -> str:
     sort_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in sort_opts)
     group_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in group_opts)
     is_list = view == "list"
+    is_timeline = view == "timeline"
+    is_kanban = not (is_list or is_timeline)
+    def _tab(active: bool) -> tuple[str, str]:
+        return ("active" if active else "", "true" if active else "false")
+    k_cls, k_sel = _tab(is_kanban)
+    l_cls, l_sel = _tab(is_list)
+    t_cls, t_sel = _tab(is_timeline)
     return f"""<div class="board-controls" id="board-controls" data-current-view="{_e(view)}">
   <div class="bc-row bc-row-primary">
     <div class="view-switcher" role="tablist" aria-label="Board view">
-      <button class="view-tab {'' if is_list else 'active'}" data-view="kanban" role="tab" aria-selected="{'false' if is_list else 'true'}">
+      <button class="view-tab {k_cls}" data-view="kanban" role="tab" aria-selected="{k_sel}">
         <span class="view-tab-glyph">▦</span> Kanban
       </button>
-      <button class="view-tab {'active' if is_list else ''}" data-view="list" role="tab" aria-selected="{'true' if is_list else 'false'}">
+      <button class="view-tab {l_cls}" data-view="list" role="tab" aria-selected="{l_sel}">
         <span class="view-tab-glyph">☰</span> List
       </button>
-      <button class="view-tab" data-view="timeline" role="tab" aria-selected="false" disabled title="Coming in Phase 3">
+      <button class="view-tab {t_cls}" data-view="timeline" role="tab" aria-selected="{t_sel}">
         <span class="view-tab-glyph">⤳</span> Timeline
       </button>
     </div>
@@ -1314,6 +1461,25 @@ def api_list_html(alias: str):
     tickets = board.ls()
     return HTMLResponse(_list_html(
         tickets, project["config"]["board"]["statuses"], alias,
+    ))
+
+
+@app.get("/api/project/{alias}/timeline-html", response_class=HTMLResponse)
+def api_timeline_html(alias: str, group: str = "sprint"):
+    """Return just the `<div class="timeline-view">` fragment for SSE swap.
+
+    `group` mirrors the `?group=` axis the JS uses when the user flips
+    between Sprint and Agent lanes — letting the client re-fetch without a
+    full page navigation.
+    """
+    project = _get_project(alias)
+    if not project:
+        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+    board = Board(Path(project["path"]), project["config"])
+    tickets = board.ls()
+    return HTMLResponse(_timeline_html(
+        tickets, project["config"]["board"]["statuses"], alias,
+        group_by=group,
     ))
 
 
