@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -358,8 +358,16 @@ def _ticket_preview(project_root: Path, ticket: dict, max_chars: int = 80) -> st
     rel = ticket.get("file")
     if not rel:
         return ""
-    md_path = project_root / ".holoctl" / "board" / "tickets" / rel if not (project_root / rel).exists() else (project_root / rel)
-    if not md_path.exists():
+    # `ticket["file"]` is stored relative to `.holoctl/board/` (e.g.
+    # `tickets/HOL-001-foo.md`). Resolve from there; fall back to a path
+    # treated as workspace-relative for older indices that may have stored it
+    # differently.
+    candidates = [
+        project_root / ".holoctl" / "board" / rel,
+        project_root / rel,
+    ]
+    md_path = next((p for p in candidates if p.exists()), None)
+    if md_path is None:
         return ""
     try:
         raw = md_path.read_text(encoding="utf-8")
@@ -471,6 +479,7 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
   <div class="kc-top">
     <span class="kc-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
     <span class="kc-id">{_e(t['id'])}</span>
+    <button type="button" class="kc-menu" data-card-menu aria-label="Card actions" title="Actions">⋯</button>
   </div>
   <div class="kc-title">{_e(t['title'])}</div>
   {preview_html}
@@ -481,12 +490,21 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
                      '<div class="kanban-empty-glyph">·</div>'
                      '<div class="kanban-empty-msg">No tickets here</div>'
                      '</div>')
+        # Inline "Add ticket" ghost at the bottom of each column. Toggles a
+        # title-only form that POSTs to /api/.../tickets and lets SSE swap
+        # in the new state.
+        add_html = (
+            f'<button type="button" class="kanban-col-add" '
+            f'data-add-ticket data-status="{_e(status)}" aria-expanded="false">'
+            f'<span class="kanban-col-add-glyph">+</span> Add ticket</button>'
+        )
         cols += f"""<div class="kanban-col" data-status="{_e(status)}" data-bucket="{_e(status)}">
   <div class="kanban-col-header">
     <span class="col-label">{_e(status)}</span>
     <span class="count">{len(col_tickets)}</span>
   </div>
   <div class="kanban-cards">{cards}</div>
+  {add_html}
 </div>"""
     return f'<div class="kanban" id="kanban">{cols}</div>'
 
@@ -507,7 +525,7 @@ def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
     <div class="board-path">{_e(path_display)}</div>
   </div>
   <div class="board-header-actions">
-    <a class="btn btn-primary btn-disabled" href="#" title="Coming soon — for now: holoctl board add '{{\"title\":\"...\"}}'" aria-disabled="true">+ New ticket</a>
+    <button type="button" class="btn btn-primary" data-new-ticket title="Open inline ticket creator in the first column">+ New ticket</button>
   </div>
 </div>"""
     return header + _board_controls_html() + _kanban_html(
@@ -1114,6 +1132,58 @@ def api_board_html(alias: str):
         tickets, project["config"]["board"]["statuses"], alias,
         project_root=project_root,
     ))
+
+
+@app.post("/api/project/{alias}/tickets")
+def api_ticket_create(alias: str, payload: dict = Body(...)):
+    """Create a ticket from a JSON payload.
+
+    Mirrors `holoctl board add`: requires `title`, accepts optional
+    `status`, `priority`, `agent`, `sprint`, `tags`. Returns the created
+    ticket dict on 201, or `{error: ...}` on 4xx for validation failures
+    (unknown agent, invalid priority, etc.) so the client can surface the
+    message inline without a refresh.
+    """
+    project = _get_project(alias)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    title = (payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    board = Board(Path(project["path"]), project["config"])
+    try:
+        ticket = board.add(payload)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(status_code=201, content=ticket)
+
+
+@app.post("/api/project/{alias}/tickets/{ticket_id}/move")
+def api_ticket_move(alias: str, ticket_id: str, payload: dict = Body(...)):
+    """Move a ticket to a new status.
+
+    Body: `{"status": "doing"}`. Status must be in
+    `config.board.statuses`. 404 when the project or ticket doesn't
+    exist; 400 when the target status is invalid.
+    """
+    project = _get_project(alias)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    new_status = (payload.get("status") or "").strip()
+    if not new_status:
+        raise HTTPException(status_code=400, detail="status is required")
+    board = Board(Path(project["path"]), project["config"])
+    try:
+        result = board.move(ticket_id, new_status)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(content=result)
 
 
 @app.get("/api/project/{alias}/events")

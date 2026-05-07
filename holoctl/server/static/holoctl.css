@@ -1005,6 +1005,189 @@ code {
 
 .kc-due::first-letter { /* clock glyph stays at default size */ }
 
+/* Hover-only ⋯ action menu trigger on the card's top row. Lives inside
+   the <a class="kanban-card"> link so we have to swallow click + use
+   stopPropagation in JS to keep the card's navigation intact. */
+.kc-menu {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 0;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.kanban-card:hover .kc-menu,
+.kc-menu:focus-visible,
+.kc-menu[aria-expanded="true"] { opacity: 1; }
+.kc-menu:hover { background: var(--bg-hover); color: var(--text-0); }
+.kc-menu[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-0); }
+
+.kc-menu-popover {
+  position: absolute;
+  z-index: 200;
+  min-width: 180px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kc-menu-popover[hidden] { display: none; }
+
+.kc-menu-section {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-3);
+  font-weight: 600;
+  padding: 6px 10px 2px;
+}
+
+.kc-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.12s var(--ease);
+}
+.kc-menu-item:hover { background: var(--bg-hover); }
+.kc-menu-item-danger { color: var(--red); }
+.kc-menu-item-danger:hover { background: var(--red-subtle); }
+.kc-menu-item-disabled,
+.kc-menu-item:disabled {
+  color: var(--text-3);
+  cursor: not-allowed;
+  background: transparent;
+}
+
+.kc-menu-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-3);
+}
+.kc-menu-status-dot[data-status="backlog"]   { background: var(--text-3); }
+.kc-menu-status-dot[data-status="doing"]     { background: var(--blue); }
+.kc-menu-status-dot[data-status="review"]    { background: var(--yellow); }
+.kc-menu-status-dot[data-status="done"]      { background: var(--green); }
+.kc-menu-status-dot[data-status="cancelled"] { background: var(--red); }
+
+/* Inline "+ Add ticket" ghost button at the bottom of each column. Expands
+   to a single-input form when clicked. */
+.kanban-col-add {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 12px;
+  margin-top: 4px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+}
+.kanban-col-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+.kanban-col-add-glyph {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+}
+.kanban-col-add[aria-expanded="true"] { display: none; }
+
+.kanban-col-add-form {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.kanban-col-add-form[hidden] { display: none; }
+
+.kanban-col-add-form input {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+}
+.kanban-col-add-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+
+.kanban-col-add-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kanban-col-add-form .btn {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+.kanban-col-add-form .btn-cancel {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-2);
+}
+.kanban-col-add-form .btn-cancel:hover {
+  color: var(--text-0);
+  background: var(--bg-hover);
+}
+
+.kanban-col-add-form-error {
+  font-size: 11px;
+  color: var(--red);
+  letter-spacing: -0.1px;
+}
+.kanban-col-add-form-error:empty { display: none; }
+
 /* Legacy classes kept so other templates (project cards, list rows, etc.)
    that still reference .kanban-card-* don't break. The new cards use
    .kc-* classes above. */

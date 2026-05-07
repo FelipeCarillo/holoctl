@@ -607,6 +607,220 @@
     bcApply(bcLoad(), panel);
   };
 
+  // ── Card hover menu (⋯) ──
+
+  // Statuses come from the server via the kanban columns themselves —
+  // honors per-project config without hardcoding the default 5.
+  function statusList() {
+    return [...document.querySelectorAll('.kanban-col[data-status]')]
+      .map(col => col.getAttribute('data-status'))
+      .filter((v, i, arr) => v && arr.indexOf(v) === i);
+  }
+
+  function projectAlias() {
+    const m = window.location.pathname.match(/\/project\/([^/]+)\//);
+    return m ? m[1] : null;
+  }
+
+  function closeCardMenu() {
+    document.querySelectorAll('.kc-menu-popover').forEach(p => p.remove());
+    document.querySelectorAll('.kc-menu[aria-expanded="true"]').forEach(b =>
+      b.setAttribute('aria-expanded', 'false'));
+  }
+
+  function openCardMenu(btn, card) {
+    closeCardMenu();
+    const id = card.getAttribute('data-id');
+    const currentStatus = card.getAttribute('data-status');
+    const alias = projectAlias();
+    if (!id || !alias) return;
+    const statuses = statusList();
+    const moveItems = statuses
+      .filter(s => s !== currentStatus && s !== 'cancelled')
+      .map(s => `<button type="button" class="kc-menu-item" data-action="move" data-status="${s}">
+        <span class="kc-menu-status-dot" data-status="${s}"></span>
+        Move to ${s}
+      </button>`).join('');
+
+    const pop = document.createElement('div');
+    pop.className = 'kc-menu-popover';
+    pop.setAttribute('role', 'menu');
+    pop.dataset.cardId = id;
+    pop.innerHTML = `
+      <div class="kc-menu-section">Move</div>
+      ${moveItems || '<div class="kc-menu-section" style="color:var(--text-3);font-weight:500;text-transform:none;letter-spacing:0;padding:4px 10px 6px">No other status</div>'}
+      <div class="kc-menu-section">Card</div>
+      <button type="button" class="kc-menu-item" data-action="open">
+        <span aria-hidden="true">↗</span> Open detail
+      </button>
+      ${currentStatus !== 'cancelled' ? `<button type="button" class="kc-menu-item kc-menu-item-danger" data-action="archive">
+        <span aria-hidden="true">✕</span> Archive (cancelled)
+      </button>` : ''}
+    `;
+    document.body.appendChild(pop);
+    btn.setAttribute('aria-expanded', 'true');
+
+    // Position below the button. Flip above if too close to viewport bottom.
+    const r = btn.getBoundingClientRect();
+    pop.style.top = (window.scrollY + r.bottom + 4) + 'px';
+    const desiredLeft = window.scrollX + r.right - pop.offsetWidth;
+    pop.style.left = Math.max(8, desiredLeft) + 'px';
+    if (r.bottom + pop.offsetHeight + 8 > window.innerHeight) {
+      pop.style.top = (window.scrollY + r.top - pop.offsetHeight - 4) + 'px';
+    }
+
+    pop.addEventListener('click', async (e) => {
+      const item = e.target.closest('.kc-menu-item');
+      if (!item) return;
+      e.stopPropagation();
+      const action = item.getAttribute('data-action');
+      const cardLink = document.querySelector(`.kanban-card[data-id="${id}"]`);
+      const href = cardLink ? cardLink.getAttribute('href') : null;
+      if (action === 'open' && href) {
+        closeCardMenu();
+        window.location.href = href;
+        return;
+      }
+      if (action === 'move' || action === 'archive') {
+        const target = action === 'archive' ? 'cancelled' : item.getAttribute('data-status');
+        if (!target) return;
+        item.disabled = true;
+        try {
+          const resp = await fetch(`/api/project/${encodeURIComponent(alias)}/tickets/${encodeURIComponent(id)}/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: target }),
+          });
+          if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            showToast(`Move failed: ${data.detail || resp.status}`);
+          } else {
+            showToast(`Moved to ${target}`);
+          }
+        } catch (err) {
+          showToast(`Move failed: ${err.message || 'network'}`);
+        } finally {
+          closeCardMenu();
+        }
+      }
+    });
+  }
+
+  function initCardMenus() {
+    document.addEventListener('click', (e) => {
+      const trigger = e.target.closest('[data-card-menu]');
+      if (trigger) {
+        // Inside an <a class="kanban-card">; preventDefault stops navigation,
+        // stopPropagation stops the rest of the document handler closing the menu.
+        e.preventDefault();
+        e.stopPropagation();
+        const card = trigger.closest('.kanban-card');
+        if (!card) return;
+        const wasOpen = trigger.getAttribute('aria-expanded') === 'true';
+        if (wasOpen) closeCardMenu();
+        else openCardMenu(trigger, card);
+        return;
+      }
+      // Click anywhere else closes any open menu.
+      if (!e.target.closest('.kc-menu-popover')) closeCardMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeCardMenu();
+    });
+  }
+
+  // ── Inline "+ Add ticket" form ──
+
+  function closeAddForms() {
+    document.querySelectorAll('.kanban-col-add-form').forEach(f => f.remove());
+    document.querySelectorAll('.kanban-col-add[aria-expanded="true"]').forEach(b =>
+      b.setAttribute('aria-expanded', 'false'));
+  }
+
+  function openAddForm(btn) {
+    closeAddForms();
+    const status = btn.getAttribute('data-status');
+    const col = btn.closest('.kanban-col');
+    if (!col || !status) return;
+    btn.setAttribute('aria-expanded', 'true');
+
+    const form = document.createElement('form');
+    form.className = 'kanban-col-add-form';
+    form.dataset.status = status;
+    form.innerHTML = `
+      <input type="text" name="title" placeholder="Ticket title…" autocomplete="off" required>
+      <div class="kanban-col-add-form-error" data-error></div>
+      <div class="kanban-col-add-form-row">
+        <button type="button" class="btn btn-cancel" data-cancel>Cancel</button>
+        <button type="submit" class="btn btn-primary" data-submit>Add ticket</button>
+      </div>
+    `;
+    col.appendChild(form);
+    const input = form.querySelector('input[name="title"]');
+    input.focus();
+
+    form.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeAddForms();
+      }
+    });
+    form.querySelector('[data-cancel]').addEventListener('click', closeAddForms);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = (input.value || '').trim();
+      if (!title) return;
+      const errEl = form.querySelector('[data-error]');
+      const submitBtn = form.querySelector('[data-submit]');
+      errEl.textContent = '';
+      submitBtn.disabled = true;
+      const alias = projectAlias();
+      try {
+        const resp = await fetch(`/api/project/${encodeURIComponent(alias)}/tickets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, status }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          errEl.textContent = data.detail || `Error ${resp.status}`;
+          submitBtn.disabled = false;
+          return;
+        }
+        showToast(`Created ${data.id || 'ticket'}`);
+        // SSE will swap the kanban DOM in shortly; close the form so it
+        // doesn't get orphaned by the swap.
+        closeAddForms();
+      } catch (err) {
+        errEl.textContent = err.message || 'Network error';
+        submitBtn.disabled = false;
+      }
+    });
+  }
+
+  function initInlineAdd() {
+    document.addEventListener('click', (e) => {
+      const trigger = e.target.closest('[data-add-ticket]');
+      if (trigger) {
+        e.preventDefault();
+        const wasOpen = trigger.getAttribute('aria-expanded') === 'true';
+        if (wasOpen) closeAddForms();
+        else openAddForm(trigger);
+        return;
+      }
+      // Header-level "+ New ticket" CTA — defers to the first column's add.
+      const newCta = e.target.closest('[data-new-ticket]');
+      if (newCta) {
+        e.preventDefault();
+        const first = document.querySelector('[data-add-ticket]');
+        if (first) {
+          first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          openAddForm(first);
+        }
+      }
+    });
+  }
+
   // ── Init ──
 
   initTheme();
@@ -617,5 +831,7 @@
     initStagger();
     initFileTree();
     initBoardControls();
+    initCardMenus();
+    initInlineAdd();
   });
 })();
