@@ -56,6 +56,7 @@ AGENTS.md
 CLAUDE.md
 .claude/agents/
 .claude/commands/
+.claude/skills/
 .claude/settings*.json
 .cursor/
 .devin/
