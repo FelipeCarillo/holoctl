@@ -49,6 +49,9 @@ jobs:
           if grep -q "^.*infra" overview.txt; then
             echo "ERROR: infra (no marker) should NOT appear"; exit 1
           fi
+          # Activate developer from the latent library (since 0.9, init only
+          # materializes boardmaster — other personas are opt-in).
+          uv run --project .. holoctl agent add developer
           # Multi-project ticket
           uv run --project .. holoctl board add '{"title":"smoke","agent":"developer","projects":["app","api"]}'
           uv run --project .. holoctl board ls --project app | grep -q "CI-001"
