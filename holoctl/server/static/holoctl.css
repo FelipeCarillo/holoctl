@@ -856,12 +856,16 @@ code {
 .kanban {
   display: flex;
   gap: 14px;
-  min-width: fit-content;
   align-items: stretch;
   /* Take all the height of .content-body so the horizontal scrollbar (when
      the kanban is wider than viewport) lands at the visible bottom edge,
-     not below the tallest column. */
+     not below the tallest column. `min-width: 0` is required: the default
+     `min-width: auto` on a flex item is content-sized, which together with
+     the columns' fixed widths would let the kanban grow past its parent
+     and silently kill horizontal scroll (the columns never overflow the
+     container, so `overflow-x: auto` had nothing to scroll). */
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -1041,6 +1045,44 @@ code {
   color: var(--text-2);
   letter-spacing: -0.2px;
 }
+
+/* Repo / projects pill on the card top row. Sits between the ID and the
+   ⋯ menu, with a soft purple tint to differentiate from sprint (mono
+   gray) and from priority (the colored dot). */
+.kc-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  background: var(--purple-subtle);
+  color: var(--purple);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kc-repo-glyph { font-size: 9px; opacity: 0.75; }
+.kc-repo-extra { color: var(--text-2); font-weight: 500; }
+
+/* Deps annotation in the meta row — quieter than the sprint pill so it
+   reads as secondary info; reuses mono so dep IDs align with the card ID. */
+.kc-deps {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: -0.2px;
+}
+.kc-deps-glyph { font-size: 12px; opacity: 0.7; line-height: 1; }
+.kc-deps-extra { color: var(--text-3); font-weight: 500; }
 
 .kc-due {
   font-size: 11px;
@@ -2436,6 +2478,8 @@ details[open] > summary .tree-icon { content: '📂'; }
     minmax(40px, auto)   /* priority pill */
     minmax(60px, auto)   /* agents */
     minmax(60px, auto)   /* sprint */
+    minmax(80px, auto)   /* repo */
+    minmax(80px, auto)   /* deps */
     minmax(60px, auto)   /* updated */
     32px;      /* menu */
   align-items: center;
@@ -2604,6 +2648,17 @@ details[open] > summary .tree-icon { content: '📂'; }
 
 .lr-empty { color: var(--text-3); }
 .lr-sprint { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
+
+/* Repo + Deps cells reuse the .kc-repo / .kc-deps chip styles emitted
+   server-side, but constrain the cell so a long repo name doesn't push
+   the next column. */
+.lr-cell-repo,
+.lr-cell-deps {
+  font-size: 11px;
+  min-width: 0;
+}
+.lr-cell-repo .kc-repo,
+.lr-cell-deps .kc-deps { max-width: 100%; }
 
 .lr-cell-updated {
   font-family: var(--font-mono);
@@ -3026,6 +3081,18 @@ details[open] > summary .tree-icon { content: '📂'; }
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+}
+
+/* Repo + deps annotations inside the timeline row name — kept compact so
+   they don't bully the title; the title truncates first. */
+.tl-row-name .kc-repo,
+.tl-row-name .kc-deps {
+  flex-shrink: 0;
+  font-size: 9px;
+  padding: 1px 6px;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tl-row-track {
