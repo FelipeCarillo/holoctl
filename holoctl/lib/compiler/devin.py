@@ -56,4 +56,12 @@ def compile_devin(project_root: Path, config: dict, dry_run: bool = False) -> di
             (project_root / out_path).write_text(bootstrap, encoding="utf-8")
         files.append(out_path)
 
+    upgrade_bootstrap = load_bootstrap("hctl-upgrade-devin.md")
+    if upgrade_bootstrap:
+        out_path = ".devin/skills/hctl-upgrade/SKILL.md"
+        if not dry_run:
+            (project_root / ".devin" / "skills" / "hctl-upgrade").mkdir(parents=True, exist_ok=True)
+            (project_root / out_path).write_text(upgrade_bootstrap, encoding="utf-8")
+        files.append(out_path)
+
     return {"files": files}

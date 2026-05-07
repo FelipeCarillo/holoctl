@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 from ._console import console
 
+from .. import __version__
 from ..lib.config import get_defaults, save_config
 from ..lib.templates import get_templates
 
@@ -33,6 +34,7 @@ def init_cmd(
     target_list = [t.strip() for t in targets.split(",")] if targets else ["claude"]
 
     config = get_defaults()
+    config["holoctlVersion"] = __version__
     config["project"]["name"] = project_name
     config["project"]["prefix"] = project_prefix
     config["targets"] = target_list

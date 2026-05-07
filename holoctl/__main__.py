@@ -11,6 +11,7 @@ from .cli.init_ import app as _init_app, init_cmd
 from .cli.board import app as _board_app
 from .cli.compile_ import app as _compile_app, compile_cmd
 from .cli.sync_ import app as _sync_app, sync_cmd
+from .cli.upgrade_ import app as _upgrade_app, upgrade_cmd
 from .cli.doctor import app as _doctor_app, doctor_cmd
 from .cli.agent import app as _agent_app
 from .cli.repo import app as _repo_app
@@ -33,6 +34,7 @@ app.add_typer(_repo_app, name="repo", help="Manage repos within a project")
 app.command("init")(init_cmd)
 app.command("compile")(compile_cmd)
 app.command("sync")(sync_cmd)
+app.command("upgrade")(upgrade_cmd)
 app.command("doctor")(doctor_cmd)
 app.command("serve")(serve_cmd)
 app.command("overview")(overview_cmd)

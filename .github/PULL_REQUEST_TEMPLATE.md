@@ -32,6 +32,6 @@ Closes #
 ## Checklist
 
 - [ ] Version bumped in `pyproject.toml` (if releasing)
-- [ ] CHANGELOG.md updated (if user-visible change)
+- [ ] holoctl/CHANGELOG.md updated (if user-visible change)
 - [ ] README / ARCHITECTURE updated (if surface change)
 - [ ] No secrets, tokens, or `~/.pypirc` content committed

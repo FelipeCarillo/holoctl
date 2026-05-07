@@ -5,6 +5,10 @@ from pathlib import Path
 
 _DEFAULTS: dict = {
     "version": 1,
+    # Last holoctl release that synced this workspace's templates. Stamped at
+    # `hctl init` and bumped by `hctl upgrade`. Used by `hctl upgrade --check`
+    # to compute the CHANGELOG slice between old and new.
+    "holoctlVersion": "0.0.0",
     "project": {
         "name": "MyProject",
         "prefix": "PRJ",
