@@ -5,39 +5,40 @@
 :root {
   --font: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
-  --radius: 8px;
-  --radius-sm: 6px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
   --sidebar-w: 256px;
   --header-h: 52px;
-  --col-w: 280px;
+  --col-w: 304px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 [data-theme="dark"] {
-  --bg-0: #08080a;
-  --bg-1: #0e0e12;
-  --bg-2: #151519;
-  --bg-3: #1c1c22;
-  --bg-card: #121216;
-  --bg-hover: #1a1a20;
-  --bg-elevated: #1e1e25;
+  --bg-0: #0f0f12;
+  --bg-1: #15151a;
+  --bg-2: #1b1b21;
+  --bg-3: #22222a;
+  --bg-card: #17171c;
+  --bg-hover: #1f1f26;
+  --bg-elevated: #23232c;
 
-  --border: #222228;
-  --border-hover: #33333d;
-  --border-active: #44444f;
+  --border: #25252d;
+  --border-hover: #36363f;
+  --border-active: #474751;
 
   --text-0: #f4f4f6;
   --text-1: #b0b0be;
-  --text-2: #6e6e82;
-  --text-3: #464658;
+  --text-2: #7a7a8c;
+  --text-3: #4e4e60;
 
-  --accent: #635bff;
-  --accent-hover: #7c75ff;
-  --accent-subtle: rgba(99, 91, 255, 0.10);
-  --accent-glow: rgba(99, 91, 255, 0.25);
+  --accent: #6b6bff;
+  --accent-hover: #8585ff;
+  --accent-subtle: rgba(107, 107, 255, 0.10);
+  --accent-glow: rgba(107, 107, 255, 0.20);
+  --accent-warm: #f08a3e;
 
   --green: #30d158;
   --green-subtle: rgba(48, 209, 88, 0.10);
@@ -54,34 +55,35 @@
   --orange: #ff9f0a;
   --orange-subtle: rgba(255, 159, 10, 0.10);
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.6);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.20), 0 1px 3px rgba(0,0,0,0.18);
+  --shadow-md: 0 1px 2px rgba(0,0,0,0.22), 0 6px 16px rgba(0,0,0,0.28);
+  --shadow-lg: 0 4px 8px rgba(0,0,0,0.30), 0 16px 40px rgba(0,0,0,0.36);
   --shadow-glow: 0 0 24px var(--accent-glow);
 }
 
 [data-theme="light"] {
-  --bg-0: #ffffff;
-  --bg-1: #f8f8fa;
-  --bg-2: #f0f0f4;
-  --bg-3: #e8e8ee;
+  --bg-0: #fafaf7;
+  --bg-1: #f4f4ef;
+  --bg-2: #eeeee9;
+  --bg-3: #e6e6e0;
   --bg-card: #ffffff;
-  --bg-hover: #f3f3f7;
+  --bg-hover: #f1f1ec;
   --bg-elevated: #ffffff;
 
-  --border: #e2e2ea;
-  --border-hover: #d0d0da;
-  --border-active: #b8b8c8;
+  --border: #e2e2dc;
+  --border-hover: #d0d0c8;
+  --border-active: #b8b8b0;
 
-  --text-0: #0e0e12;
-  --text-1: #4a4a5a;
-  --text-2: #8a8a9a;
-  --text-3: #b0b0c0;
+  --text-0: #1a1a16;
+  --text-1: #4a4a44;
+  --text-2: #8a8a82;
+  --text-3: #b0b0a8;
 
   --accent: #4f46e5;
   --accent-hover: #635bff;
   --accent-subtle: rgba(79, 70, 229, 0.06);
   --accent-glow: rgba(79, 70, 229, 0.15);
+  --accent-warm: #d97706;
 
   --green: #16a34a;
   --green-subtle: rgba(22, 163, 74, 0.07);
@@ -98,23 +100,24 @@
   --orange: #c2410c;
   --orange-subtle: rgba(194, 65, 12, 0.07);
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.10);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-lg: 0 2px 4px rgba(0,0,0,0.04), 0 12px 32px rgba(0,0,0,0.08);
   --shadow-glow: 0 0 24px var(--accent-glow);
 }
 
 /* ── Reset ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Lock the page to the viewport — no global scroll. Inner scroll regions
+   (each kanban column, the content-body wrapper, list/timeline/detail panes)
+   handle their own overflow. */
+html, body { height: 100vh; overflow: hidden; }
+
 body {
   font-family: var(--font);
   background: var(--bg-0);
   color: var(--text-0);
-  /* Lock the page to the viewport — no global scroll. Inner scroll regions
-     (each kanban column, the content-body wrapper) handle their own overflow. */
-  height: 100vh;
-  overflow: hidden;
   display: flex;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -666,6 +669,39 @@ code {
 .chip-agent { background: var(--green-subtle); color: var(--green); }
 .chip-target { background: var(--purple-subtle); color: var(--purple); }
 .chip-sprint { background: var(--cyan-subtle); color: var(--cyan); }
+
+/* Avatar with initials — used by kanban cards, list rows, and detail page.
+   Stacked horizontally with negative margin to overlap. */
+.avatar-stack { display: inline-flex; align-items: center; }
+.avatar-stack > .avatar-initials + .avatar-initials { margin-left: -6px; }
+
+.avatar-initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-0);
+  background: var(--bg-3);
+  border: 1.5px solid var(--bg-card);
+  text-transform: uppercase;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* Deterministic palette: 6 hues cycled by simple hash of the agent name,
+   computed server-side via `data-hue="0..5"`. */
+.avatar-initials[data-hue="0"] { background: var(--blue-subtle); color: var(--blue); }
+.avatar-initials[data-hue="1"] { background: var(--green-subtle); color: var(--green); }
+.avatar-initials[data-hue="2"] { background: var(--purple-subtle); color: var(--purple); }
+.avatar-initials[data-hue="3"] { background: var(--orange-subtle); color: var(--orange); }
+.avatar-initials[data-hue="4"] { background: var(--cyan-subtle); color: var(--cyan); }
+.avatar-initials[data-hue="5"] { background: var(--accent-subtle); color: var(--accent); }
 
 /* ── Kanban Board ── */
 .board-header {
