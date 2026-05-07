@@ -20,6 +20,22 @@ PROJECT_MARKERS = [
     "CMakeLists.txt",
 ]
 
+# Generic-content markers: a subdir with one of these is considered a unit
+# even if it has no code-project marker. Lets `discover_repos` work for
+# personal-task workspaces (claudio-style) without categorizing the user.
+GENERIC_MARKERS = [
+    "README.md",
+    "readme.md",
+    "README.markdown",
+    "index.md",
+]
+
+# Minimum count of "non-skip" entries (files or non-skip subdirs) for a
+# directory to be considered a unit purely on volume — i.e. when it has
+# neither a project marker nor a generic marker. Keep low; this is the
+# "looks like someone is working in here" heuristic.
+MIN_FILE_COUNT_FOR_UNIT = 5
+
 SKIP_NAMES = {
     "node_modules", ".venv", "venv", "env",
     "dist", "build", "target", "out",
@@ -29,11 +45,28 @@ SKIP_NAMES = {
     "coverage", ".coverage", ".nyc_output",
     ".next", ".nuxt", ".cache",
     ".DS_Store",
+    "_arquivados", "_archive", "_archived",
+    "descartar", "trash", "tmp", "temp",
 }
 
 
 def _detect_markers(dir_path: Path) -> list[str]:
     return [m for m in PROJECT_MARKERS if (dir_path / m).exists()]
+
+
+def _has_generic_marker(dir_path: Path) -> bool:
+    return any((dir_path / m).exists() for m in GENERIC_MARKERS)
+
+
+def _content_volume(dir_path: Path, skip_set: set[str]) -> int:
+    """Count direct entries that aren't in the skip set. Cheap O(direct children)."""
+    try:
+        return sum(
+            1 for e in dir_path.iterdir()
+            if e.name not in skip_set and not e.name.startswith(".")
+        )
+    except OSError:
+        return 0
 
 
 def discover_repos(
@@ -72,7 +105,10 @@ def discover_repos(
             continue
 
         markers = _detect_markers(entry)
-        if not markers:
+        is_unit = bool(markers) or _has_generic_marker(entry) or (
+            _content_volume(entry, skip_set) >= MIN_FILE_COUNT_FOR_UNIT
+        )
+        if not is_unit:
             continue
 
         discovered.append({

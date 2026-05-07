@@ -162,7 +162,24 @@ class Board:
         if ticket.get("file"):
             self._patch_ticket_md(ticket["file"], patches)
 
-        return {"id": ticket_id, "from": old_status, "to": new_status}
+        # Curator auto-execute (item 8A): when a meta:curate ticket transitions
+        # to `done`, the curator action stored in the parallel metadata file
+        # is applied. Reversible (e.g. `hctl agent remove` undoes agent_add).
+        # Soft-import so curator is not a hard dependency of the board.
+        result = {"id": ticket_id, "from": old_status, "to": new_status}
+        if (
+            new_status == "done"
+            and "meta:curate" in (ticket.get("tags") or [])
+        ):
+            try:
+                from .curator import apply_curator_action
+                applied = apply_curator_action(self._root, ticket)
+                if applied is not None:
+                    result["curator_applied"] = applied
+            except Exception as exc:
+                result["curator_error"] = str(exc)
+
+        return result
 
     _EDITABLE_FIELDS = {
         "title", "agent", "projects", "status", "priority",

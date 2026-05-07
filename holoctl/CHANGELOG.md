@@ -2,6 +2,144 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] — 2026-05-07
+
+### Added (autonomous curator — the "alive" of the system)
+
+- **`hctl curate {run, show, silence, apply}`** — the curator engine that watches the journal and proposes new agents/rules/topics as `meta:curate` tickets on the board. Per item 8A of the multi-assistant plan: when you approve a `meta:curate` ticket by moving it to **`done`**, the boardmaster auto-executes the action stored in the ticket's metadata (e.g. `agent_add`, `rule_extract`, `topic_archive`, `memory_promote`). One-click approval; reversible via the inverse command.
+- **5 built-in rules**, each in its own module under `holoctl/lib/curator_rules/`:
+  - `repeated_glob_edits` — N edits in same `a/b/**` path → propose a memory topic with `scope=glob` and the conventions for that area.
+  - `repeated_prompt` — same prompt asked N times → propose extracting it as a durable note (precursor to slash command). Uses token-hash matching by default; with `pip install holoctl[ml]` upgrades to `fastembed` ONNX embeddings (~250MB) for paraphrase detection at ≥0.85 cosine similarity (item 6 — opt-in extra avoids the 700MB torch from sentence-transformers).
+  - `unused_topic` — memory topic untouched ≥60 days → propose archiving. Skips `session-trail` (append-only by `hctl handoff`).
+  - `library_persona_match` — parses each library persona's `when_to_suggest:` frontmatter via PyYAML (item 7 — added as core dep) and counts matching journal events. When a heuristic fires, proposes activating that persona.
+  - `windsurf_memory_promote` — reads Cascade auto-memories at `~/.codeium/windsurf/memories/`. Topics that survived ≥7 days get a promote-to-versioned-topic suggestion. Closes the loop the Windsurf docs explicitly recommend (move durable knowledge from Memories to Rules).
+
+### Guardrails (rate limit + suppression)
+
+- **1 new suggestion per calendar day per workspace** (item 9). Avoids spam from rules that fire continuously.
+- **30-minute cooldown** between automatic curator runs (item 5A — Stop hook fires often, but the curator only computes once per cooldown window). `--bypass-cooldown` flag bypasses for testing or manual runs.
+- **14-day suppression** on `hctl curate silence <pattern_id>`. Stored in `.holoctl/curator/state.json` with the absolute `until` timestamp; expires automatically.
+- **Deduplication against open `meta:curate` tickets** — the same pattern can't generate duplicates while the original is still on the board.
+
+### Plumbing
+
+- **Auto-execute via `Board.move(..., 'done')`** when ticket has tag `meta:curate` and a parallel `.holoctl/curator/tickets/<id>.json` metadata file exists. Soft-import keeps the curator out of the board's hard dependency graph.
+- **MCP tools `holoctl.curate_suggestions` and `holoctl.curate_silence` are now functional** (were stubs in 0.13). Read tool returns open `meta:curate` tickets; write tool persists silences (lands in `permissions.ask`).
+- **PyYAML added as a core dependency** for parsing nested YAML frontmatter (`when_to_suggest:` in personas). Same parser is reusable in 0.15+ for other rule schemas.
+
+### Sanity validated
+
+- End-to-end in `SANITY-0.14.txt`:
+  1. 12 simulated `tool_use` Edit events in `src/api/**` → `repeated_glob_edits` fires → creates `CT-001` `meta:curate` ticket.
+  2. Same-day re-run → rate limit blocks (output: "No new suggestions").
+  3. `hctl board move CT-001 done` → auto-executes `rule_extract` → memory topic `convention-src-api` materialized with `scope=glob` and `globs: ["src/api/**"]`.
+  4. `hctl curate silence` persists in `state.json` with 14-day expiry timestamp.
+  5. Parallel metadata file `.holoctl/curator/tickets/CT-001.json` keeps the action+args separate from the board schema.
+
+### Tests
+
+- 17 new (260 total). Coverage: state persistence, suppression with time-based expiry, rate-limit one-per-day, silence dedup, every built-in rule (repeated_glob_edits, repeated_prompt hash mode, unused_topic, library_persona_match with YAML, session-trail exclusion), apply for `agent_add` / `topic_archive`, board.move auto-execute path, cooldown blocking.
+
+## [0.13.0] — 2026-05-07
+
+### Added (MCP server — board/memory accessible from any assistant)
+
+- **`hctl serve --mcp`** — runs the holoctl board/memory/journal/curator/agent surface as a stdio Model Context Protocol server. Per item 1 of the multi-assistant plan: stdio transport, NOT HTTP daemon. Each assistant spawns a short-lived `hctl serve --mcp` process when it needs to call a tool. No PID files, no daemon, works on Windows trivially.
+- **14 tools exposed**, split read vs write:
+  - **Read** (auto-approved): `holoctl.board_list`, `holoctl.board_get`, `holoctl.memory_list_topics`, `holoctl.memory_read_topic`, `holoctl.memory_search`, `holoctl.journal_recent`, `holoctl.agent_list_available`, `holoctl.curate_suggestions`.
+  - **Write** (user approval required via `permissions.ask`): `holoctl.board_create`, `holoctl.board_move`, `holoctl.board_set`, `holoctl.memory_add`, `holoctl.agent_add`, `holoctl.curate_silence`.
+- **Schema mirrors the CLI 1:1** (item 3 of the plan). Filters and arguments match `hctl board ls --status X --priority Y` exactly. Zero surprise; one mental model.
+- **Output is JSON-stringified** (item 4) inside MCP's `content: [{type: "text", text: "..."}]` — clients parse and render natively.
+- **No `mcp` package dependency** — minimal JSON-RPC implementation in `holoctl/server/mcp.py`. Reasons: install footprint, cold-start latency (each call spawns a Python process), and the protocol surface is small enough that depending on a 5MB+ package would be wasteful.
+
+### Added (per-target MCP config emission)
+
+- **All five compilers now emit native MCP server config**, merging non-destructively with any existing user MCP config:
+  - Claude Code: `.claude/settings.json:mcpServers.holoctl`
+  - Cursor: `.cursor/mcp.json`
+  - Copilot: `.vscode/mcp.json` (uses `servers:` key per VSCode's schema, not `mcpServers:`)
+  - Windsurf: `.windsurf/mcp.json`
+  - Devin: `.devin/mcp.json` (best-effort)
+- The absolute path of `hctl` is resolved at compile time via `shutil.which()` so the config works with `uv tool install`, `pipx`, or plain `pip` in venv.
+- Curator stubs return placeholders explaining the engine arrives in 0.14 — board/memory/agent calls are fully functional now.
+
+### Tests
+
+- 21 new tests (243 total). Coverage: protocol initialize/tools/list/tools/call, unknown method/tool error codes, missing-required-arg validation, board CRUD round-trip via MCP, memory add+list round-trip, agent materialize via MCP, write-flag categorization, JSON-text content shape, idempotent emission per target, user-MCP-server preservation on merge.
+
+### Sanity validated
+
+- Sanity in `SANITY-0.13.txt`: 4 JSON-RPC messages (`initialize`, `tools/list`, `board_list`, `memory_list_topics`) round-tripped through `hctl serve --mcp` via stdin/stdout. All 14 tools advertised with input schemas. Workspace ticket MT-001 retrieved via `board_list` matches the one created via CLI.
+
+## [0.12.0] — 2026-05-07
+
+### Added (token-economy boot + cross-session handoff)
+
+- **`hctl boot`** — minimal session-zero context, target ≤ 1KB. Prints the project name, top 3 pendings filtered to `p0|p1` (in-flight first), 0–2 most recent decisions, active topic names, active persona names, and an `⚡` line listing open `meta:curate` tickets. Designed to be the FIRST thing the assistant prints in a fresh session — the full content stays on disk and is loaded only when the agent asks for a specific topic/ticket. Records a `boot` event in the journal so the curator can correlate sessions.
+- **`hctl handoff`** — end-of-session persistence. Reads today's journal records + git diff HEAD, computes session duration / event count / files-changed brief, and appends ONE line to `.holoctl/memory/topics/session-trail.md`. The trail topic is auto-created on first call with a description that makes Claude/Cursor lazy-load it when the user asks "where did we stop?" — direct token-economy: a session line costs ~150 chars but gives full context recall.
+- Both commands plug into the `/holoctl` skill: Flow A → boot (after init), Flow B → boot (after upgrade), Flow C → boot (status request) / handoff (close request).
+- The `--plain` flag on boot strips Rich ANSI codes for embedding in tooling output.
+
+### Sanity validated
+
+- Sanity end-to-end captured in `SANITY-0.12.txt`: empty workspace → init → 3 tickets (p0 backlog, p1 doing, p3 backlog) → memory topic + persona + decision → `boot` returns 198 bytes (≤19% of the 1KB budget) → simulated session journal → `handoff` creates session-trail topic with the right scope/description → second `boot` shows the new topic + a `meta:curate` ticket as `⚡ 1 sugestão`.
+
+### Tests
+
+- 19 new (222 total). Coverage: pendency filtering by priority + status, in-flight surfacing, curate-ticket open/closed filter, topic listing excludes archived, persona listing, decision sort by mtime, full boot CLI invocation under 1KB, journal event recorded, duration formatting at sub-minute / minute / hour granularity, files-brief truncation, session-trail topic creation + append.
+
+## [0.11.0] — 2026-05-07
+
+### Added (event journal)
+
+- **`.holoctl/journal/<YYYY-MM-DD>.jsonl`** — append-safe daily JSONL of session events. Schema: `{ts, source, kind, payload}`. The journal is the input for the curator (0.14) — it doesn't act on it yet, but every record from now on will eventually be available for pattern detection. Locking is best-effort cross-process (msvcrt/fcntl) plus a per-process `threading.Lock` so concurrent writes from hooks running in parallel never corrupt the file.
+- **`hctl journal` subcommand** — `record`, `show`, `count`, `import`. `record --quiet` is the hot path used by hooks (no output, ~5ms per call). `show` and `count` are debugging helpers.
+
+### Added (setup-zero)
+
+- **`hctl setup`** — plants the `/holoctl` skill in every detected AI assistant in **user scope** (one-time, per machine). Detects Claude Code (`~/.claude`), Cursor (`~/.cursor`), Windsurf (`~/.codeium/windsurf`), Copilot (`~/.copilot`), Devin (`~/.config/devin` or `%APPDATA%\devin`). Resolves `hctl` absolute path via `shutil.which()` so the slash works regardless of installer (`uv tool install`, `pipx`, `pip` in venv). Idempotent — re-run updates content; `--force` to overwrite hand-edited skills.
+- **The `/holoctl` skill body** — same content across the 5 targets (only frontmatter differs to match each assistant's schema). Routes the agent through three flows based on `hctl doctor` output: **A** (not initialized → `hctl init`), **B** (outdated → `hctl upgrade`), **C** (ok → operate via `boot/board/handoff/curate/agent/memory`). Designed so the user never has to remember CLI commands — they just type `/holoctl` and the agent picks the right call.
+
+### Changed (init becomes idempotent)
+
+- **`hctl init` is now idempotent and version-aware.** Behavior matrix:
+  - `.holoctl/` absent → creates skeleton + compiles + plants hooks/MCP (existing behavior, unchanged).
+  - `.holoctl/` present, version equals installed → re-runs sync+recompile **non-destructively** (user-owned tickets/agents/memory preserved via the same allow-list `hctl upgrade` uses).
+  - Workspace version < installed → exits 0 with a clear hint pointing at `hctl upgrade`.
+  - Workspace version > installed → exits 2 (anti auto-downgrade — same guard `upgrade` enforces).
+  - New `--bare` flag creates only the directory skeleton without compile/hooks/MCP — used internally and by tests that need a workspace shell without side effects.
+
+### Added (hooks plumbing per target)
+
+- **All compiles now plant journal hooks.** Claude Code: `.claude/settings.json` gains `hooks.{SessionStart, PostToolUse, Stop}` calling `hctl journal record`. Cursor: `.cursor/hooks.json` gains `sessionStart` and `afterFileEdit`. Both merged **non-destructively** with any existing user hooks (deduplication by exact-content equality — re-running `compile` doesn't add duplicates).
+- **Write tools land in `permissions.ask`** in `.claude/settings.json`: every MCP write (`mcp__holoctl__board_create/move/set`, `agent_add`, `memory_add`, `curate_silence`) requires explicit user approval before the assistant can execute. Read tools auto-approve. Honors plan decision item 2A (write expostos com `permission: ask`).
+
+### Tests
+
+- 32 new (203 total). Coverage: journal record/recent/count, threaded write integrity, hook merge non-destructive, hook idempotency, `permissions.ask` write tools present, `hctl setup` body assembly, frontmatter shape per target, init idempotency at same/older/newer version, `--bare` flag, journal/memory dirs created at init.
+
+## [0.10.0] — 2026-05-07
+
+### Added (durable cross-assistant memory)
+
+- **`.holoctl/memory/` — single source of durable, cross-assistant context.** New tree at workspace root: `MEMORY.md` (always-on index, ≤200 lines) plus `topics/<name>.md` (lazy/glob-scoped). Each topic carries canonical frontmatter (`scope: always_on | lazy | glob`, optional `globs:`, optional `description:`) that compilers translate to each target's native primitive — no per-topic translation code needed.
+- **`hctl memory` subcommand** — `list`, `get`, `add`, `search`, `archive`, `seed`. Body comes from `--from-file` or stdin; topic frontmatter is set by flags. Validation refuses `scope=lazy` without `description:` (the model uses it to decide when to load) and `scope=glob` without `globs:`.
+- **All five compilers emit native memory primitives.** Same `.holoctl/memory/` tree compiles to:
+  - Claude Code: `.claude/skills/holoctl-memory/SKILL.md` (index) + `.claude/skills/holoctl-memory-<topic>/SKILL.md` (per topic, with `description:` for lazy and `paths:` for glob — model decides via progressive disclosure).
+  - Cursor: `.cursor/rules/holoctl-memory.mdc` (`alwaysApply: true`) + per-topic `.mdc` with `description:` (Apply Intelligently) or `globs:` (Apply to Specific Files).
+  - Windsurf: `.windsurf/rules/holoctl-memory.md` (`trigger: always_on`) + per-topic with `trigger: model_decision` (lazy) or `trigger: glob` (path-scoped). Hard 12k-char limit per file enforced. **Not** writing to `~/.codeium/windsurf/memories/` — that path is Cascade's auto-memory and the doc explicitly recommends `.windsurf/rules/` for durable knowledge.
+  - Copilot: `.github/instructions/holoctl-memory-<topic>.instructions.md` with `applyTo:` glob.
+  - Devin: `.devin/rules/holoctl-memory*.md` (best-effort given doc sparseness; same content layout as Windsurf).
+- **`hctl init` seeds an empty `MEMORY.md`** with a project-named header and creates `.holoctl/memory/.gitignore` defaulting to "everything committed except `topics/_archived/`". Privacy-strict workspaces can uncomment two lines to make the whole tree local-only.
+
+### Coexists with native auto-memory
+
+- **Claude Code's auto-memory is NOT disabled.** The compiler appends a "Workspace memory" pointer block to the generated `CLAUDE.md` referencing `@.holoctl/memory/MEMORY.md` so Claude reads both sources. If conflict, Claude's normal context-ordering applies. Disabling `autoMemoryEnabled` is left to the user — out of scope for the compiler.
+
+### Tests
+
+- 26 new tests covering `Memory` CRUD, archive flow, search, and per-target compile output (validating frontmatter shape for each of the 5 emitters). Suite stays green: 171 passing.
+
 ## [0.9.0] — 2026-05-06
 
 ### Added (workspace upgrade flow)

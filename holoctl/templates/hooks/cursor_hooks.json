@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "{{HCTL_BIN}} journal record session_start --source cursor --quiet"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "{{HCTL_BIN}} journal record file_edit --source cursor --stdin --quiet"
+      }
+    ]
+  }
+}
