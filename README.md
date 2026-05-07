@@ -201,11 +201,29 @@ hctl serve                          # http://127.0.0.1:4242
 
 | Tab | Content |
 |---|---|
-| **Board** | Kanban with real-time SSE updates, filter/sort/group by status/priority/agent/sprint/tag/project |
+| **Board** | Three views — **Kanban**, **List**, **Timeline** — with real-time SSE updates, inline create/move/edit, multi-select + bulk actions, search + chip filters, sort/group |
 | **Repos** | Auto-discovered subprojects, git branch + ticket counts |
 | **Agents** | Active personas + library catalog |
 | **Commands** | Slash command library |
 | **Context** | Decisions log + free-form documents |
+
+**Board views** (`?view=kanban|list|timeline`):
+
+- **Kanban** — column per status, cards with priority dot, agent avatars, sprint pill, due date, body preview. Inline `+ Add ticket` per column; hover ⋯ menu for Move / Archive.
+- **List** — dense table grouped by status (or any axis from Sprint/Agent/Tag), sticky group headers, multi-select with Shift+Click range, sticky bulk-action bar (Move to · Archive), inline edit on status/priority cells.
+- **Timeline** — horizontal roadmap with sprints (or agents) as lanes, bars spanning `created → completed||today`, today marker, three zoom levels (Week / Month / Quarter).
+- **Detail page** — large header (priority dot + ID + status pill + priority pill + title), markdown body on the left, three info cards on the right (Properties / Linked / Activity) with inline-editable fields and reverse-scan `blocks` links.
+
+All board mutations also speak HTTP:
+
+```text
+POST   /api/project/{alias}/tickets             create       { title, status?, priority?, agent?, sprint?, tags? }
+POST   /api/project/{alias}/tickets/{id}/move   move         { status }
+PATCH  /api/project/{alias}/tickets/{id}        edit field   { field, value }
+GET    /api/project/{alias}/board-html          fragment for kanban SSE swap
+GET    /api/project/{alias}/list-html           fragment for list SSE swap
+GET    /api/project/{alias}/timeline-html       fragment for timeline SSE swap
+```
 
 ---
 

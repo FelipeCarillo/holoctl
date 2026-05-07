@@ -74,6 +74,8 @@ package = true
 [dependency-groups]
 dev = [
     "pytest>=8",
+    # Required by fastapi.testclient (used by tests/test_dashboard.py).
+    "httpx>=0.27",
 ]
 
 [tool.pytest.ini_options]
