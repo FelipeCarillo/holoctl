@@ -22,7 +22,7 @@ hctl init --name "<inferred>" --prefix "<INFERRED>"
 # Step 3 — Discover (read-only, parallel)
 
 In a single batch, read:
-- `README.md` (and `README.pt-br.md` if present)
+- `README.md` (and `docs/README.pt-br.md` if present)
 - Package files: `package.json` / `pyproject.toml` / `Cargo.toml` / `go.mod` / `pom.xml` / `Gemfile`
 - Top-level directories — flag those with their own package file or `.git` as candidate sub-projects
 - Existing AI instructions: `CLAUDE.md`, `.cursor/rules/*`, `.windsurfrules`, `.github/copilot-instructions.md`, `AGENTS.md` (read for context, NEVER overwrite)
