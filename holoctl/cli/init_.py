@@ -75,7 +75,10 @@ def init_cmd(
     )
     (cwd / ".holoctl" / "activity.jsonl").write_text("", encoding="utf-8")
 
-    console.print(f"  [green]✓ .holoctl/ initialized successfully.[/green]\n")
+    console.print(
+        f"  [green]✓ .holoctl/ initialized[/green] "
+        f"[dim](neutral — only `boardmaster` active; library loaded)[/dim]\n"
+    )
 
     if not skip_compile:
         from ..lib.compiler import compile_project
@@ -89,8 +92,18 @@ def init_cmd(
 
     console.print("")
     console.print("  Next steps:")
-    console.print(f"    [dim]$[/dim] holoctl board add '{{\"title\":\"My first ticket\",\"agent\":\"developer\"}}'")
-    console.print(f"    [dim]$[/dim] holoctl serve")
+    console.print(
+        f"    [dim]$[/dim] hctl agent list                     "
+        f"[dim]# see latent personas you can activate[/dim]"
+    )
+    console.print(
+        f"    [dim]$[/dim] hctl agent add developer            "
+        f"[dim]# example: activate the code-implementation persona[/dim]"
+    )
+    console.print(
+        f"    [dim]$[/dim] hctl board add '{{\"title\":\"My first ticket\",\"agent\":\"boardmaster\"}}'"
+    )
+    console.print(f"    [dim]$[/dim] hctl serve")
     console.print("")
 
 

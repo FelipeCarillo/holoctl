@@ -50,6 +50,7 @@ include = ["holoctl*"]
 [tool.setuptools.package-data]
 holoctl = [
     "templates/commands/*.md",
+    "templates/agents/*.md",
     "server/static/*",
     "CHANGELOG.md",
 ]
