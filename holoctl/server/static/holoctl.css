@@ -706,28 +706,54 @@ code {
 /* ── Kanban Board ── */
 .board-header {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
 }
 
+.board-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.board-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-0);
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+
+.board-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Live indicator — moved to the topbar (.topbar-actions). The styles still
+   apply on the board page but the chip now sits next to the breadcrumb tabs
+   instead of taking a slot in the project header. */
 .live-indicator {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--green);
-  padding: 5px 12px;
+  padding: 4px 10px;
   background: var(--green-subtle);
-  border-radius: 20px;
+  border-radius: 999px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
 
 .live-indicator .pulse {
-  width: 7px; height: 7px;
+  width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--green);
   position: relative;
@@ -751,15 +777,10 @@ code {
   font-size: 11px;
   color: var(--text-2);
   font-family: var(--font-mono);
-  background: var(--bg-2);
-  padding: 5px 12px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  max-width: 400px;
+  letter-spacing: -0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: -0.2px;
 }
 
 .board-count {
@@ -767,6 +788,22 @@ code {
   color: var(--text-2);
   margin-left: auto;
   font-weight: 500;
+}
+
+/* Disabled CTA placeholder — Phase 1 ships visual only; "+ New ticket" gets
+   wired to a real POST endpoint in the Mutations API phase. */
+.btn-disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+.btn-disabled:hover,
+.btn[aria-disabled="true"]:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+  transform: none;
 }
 
 .kanban {
@@ -788,48 +825,62 @@ code {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   /* Each column is a flex column whose ticket-list scrolls internally. */
   max-height: 100%;
   min-height: 0;
 }
 
-.kanban-col-header { flex-shrink: 0; }
-
+/* Sticky header at the top of each column — stays visible while the cards
+   below scroll. Uses bg-0 (page bg) so it cleanly covers cards passing
+   underneath as they scroll. */
 .kanban-col-header {
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: var(--radius);
+  gap: 10px;
+  padding: 8px 4px 10px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
+  color: var(--text-1);
+  background: var(--bg-0);
 }
 
 .kanban-col-header .col-label { flex: 1; }
 
+/* Status accent on the count chip only — keeps the column header itself
+   neutral so the cards do the talking. */
 .kanban-col-header .count {
-  background: rgba(0,0,0,0.12);
-  border-radius: 10px;
-  padding: 2px 8px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 2px 9px;
   font-size: 11px;
   font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
-[data-theme="light"] .kanban-col-header .count { background: rgba(0,0,0,0.06); }
-
-.kanban-col[data-status="backlog"] .kanban-col-header { background: var(--bg-3); color: var(--text-2); }
-.kanban-col[data-status="doing"] .kanban-col-header { background: var(--blue-subtle); color: var(--blue); }
-.kanban-col[data-status="review"] .kanban-col-header { background: var(--yellow-subtle); color: var(--yellow); }
-.kanban-col[data-status="done"] .kanban-col-header { background: var(--green-subtle); color: var(--green); }
-.kanban-col[data-status="cancelled"] .kanban-col-header { background: var(--red-subtle); color: var(--red); }
+.kanban-col[data-status="backlog"]   .col-label,
+.kanban-col[data-status="backlog"]   .count { color: var(--text-2); }
+.kanban-col[data-status="doing"]     .col-label { color: var(--blue); }
+.kanban-col[data-status="doing"]     .count { background: var(--blue-subtle); color: var(--blue); }
+.kanban-col[data-status="review"]    .col-label { color: var(--yellow); }
+.kanban-col[data-status="review"]    .count { background: var(--yellow-subtle); color: var(--yellow); }
+.kanban-col[data-status="done"]      .col-label { color: var(--green); }
+.kanban-col[data-status="done"]      .count { background: var(--green-subtle); color: var(--green); }
+.kanban-col[data-status="cancelled"] .col-label { color: var(--red); }
+.kanban-col[data-status="cancelled"] .count { background: var(--red-subtle); color: var(--red); }
 
 .kanban-cards {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   /* Per-column vertical scroll. With `flex: 1; min-height: 0` the cards
      area takes whatever room is left after the column header and scrolls
      internally instead of pushing the column past its parent. */
@@ -839,66 +890,128 @@ code {
   padding-right: 4px;
 }
 
+/* ── Card (Notion/Things-style) ── */
 .kanban-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px 14px 19px;
-  transition: all 0.2s var(--ease);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
   cursor: pointer;
   display: block;
   position: relative;
-  overflow: hidden;
 }
-
-/* Priority stripe as a pseudo-element so the card keeps a uniform 1px border.
-   The previous `border-left: 3px` mixed with the 1px on the other three sides
-   collided with `border-radius`, leaving the top-left and bottom-left corners
-   looking "bitten". */
-.kanban-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 3px;
-  background: transparent;
-}
-
-.kanban-card[data-p="p0"]::before { background: var(--red); }
-.kanban-card[data-p="p1"]::before { background: var(--yellow); }
-.kanban-card[data-p="p2"]::before { background: var(--blue); }
-.kanban-card[data-p="p3"]::before { background: var(--text-3); }
 
 .kanban-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow: var(--shadow-md);
   border-color: var(--border-hover);
 }
 
-.kanban-card-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 8px;
+.kanban-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.kanban-card-id {
+.kc-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.kc-prio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  position: relative;
+}
+
+.kc-prio-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  opacity: 0.18;
+  background: currentColor;
+  pointer-events: none;
+}
+
+.kc-prio-dot[data-p="p0"] { background: var(--red);    color: var(--red);    }
+.kc-prio-dot[data-p="p1"] { background: var(--yellow); color: var(--yellow); }
+.kc-prio-dot[data-p="p2"] { background: var(--blue);   color: var(--blue);   }
+.kc-prio-dot[data-p="p3"] { background: var(--text-3); color: var(--text-3); }
+.kc-prio-dot[data-p="p3"]::after { opacity: 0; }
+
+.kc-id {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-2);
   font-family: var(--font-mono);
+  letter-spacing: -0.2px;
   white-space: nowrap;
-  padding-top: 2px;
+}
+
+.kc-title {
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.35;
+  color: var(--text-0);
+  /* Up to 2 lines of title before truncation. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.kc-preview {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin-top: 4px;
+  /* Single line of body preview; overflow ellipsises. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kc-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-2);
+  flex-wrap: wrap;
+}
+
+.kc-sprint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
   letter-spacing: -0.2px;
 }
 
-.kanban-card-title {
-  font-size: 13px;
+.kc-due {
+  font-size: 11px;
+  color: var(--text-2);
   font-weight: 500;
-  line-height: 1.4;
-  flex: 1;
+  letter-spacing: -0.1px;
+  margin-left: auto;
 }
+
+.kc-due::first-letter { /* clock glyph stays at default size */ }
+
+/* Legacy classes kept so other templates (project cards, list rows, etc.)
+   that still reference .kanban-card-* don't break. The new cards use
+   .kc-* classes above. */
+.kanban-card-top    { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.kanban-card-id     { font-size: 10px; font-weight: 700; color: var(--text-2); font-family: var(--font-mono); white-space: nowrap; letter-spacing: -0.2px; }
+.kanban-card-title  { font-size: 13px; font-weight: 500; line-height: 1.4; flex: 1; }
+.kanban-card-meta   { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
 
 .p-badge {
   font-size: 9px;
@@ -911,36 +1024,34 @@ code {
   letter-spacing: 0.3px;
 }
 
-.p-badge.p0 { background: var(--red-subtle); color: var(--red); }
+.p-badge.p0 { background: var(--red-subtle);    color: var(--red); }
 .p-badge.p1 { background: var(--yellow-subtle); color: var(--yellow); }
-.p-badge.p2 { background: var(--blue-subtle); color: var(--blue); }
-.p-badge.p3 { background: var(--bg-3); color: var(--text-2); }
-
-.kanban-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 10px;
-}
-
-.kanban-card-dates {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-  color: var(--text-3);
-  margin-top: 10px;
-  font-family: var(--font-mono);
-  letter-spacing: -0.2px;
-}
+.p-badge.p2 { background: var(--blue-subtle);   color: var(--blue); }
+.p-badge.p3 { background: var(--bg-3);          color: var(--text-2); }
 
 .kanban-empty {
   text-align: center;
-  padding: 28px 12px;
+  padding: 24px 12px;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: 11px;
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.kanban-empty-glyph {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-3);
+  opacity: 0.5;
+}
+
+.kanban-empty-msg {
+  letter-spacing: 0.2px;
 }
 
 /* ── Agent cards ── */
@@ -1448,122 +1559,316 @@ details[open] > summary .tree-icon { content: '📂'; }
   to { opacity: 0; transform: translateY(8px) scale(0.95); }
 }
 
-/* ── Board controls (filter / sort / group-by) ── */
+/* ── Board controls — view switcher, search, filter chips, sort, group ── */
 .board-controls {
   flex-shrink: 0;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
   font-size: 13px;
+  position: relative;
 }
 
-.board-controls-toggle {
-  width: 100%;
+.bc-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.bc-row-secondary {
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* Segmented view switcher */
+.view-switcher {
+  display: inline-flex;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 2px;
+}
+
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
   background: transparent;
   border: 0;
+  border-radius: var(--radius-sm);
   color: var(--text-1);
-  cursor: pointer;
-  font-size: 13px;
   font-family: inherit;
+  font-size: 12px;
   font-weight: 500;
-  border-radius: var(--radius);
-  transition: background 0.15s var(--ease);
-  text-align: left;
+  cursor: pointer;
+  letter-spacing: -0.1px;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
-.board-controls-toggle:hover { background: var(--bg-hover); color: var(--text-0); }
-
-.board-controls-icon {
-  font-size: 14px;
-  opacity: 0.7;
+.view-tab:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-0); }
+.view-tab.active {
+  background: var(--bg-card);
+  color: var(--text-0);
+  box-shadow: var(--shadow-sm);
 }
-
-.board-controls-label { flex: 1; }
-
-.board-controls-count {
-  font-size: 11px;
-  color: var(--accent);
-  background: var(--accent-subtle);
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-weight: 600;
+.view-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
-.board-controls-count:empty { display: none; }
+.view-tab-glyph { font-size: 13px; opacity: 0.85; }
 
-.board-controls-body {
-  display: none;
-  padding: 4px 14px 14px;
-  border-top: 1px solid var(--border);
-  flex-direction: column;
-  gap: 10px;
-}
-
-.board-controls[data-state="expanded"] .board-controls-body {
+/* Inline search */
+.bc-search {
+  position: relative;
+  flex: 1;
+  max-width: 360px;
   display: flex;
+  align-items: center;
 }
 
-.board-controls[data-state="expanded"] .board-controls-toggle {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+.bc-search-glyph {
+  position: absolute;
+  left: 12px;
+  font-size: 12px;
+  opacity: 0.55;
+  pointer-events: none;
 }
 
-.board-controls-row {
+.bc-search input {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: -0.1px;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.bc-search input::placeholder { color: var(--text-3); }
+.bc-search input:hover { border-color: var(--border-hover); }
+.bc-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+
+/* Active filter chips */
+.bc-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-end;
+  gap: 6px;
+  align-items: center;
+  min-height: 26px;
 }
 
-.bc-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  min-width: 130px;
+.bc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
 }
 
-.bc-field span {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--text-3);
+.bc-chip-axis {
   font-weight: 600;
+  text-transform: capitalize;
+  opacity: 0.75;
 }
 
-.bc-field select {
-  padding: 6px 10px;
-  background: var(--bg-2);
+.bc-chip-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: -0.2px;
+}
+
+.bc-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s var(--ease), background 0.15s var(--ease);
+}
+.bc-chip-remove:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.10);
+}
+[data-theme="light"] .bc-chip-remove:hover { background: rgba(0, 0, 0, 0.06); }
+
+/* Add filter button */
+.bc-add-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 4px 8px;
+  background: transparent;
+  border: 1px dashed var(--border-hover);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+}
+.bc-add-filter:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  border-style: solid;
+}
+
+.bc-add-filter-glyph {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.bc-spacer { flex: 1; min-width: 0; }
+
+/* Inline label-select pairs for sort & group */
+.bc-inline-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
+  letter-spacing: -0.1px;
+}
+
+.bc-inline-select select {
+  padding: 5px 10px;
+  background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-0);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition: border-color 0.15s var(--ease);
 }
-.bc-field select:hover { border-color: var(--border-hover); }
-.bc-field select:focus { outline: none; border-color: var(--accent); }
+.bc-inline-select select:hover { border-color: var(--border-hover); }
+.bc-inline-select select:focus { outline: none; border-color: var(--accent); }
 
 .bc-reset {
-  padding: 7px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text-1);
+  color: var(--text-2);
   cursor: pointer;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   transition: all 0.15s var(--ease);
+  padding: 0;
 }
 .bc-reset:hover {
-  background: var(--red-subtle);
-  border-color: var(--red);
-  color: var(--red);
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--text-0);
+}
+
+/* Add-filter popover */
+.bc-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  min-width: 280px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  padding: 10px;
+}
+.bc-popover[hidden] { display: none; }
+
+.bc-popover-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-2);
+  font-weight: 600;
+  padding: 4px 8px 8px;
+}
+
+.bc-popover-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+.bc-popover-back:hover { background: var(--bg-hover); color: var(--text-0); }
+
+.bc-popover-axes,
+.bc-popover-values {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bc-popover-axis,
+.bc-popover-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 7px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s var(--ease);
+}
+.bc-popover-axis:hover,
+.bc-popover-value:hover { background: var(--bg-hover); }
+
+.bc-popover-value-empty {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+  font-style: italic;
 }
 
 /* Hidden card via filter — uses class so it composes with other style state. */

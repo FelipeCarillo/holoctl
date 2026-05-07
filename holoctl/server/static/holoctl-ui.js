@@ -224,19 +224,33 @@
     });
   };
 
-  // ── Board controls: filter, sort, group-by ──
+  // ── Board controls: search, filter chips, sort, group ──
 
-  // Field-level state lives in localStorage per workspace alias so refreshing
-  // or navigating away and back keeps the agent's view intact.
+  // Per-workspace state in localStorage. Bumped to v2 because the schema
+  // changed (added .search, .filter shape preserved). Old v1 state is left
+  // alone — agents who had it just see defaults until they touch a control.
   function bcStorageKey() {
     const m = window.location.pathname.match(/\/project\/([^/]+)\/board/);
-    return m ? `holoctl-bc:${m[1]}` : null;
+    return m ? `holoctl-bc-v2:${m[1]}` : null;
   }
 
   const BC_DEFAULT = {
+    search: '',
     filter: { status: '', priority: '', agent: '', sprint: '', tag: '', project: '' },
     sort: 'created',
     group: 'status',
+  };
+
+  // Axis label and value-coercion: filter axes don't 1:1 map to data-* names
+  // (priority axis reads data-p; tag axis reads data-tags split by comma).
+  // This table captures both for chip rendering and matching.
+  const BC_AXIS = {
+    status:   { label: 'Status',   attr: 'status',   multi: false },
+    priority: { label: 'Priority', attr: 'p',        multi: false },
+    agent:    { label: 'Agent',    attr: 'agent',    multi: true  },
+    sprint:   { label: 'Sprint',   attr: 'sprint',   multi: false },
+    tag:      { label: 'Tag',      attr: 'tags',     multi: true  },
+    project:  { label: 'Project',  attr: 'projects', multi: true  },
   };
 
   function bcLoad() {
@@ -245,6 +259,7 @@
     try {
       const saved = JSON.parse(localStorage.getItem(k) || '{}');
       return {
+        search: typeof saved.search === 'string' ? saved.search : '',
         filter: { ...BC_DEFAULT.filter, ...(saved.filter || {}) },
         sort: saved.sort || BC_DEFAULT.sort,
         group: saved.group || BC_DEFAULT.group,
@@ -259,61 +274,55 @@
     if (k) localStorage.setItem(k, JSON.stringify(state));
   }
 
-  // Read every card's data-attrs to build the option set per filter axis.
+  // Distinct values per axis, derived from the cards currently in the DOM —
+  // used by the Add-filter popover and not stored anywhere.
   function bcCollectOptions() {
-    const opts = { status: new Set(), priority: new Set(), agent: new Set(), sprint: new Set(), tag: new Set(), project: new Set() };
+    const opts = {};
+    Object.keys(BC_AXIS).forEach(a => { opts[a] = new Set(); });
     document.querySelectorAll('.kanban-card').forEach(card => {
-      const get = name => card.getAttribute('data-' + name) || '';
-      if (get('status')) opts.status.add(get('status'));
-      if (get('p')) opts.priority.add(get('p'));
-      if (get('sprint')) opts.sprint.add(get('sprint'));
-      get('agent').split(',').filter(Boolean).forEach(v => opts.agent.add(v));
-      get('tags').split(',').filter(Boolean).forEach(v => opts.tag.add(v));
-      get('projects').split(',').filter(Boolean).forEach(v => opts.project.add(v));
+      Object.entries(BC_AXIS).forEach(([axis, info]) => {
+        const raw = card.getAttribute('data-' + info.attr) || '';
+        if (info.multi) {
+          raw.split(',').filter(Boolean).forEach(v => opts[axis].add(v));
+        } else if (raw) {
+          opts[axis].add(raw);
+        }
+      });
     });
     const sorted = {};
-    for (const [k, set] of Object.entries(opts)) sorted[k] = [...set].sort();
+    Object.entries(opts).forEach(([axis, set]) => {
+      sorted[axis] = [...set].sort();
+    });
     return sorted;
   }
 
-  // Populate each <select data-filter="X"> with the option set, preserving
-  // the currently-selected value if it's still present.
-  function bcRefreshOptions(state) {
-    const opts = bcCollectOptions();
-    document.querySelectorAll('[data-filter]').forEach(sel => {
-      const axis = sel.getAttribute('data-filter');
-      const current = state.filter[axis] || sel.value;
-      // Preserve the "All" option (empty value) and rebuild the rest.
-      sel.innerHTML = '<option value="">All</option>' +
-        (opts[axis] || []).map(v =>
-          `<option value="${v.replace(/"/g, '&quot;')}"${v === current ? ' selected' : ''}>${v}</option>`
-        ).join('');
-      if (opts[axis] && opts[axis].includes(current)) sel.value = current;
-    });
-  }
-
-  // Show / hide cards based on the filter; cards whose data-* on every
-  // active axis matches the filter survive.
+  // Each card lives or dies on the AND of every active axis.
   function bcApplyFilter(state) {
     const f = state.filter;
-    let activeFilters = 0;
-    Object.values(f).forEach(v => { if (v) activeFilters++; });
+    const q = (state.search || '').trim().toLowerCase();
     document.querySelectorAll('.kanban-card').forEach(card => {
-      const get = name => card.getAttribute('data-' + name) || '';
-      const matches =
-        (!f.status   || get('status') === f.status) &&
-        (!f.priority || get('p') === f.priority) &&
-        (!f.sprint   || get('sprint') === f.sprint) &&
-        (!f.agent    || get('agent').split(',').includes(f.agent)) &&
-        (!f.tag      || get('tags').split(',').includes(f.tag)) &&
-        (!f.project  || get('projects').split(',').includes(f.project));
+      let matches = true;
+      for (const [axis, info] of Object.entries(BC_AXIS)) {
+        const want = f[axis];
+        if (!want) continue;
+        const raw = card.getAttribute('data-' + info.attr) || '';
+        const ok = info.multi
+          ? raw.split(',').includes(want)
+          : raw === want;
+        if (!ok) { matches = false; break; }
+      }
+      if (matches && q) {
+        const haystack = (
+          (card.getAttribute('data-id') || '') + ' ' +
+          (card.getAttribute('data-title') || '') + ' ' +
+          (card.getAttribute('data-tags') || '')
+        ).toLowerCase();
+        if (!haystack.includes(q)) matches = false;
+      }
       card.classList.toggle('bc-hidden', !matches);
     });
-    const countEl = document.getElementById('board-controls-count');
-    if (countEl) countEl.textContent = activeFilters > 0 ? `${activeFilters} active` : '';
   }
 
-  // Sort cards within each column. Re-orders nodes in place.
   function bcApplySort(state) {
     const cmp = bcGetComparator(state.sort);
     document.querySelectorAll('.kanban-cards').forEach(container => {
@@ -338,9 +347,6 @@
     return () => 0;
   }
 
-  // Group-by changes which buckets the cards land in. Status (default) keeps
-  // the server-rendered columns. Other modes rebuild the column list from
-  // the unique values of the chosen attribute.
   function bcApplyGroup(state) {
     const kanban = document.getElementById('kanban');
     if (!kanban) return;
@@ -351,21 +357,22 @@
         const status = col.getAttribute('data-status');
         col.setAttribute('data-bucket', status);
         const cards = col.querySelector('.kanban-cards');
-        // Remove all current cards from this column.
         [...cards.querySelectorAll('.kanban-card')].forEach(c => c.remove());
         const empty = cards.querySelector('.kanban-empty');
         if (empty) empty.remove();
-        // Re-insert cards whose data-status matches this column.
         const owned = allCards.filter(c => c.getAttribute('data-status') === status);
         if (owned.length === 0) {
-          cards.innerHTML = '<div class="kanban-empty">No tickets</div>';
+          cards.innerHTML = '<div class="kanban-empty">' +
+            '<div class="kanban-empty-glyph">·</div>' +
+            '<div class="kanban-empty-msg">No tickets here</div>' +
+            '</div>';
         } else {
           owned.forEach(c => cards.appendChild(c));
         }
         const count = col.querySelector('.count');
         const label = col.querySelector('.col-label');
         if (count) count.textContent = owned.length;
-        if (label) label.textContent = status.toUpperCase();
+        if (label) label.textContent = status;
       });
       return;
     }
@@ -380,13 +387,9 @@
         : [raw || '(none)'];
       values.forEach(v => {
         if (!buckets.has(v)) buckets.set(v, []);
-        // Cards with multiple agents/tags appear in each bucket — clone DOM
-        // so a card can show up in multiple columns. Use a wrapper marker
-        // so live updates don't double-apply filters.
         buckets.get(v).push(card);
       });
     });
-    // Rebuild kanban with the new buckets.
     const sortedKeys = [...buckets.keys()].sort((a, b) => {
       if (a === '(none)') return 1;
       if (b === '(none)') return -1;
@@ -396,28 +399,92 @@
       const cards = buckets.get(k);
       return `<div class="kanban-col" data-bucket="${k.replace(/"/g, '&quot;')}">
         <div class="kanban-col-header">
-          <span class="col-label">${k.toUpperCase()}</span>
+          <span class="col-label">${k}</span>
           <span class="count">${cards.length}</span>
         </div>
         <div class="kanban-cards"></div>
       </div>`;
     }).join('');
-    // Now move cards into their buckets (clone for shared cards).
     sortedKeys.forEach(k => {
       const col = kanban.querySelector(`.kanban-col[data-bucket="${k.replace(/"/g, '&quot;')}"] .kanban-cards`);
       buckets.get(k).forEach(card => {
-        // If a card belongs to multiple buckets, clone it; only the first
-        // bucket gets the original (so SSE swap can find it again).
         col.appendChild(card.cloneNode(true));
       });
     });
   }
 
-  function bcApply(state) {
-    bcRefreshOptions(state);
+  // Render the active-filters chip strip from state.
+  function bcRenderChips(state, panel) {
+    const chips = panel.querySelector('#bc-chips');
+    if (!chips) return;
+    const entries = Object.entries(state.filter).filter(([, v]) => v);
+    chips.innerHTML = entries.map(([axis, value]) => {
+      const label = (BC_AXIS[axis] && BC_AXIS[axis].label) || axis;
+      const safeAxis = String(axis).replace(/"/g, '&quot;');
+      const safeVal = String(value).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      return `<span class="bc-chip" data-axis="${safeAxis}">
+        <span class="bc-chip-axis">${label}:</span>
+        <span class="bc-chip-value">${safeVal}</span>
+        <button type="button" class="bc-chip-remove" data-bc-chip-remove="${safeAxis}" aria-label="Remove ${label} filter">&times;</button>
+      </span>`;
+    }).join('');
+  }
+
+  function bcApply(state, panel) {
     bcApplyGroup(state);
     bcApplySort(state);
     bcApplyFilter(state);
+    if (panel) bcRenderChips(state, panel);
+  }
+
+  // Add-filter popover: 2-step (axis → value), positioned under #bc-add-filter.
+  function bcOpenPopover(panel, btn) {
+    const pop = panel.querySelector('#bc-popover');
+    if (!pop) return;
+    pop.querySelector('[data-step="axis"]').hidden = false;
+    pop.querySelector('[data-step="value"]').hidden = true;
+    pop.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    // Position under the trigger inside the controls strip.
+    const r = btn.getBoundingClientRect();
+    const cr = panel.getBoundingClientRect();
+    pop.style.left = (r.left - cr.left) + 'px';
+    pop.style.top = (r.bottom - cr.top + 6) + 'px';
+  }
+
+  function bcClosePopover(panel) {
+    const pop = panel.querySelector('#bc-popover');
+    const btn = panel.querySelector('#bc-add-filter');
+    if (!pop) return;
+    pop.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
+  function bcShowAxisValues(panel, axis) {
+    const pop = panel.querySelector('#bc-popover');
+    if (!pop) return;
+    const opts = bcCollectOptions()[axis] || [];
+    const label = (BC_AXIS[axis] && BC_AXIS[axis].label) || axis;
+    pop.querySelector('#bc-popover-axis-label').textContent = label;
+    const list = pop.querySelector('#bc-popover-values');
+    if (opts.length === 0) {
+      list.innerHTML = '<div class="bc-popover-value-empty">No values available</div>';
+    } else {
+      list.innerHTML = opts.map(v =>
+        `<button type="button" class="bc-popover-value" data-value="${String(v).replace(/"/g, '&quot;')}">${String(v).replace(/</g, '&lt;')}</button>`
+      ).join('');
+    }
+    pop.querySelector('[data-step="axis"]').hidden = true;
+    pop.querySelector('[data-step="value"]').hidden = false;
+    pop.setAttribute('data-axis', axis);
+  }
+
+  function debounce(fn, wait) {
+    let t = null;
+    return function (...args) {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), wait);
+    };
   }
 
   function initBoardControls() {
@@ -426,61 +493,118 @@
 
     const state = bcLoad();
 
-    // Set the toggle's open/closed state — open if there are active filters.
-    const hasActive = Object.values(state.filter).some(Boolean) ||
-                      state.sort !== BC_DEFAULT.sort ||
-                      state.group !== BC_DEFAULT.group;
-    if (hasActive) panel.setAttribute('data-state', 'expanded');
-
-    // Toggle button
-    panel.querySelector('[data-bc-toggle]').addEventListener('click', () => {
-      const expanded = panel.getAttribute('data-state') === 'expanded';
-      panel.setAttribute('data-state', expanded ? 'collapsed' : 'expanded');
-    });
-
-    // Reset
-    panel.querySelector('[data-bc-reset]').addEventListener('click', () => {
-      const fresh = JSON.parse(JSON.stringify(BC_DEFAULT));
-      bcSave(fresh);
-      window.location.reload();
-    });
-
-    // Wire up filter selects
-    panel.querySelectorAll('[data-filter]').forEach(sel => {
-      sel.value = state.filter[sel.getAttribute('data-filter')] || '';
-      sel.addEventListener('change', () => {
-        state.filter[sel.getAttribute('data-filter')] = sel.value;
+    // Search
+    const search = panel.querySelector('#bc-search');
+    if (search) {
+      search.value = state.search || '';
+      const onSearch = debounce(() => {
+        state.search = search.value;
         bcSave(state);
         bcApplyFilter(state);
-      });
-    });
+      }, 120);
+      search.addEventListener('input', onSearch);
+    }
 
     // Sort
     const sortSel = panel.querySelector('[data-sort]');
-    sortSel.value = state.sort;
-    sortSel.addEventListener('change', () => {
-      state.sort = sortSel.value;
-      bcSave(state);
-      bcApplySort(state);
-    });
+    if (sortSel) {
+      sortSel.value = state.sort;
+      sortSel.addEventListener('change', () => {
+        state.sort = sortSel.value;
+        bcSave(state);
+        bcApplySort(state);
+      });
+    }
 
-    // Group-by
+    // Group
     const groupSel = panel.querySelector('[data-group]');
-    groupSel.value = state.group;
-    groupSel.addEventListener('change', () => {
-      state.group = groupSel.value;
-      bcSave(state);
-      bcApply(state);
+    if (groupSel) {
+      groupSel.value = state.group;
+      groupSel.addEventListener('change', () => {
+        state.group = groupSel.value;
+        bcSave(state);
+        bcApply(state, panel);
+      });
+    }
+
+    // Reset
+    const reset = panel.querySelector('#bc-reset');
+    if (reset) {
+      reset.addEventListener('click', () => {
+        const fresh = JSON.parse(JSON.stringify(BC_DEFAULT));
+        bcSave(fresh);
+        window.location.reload();
+      });
+    }
+
+    // Add-filter popover
+    const addBtn = panel.querySelector('#bc-add-filter');
+    if (addBtn) {
+      addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pop = panel.querySelector('#bc-popover');
+        if (pop && !pop.hidden) bcClosePopover(panel);
+        else bcOpenPopover(panel, addBtn);
+      });
+    }
+    panel.addEventListener('click', (e) => {
+      const axisBtn = e.target.closest('.bc-popover-axis');
+      if (axisBtn) {
+        bcShowAxisValues(panel, axisBtn.getAttribute('data-axis'));
+        return;
+      }
+      const valBtn = e.target.closest('.bc-popover-value');
+      if (valBtn) {
+        const pop = panel.querySelector('#bc-popover');
+        const axis = pop.getAttribute('data-axis');
+        const value = valBtn.getAttribute('data-value');
+        if (axis && value) {
+          state.filter[axis] = value;
+          bcSave(state);
+          bcApply(state, panel);
+        }
+        bcClosePopover(panel);
+        return;
+      }
+      const back = e.target.closest('#bc-popover-back');
+      if (back) {
+        const pop = panel.querySelector('#bc-popover');
+        pop.querySelector('[data-step="axis"]').hidden = false;
+        pop.querySelector('[data-step="value"]').hidden = true;
+        return;
+      }
+      const remove = e.target.closest('[data-bc-chip-remove]');
+      if (remove) {
+        const axis = remove.getAttribute('data-bc-chip-remove');
+        if (axis) {
+          state.filter[axis] = '';
+          bcSave(state);
+          bcApply(state, panel);
+        }
+        return;
+      }
     });
 
-    bcApply(state);
+    // Click-away closes the popover
+    document.addEventListener('click', (e) => {
+      const pop = panel.querySelector('#bc-popover');
+      if (!pop || pop.hidden) return;
+      if (!pop.contains(e.target) && !e.target.closest('#bc-add-filter')) {
+        bcClosePopover(panel);
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') bcClosePopover(panel);
+    });
+
+    bcApply(state, panel);
   }
 
   // Re-apply controls after the SSE handler swaps the kanban DOM.
   window.__reapplyBoardControls = function () {
     const panel = document.getElementById('board-controls');
     if (!panel) return;
-    bcApply(bcLoad());
+    bcApply(bcLoad(), panel);
   };
 
   // ── Init ──

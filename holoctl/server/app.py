@@ -325,7 +325,102 @@ def _home_page(projects: list[dict]) -> str:
     return f'<div class="project-grid">{cards}</div>'
 
 
-def _kanban_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
+_AVATAR_HUE_COUNT = 6
+
+
+def _initials(name: str) -> str:
+    """Two-character uppercase glyph for an avatar circle."""
+    if not name:
+        return "?"
+    parts = re.split(r"[\s\-_./]+", name.strip())
+    parts = [p for p in parts if p]
+    if not parts:
+        return name.strip()[:2].upper()
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][:1] + parts[1][:1]).upper()
+
+
+def _avatar_hue(name: str) -> int:
+    """Deterministic 0..5 hue index — same name always lands the same color."""
+    if not name:
+        return 0
+    return sum(ord(c) for c in name) % _AVATAR_HUE_COUNT
+
+
+def _ticket_preview(project_root: Path, ticket: dict, max_chars: int = 80) -> str:
+    """First non-trivial prose line from a ticket .md, for the kanban card preview.
+
+    Strips frontmatter, drops empty/placeholder sections, then walks the body
+    looking for the first line that isn't a header, blank, list marker, or
+    HTML comment. Returns "" gracefully when the ticket body is template-only.
+    """
+    rel = ticket.get("file")
+    if not rel:
+        return ""
+    md_path = project_root / ".holoctl" / "board" / "tickets" / rel if not (project_root / rel).exists() else (project_root / rel)
+    if not md_path.exists():
+        return ""
+    try:
+        raw = md_path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    _, body = parse_frontmatter(raw)
+    body = _strip_empty_sections(body)
+    in_html_comment = False
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        # Multi-line HTML comments — skip until close.
+        if in_html_comment:
+            if "-->" in line:
+                in_html_comment = False
+            continue
+        if line.startswith("<!--"):
+            if "-->" not in line:
+                in_html_comment = True
+            continue
+        # Markdown structural lines.
+        if line.startswith("#") or line.startswith("---"):
+            continue
+        # List / checkbox markers — skip the marker but keep substantive text.
+        m = re.match(r"^(?:[-*+]\s*(?:\[[ xX]\]\s+)?|\d+\.\s+)(.*)$", line)
+        if m:
+            line = m.group(1).strip()
+            if not line:
+                continue
+        # Skip parenthetical placeholder hints.
+        if re.match(r"^\([^)]*\)\s*$", line):
+            continue
+        # Strip basic markdown emphasis / inline code for the preview.
+        line = re.sub(r"`([^`]+)`", r"\1", line)
+        line = re.sub(r"\*\*([^*]+)\*\*", r"\1", line)
+        line = re.sub(r"\*([^*]+)\*", r"\1", line)
+        if len(line) > max_chars:
+            line = line[: max_chars - 1].rstrip() + "…"
+        return line
+    return ""
+
+
+def _format_due(due_iso: str) -> str:
+    """Short due-date label like 'May 9' for ISO dates; empty if unparseable."""
+    if not due_iso:
+        return ""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(due_iso))
+    if not m:
+        return ""
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    try:
+        mo = int(m.group(2))
+        day = int(m.group(3))
+        return f"{months[mo - 1]} {day}"
+    except (ValueError, IndexError):
+        return ""
+
+
+def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
+                 project_root: Path | None = None) -> str:
     """Build the `<div class="kanban">` block. Used by both the full board page
     and the `/api/.../board-html` fragment endpoint that the SSE client swaps
     in on each `board-update` event.
@@ -339,14 +434,14 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
         col_tickets = [t for t in tickets if t["status"] == status]
         cards = ""
         for t in col_tickets:
-            agents_list = t.get("agent") or []
+            agents_list = [a for a in (t.get("agent") or []) if a]
             agents_csv = ",".join(agents_list)
-            agents_display = ", ".join(agents_list) or "—"
             prio = t.get("priority", "p2")
             sprint = t.get("sprint") or ""
-            sprint_chip = f'<span class="chip chip-sprint">{_e(sprint)}</span>' if sprint else ""
             tags_csv = ",".join(t.get("tags") or [])
             projects_csv = ",".join(t.get("projects") or [])
+            preview = _ticket_preview(project_root, t) if project_root else ""
+            due = _format_due(t.get("due") or "")
             data_attrs = (
                 f'data-id="{_e(t["id"])}"'
                 f' data-status="{_e(status)}"'
@@ -359,21 +454,36 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
                 f' data-created="{_e(t.get("created", ""))}"'
                 f' data-updated="{_e(t.get("updated", ""))}"'
             )
+            avatars_html = ""
+            if agents_list:
+                avs = "".join(
+                    f'<span class="avatar-initials" data-hue="{_avatar_hue(a)}" '
+                    f'title="{_e(a)}">{_e(_initials(a))}</span>'
+                    for a in agents_list
+                )
+                avatars_html = f'<span class="avatar-stack">{avs}</span>'
+            sprint_html = f'<span class="kc-sprint">#{_e(sprint)}</span>' if sprint else ""
+            due_html = f'<span class="kc-due">⏱ {_e(due)}</span>' if due else ""
+            preview_html = f'<div class="kc-preview">{_e(preview)}</div>' if preview else ""
+            meta_inner = avatars_html + sprint_html + due_html
+            meta_html = f'<div class="kc-meta">{meta_inner}</div>' if meta_inner else ""
             cards += f"""<a href="/project/{_e(alias)}/board/{_e(t['id'])}" class="kanban-card" {data_attrs}>
-  <div class="kanban-card-top">
-    <span class="kanban-card-id">{_e(t['id'])}</span>
-    <span class="p-badge {_e(prio)}">{_e(prio)}</span>
+  <div class="kc-top">
+    <span class="kc-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
+    <span class="kc-id">{_e(t['id'])}</span>
   </div>
-  <div class="kanban-card-title">{_e(t['title'][:60])}</div>
-  <div class="kanban-card-meta">
-    <span class="chip chip-agent">{_e(agents_display)}</span>{sprint_chip}
-  </div>
+  <div class="kc-title">{_e(t['title'])}</div>
+  {preview_html}
+  {meta_html}
 </a>"""
         if not cards:
-            cards = '<div class="kanban-empty">No tickets</div>'
+            cards = ('<div class="kanban-empty">'
+                     '<div class="kanban-empty-glyph">·</div>'
+                     '<div class="kanban-empty-msg">No tickets here</div>'
+                     '</div>')
         cols += f"""<div class="kanban-col" data-status="{_e(status)}" data-bucket="{_e(status)}">
   <div class="kanban-col-header">
-    <span class="col-label">{_e(status.upper())}</span>
+    <span class="col-label">{_e(status)}</span>
     <span class="count">{len(col_tickets)}</span>
   </div>
   <div class="kanban-cards">{cards}</div>
@@ -382,54 +492,106 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
 
 
 def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
+    """Board page body: header (h1 + path + CTA) → controls → kanban.
+
+    The LIVE indicator is no longer here — it lives in the topbar so the
+    board area stays focused on the work itself.
+    """
     alias = project["alias"]
+    name = project.get("name") or alias
     path_display = project.get("path", "")
-    live = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
-    path_el = f'<span class="board-path">{_e(path_display)}</span>'
-    header = f'<div class="board-header">{live}{path_el}</div>'
-    return header + _board_controls_html() + _kanban_html(tickets, config["board"]["statuses"], alias)
+    project_root = Path(path_display) if path_display else None
+    header = f"""<div class="board-header">
+  <div class="board-header-text">
+    <h1 class="board-title">{_e(name)}</h1>
+    <div class="board-path">{_e(path_display)}</div>
+  </div>
+  <div class="board-header-actions">
+    <a class="btn btn-primary btn-disabled" href="#" title="Coming soon — for now: holoctl board add '{{\"title\":\"...\"}}'" aria-disabled="true">+ New ticket</a>
+  </div>
+</div>"""
+    return header + _board_controls_html() + _kanban_html(
+        tickets, config["board"]["statuses"], alias, project_root=project_root,
+    )
 
 
 def _board_controls_html() -> str:
-    """Filter + sort + group-by panel above the kanban.
+    """Compact controls strip: view switcher, search, filter chips, sort, group.
 
-    Options for each filter dropdown are populated client-side by scanning
-    `data-*` attributes off the cards already in the DOM. Server only emits
-    the skeleton, so re-renders (SSE swaps) don't need to know the option
-    set. State is persisted per-workspace in `localStorage`.
+    Replaces the old expand/collapse panel with 6 always-visible dropdowns.
+    Active filters render as chips; new filters added via the [+ Add filter]
+    popover. Sort and Group are dropdowns to the right. State persists per
+    workspace under `holoctl-bc-v2:{alias}` in localStorage.
     """
-    return """<div class="board-controls" id="board-controls" data-state="collapsed">
-  <button class="board-controls-toggle" data-bc-toggle aria-expanded="false">
-    <span class="board-controls-icon">⚙</span>
-    <span class="board-controls-label">Filter, sort &amp; group</span>
-    <span class="board-controls-count" id="board-controls-count"></span>
-  </button>
-  <div class="board-controls-body" id="board-controls-body">
-    <div class="board-controls-row">
-      <label class="bc-field"><span>Status</span><select data-filter="status"><option value="">All</option></select></label>
-      <label class="bc-field"><span>Priority</span><select data-filter="priority"><option value="">All</option></select></label>
-      <label class="bc-field"><span>Agent</span><select data-filter="agent"><option value="">All</option></select></label>
-      <label class="bc-field"><span>Sprint</span><select data-filter="sprint"><option value="">All</option></select></label>
-      <label class="bc-field"><span>Tag</span><select data-filter="tag"><option value="">All</option></select></label>
-      <label class="bc-field"><span>Project</span><select data-filter="project"><option value="">All</option></select></label>
+    sort_opts = [
+        ("created", "Created · old → new"),
+        ("created-desc", "Created · new → old"),
+        ("updated-desc", "Updated · recent first"),
+        ("priority", "Priority · p0 → p3"),
+        ("title", "Title · A → Z"),
+        ("id", "ID · numeric"),
+    ]
+    group_opts = [
+        ("status", "Status"),
+        ("priority", "Priority"),
+        ("sprint", "Sprint"),
+        ("agent", "Agent"),
+        ("tag", "Tag"),
+    ]
+    sort_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in sort_opts)
+    group_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in group_opts)
+    return f"""<div class="board-controls" id="board-controls">
+  <div class="bc-row bc-row-primary">
+    <div class="view-switcher" role="tablist" aria-label="Board view">
+      <button class="view-tab active" data-view="kanban" role="tab" aria-selected="true">
+        <span class="view-tab-glyph">▦</span> Kanban
+      </button>
+      <button class="view-tab" data-view="list" role="tab" aria-selected="false" disabled title="Coming in Phase 2">
+        <span class="view-tab-glyph">☰</span> List
+      </button>
+      <button class="view-tab" data-view="timeline" role="tab" aria-selected="false" disabled title="Coming in Phase 3">
+        <span class="view-tab-glyph">⤳</span> Timeline
+      </button>
     </div>
-    <div class="board-controls-row">
-      <label class="bc-field"><span>Sort by</span><select data-sort>
-        <option value="created">Created (oldest first)</option>
-        <option value="created-desc">Created (newest first)</option>
-        <option value="updated-desc">Updated (recent first)</option>
-        <option value="priority">Priority (p0 → p3)</option>
-        <option value="title">Title (A-Z)</option>
-        <option value="id">ID (numeric)</option>
-      </select></label>
-      <label class="bc-field"><span>Group by</span><select data-group>
-        <option value="status">Status (default)</option>
-        <option value="priority">Priority</option>
-        <option value="sprint">Sprint</option>
-        <option value="agent">Agent</option>
-        <option value="tag">Tag</option>
-      </select></label>
-      <button class="bc-reset" data-bc-reset>Reset</button>
+    <div class="bc-search">
+      <span class="bc-search-glyph" aria-hidden="true">🔍</span>
+      <input type="search" id="bc-search" placeholder="Search tickets…" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+  <div class="bc-row bc-row-secondary">
+    <div class="bc-chips" id="bc-chips" aria-label="Active filters"></div>
+    <button class="bc-add-filter" id="bc-add-filter" aria-haspopup="dialog" aria-expanded="false">
+      <span class="bc-add-filter-glyph">+</span> Add filter
+    </button>
+    <div class="bc-spacer"></div>
+    <label class="bc-inline-select">
+      <span>Sort</span>
+      <select id="bc-sort" data-sort>{sort_options_html}</select>
+    </label>
+    <label class="bc-inline-select">
+      <span>Group</span>
+      <select id="bc-group" data-group>{group_options_html}</select>
+    </label>
+    <button class="bc-reset" id="bc-reset" data-bc-reset title="Reset filters / sort / group">↺</button>
+  </div>
+  <div class="bc-popover" id="bc-popover" hidden role="dialog" aria-label="Add filter">
+    <div class="bc-popover-step" data-step="axis">
+      <div class="bc-popover-title">Filter by</div>
+      <div class="bc-popover-axes">
+        <button class="bc-popover-axis" data-axis="status">Status</button>
+        <button class="bc-popover-axis" data-axis="priority">Priority</button>
+        <button class="bc-popover-axis" data-axis="agent">Agent</button>
+        <button class="bc-popover-axis" data-axis="sprint">Sprint</button>
+        <button class="bc-popover-axis" data-axis="tag">Tag</button>
+        <button class="bc-popover-axis" data-axis="project">Project</button>
+      </div>
+    </div>
+    <div class="bc-popover-step" data-step="value" hidden>
+      <div class="bc-popover-title">
+        <button class="bc-popover-back" id="bc-popover-back" aria-label="Back to axis selection">‹</button>
+        <span id="bc-popover-axis-label">Filter by</span>
+      </div>
+      <div class="bc-popover-values" id="bc-popover-values"></div>
     </div>
   </div>
 </div>"""
@@ -687,11 +849,15 @@ def project_board(alias: str):
         return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
     board = Board(Path(project["path"]), project["config"])
     tickets = board.ls()
+    # LIVE indicator now lives in the topbar — frees the board header for
+    # the project title + path + primary CTA.
+    live_action = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
     return _render(
         project["name"], _board_page(project, tickets, project["config"]),
         current_alias=alias, current_tab="board",
         breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board"}],
         tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
+        actions=live_action,
     )
 
 
@@ -941,9 +1107,13 @@ def api_board_html(alias: str):
     project = _get_project(alias)
     if not project:
         return HTMLResponse(_not_found_html("Project not found"), status_code=404)
-    board = Board(Path(project["path"]), project["config"])
+    project_root = Path(project["path"])
+    board = Board(project_root, project["config"])
     tickets = board.ls()
-    return HTMLResponse(_kanban_html(tickets, project["config"]["board"]["statuses"], alias))
+    return HTMLResponse(_kanban_html(
+        tickets, project["config"]["board"]["statuses"], alias,
+        project_root=project_root,
+    ))
 
 
 @app.get("/api/project/{alias}/events")
