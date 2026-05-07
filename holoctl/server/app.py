@@ -509,7 +509,166 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
     return f'<div class="kanban" id="kanban">{cols}</div>'
 
 
-def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
+_VALID_VIEWS = {"kanban", "list"}  # timeline coming in phase 3
+
+
+def _format_relative_date(iso: str) -> tuple[str, str]:
+    """Return (display, full) — display is short, full is the original ISO.
+
+    Used in the dense list view so the Updated column reads "May 7" / "2h ago"
+    instead of dragging the full ISO string. We don't reach for full
+    locale-aware relative time here; dashboards are short-lived sessions
+    and the agent typically wants "today / yesterday / older".
+    """
+    if not iso:
+        return ("—", "")
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(iso))
+    if not m:
+        return (str(iso)[:10], str(iso))
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    try:
+        mo = int(m.group(2)); day = int(m.group(3))
+        return (f"{months[mo - 1]} {day}", str(iso))
+    except (ValueError, IndexError):
+        return (str(iso)[:10], str(iso))
+
+
+def _list_row_html(t: dict, alias: str) -> str:
+    """One <a class="ticket-row kanban-card"> row.
+
+    Carries the same `data-*` attributes as kanban cards so the existing
+    filter / search / sort logic (which selects `.kanban-card`) applies in
+    both views without branching.
+    """
+    agents_list = [a for a in (t.get("agent") or []) if a]
+    agents_csv = ",".join(agents_list)
+    prio = t.get("priority", "p2")
+    sprint = t.get("sprint") or ""
+    status = t.get("status", "backlog")
+    tags_csv = ",".join(t.get("tags") or [])
+    projects_csv = ",".join(t.get("projects") or [])
+    upd_disp, upd_full = _format_relative_date(t.get("updated", ""))
+    avatars_html = ""
+    if agents_list:
+        avs = "".join(
+            f'<span class="avatar-initials" data-hue="{_avatar_hue(a)}" '
+            f'title="{_e(a)}">{_e(_initials(a))}</span>'
+            for a in agents_list
+        )
+        avatars_html = f'<span class="avatar-stack">{avs}</span>'
+    sprint_html = f'<span class="lr-sprint">#{_e(sprint)}</span>' if sprint else '<span class="lr-empty">—</span>'
+    data_attrs = (
+        f'data-id="{_e(t["id"])}"'
+        f' data-status="{_e(status)}"'
+        f' data-p="{_e(prio)}"'
+        f' data-agent="{_e(agents_csv)}"'
+        f' data-sprint="{_e(sprint)}"'
+        f' data-tags="{_e(tags_csv)}"'
+        f' data-projects="{_e(projects_csv)}"'
+        f' data-title="{_e(t.get("title", ""))}"'
+        f' data-created="{_e(t.get("created", ""))}"'
+        f' data-updated="{_e(t.get("updated", ""))}"'
+    )
+    return f"""<div class="ticket-row kanban-card" {data_attrs}>
+  <div class="lr-cell lr-cell-select">
+    <input type="checkbox" class="lr-checkbox" data-ticket-select aria-label="Select {_e(t['id'])}">
+  </div>
+  <div class="lr-cell lr-cell-prio">
+    <span class="kc-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
+  </div>
+  <div class="lr-cell lr-cell-id">
+    <a class="lr-id-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t['id'])}</a>
+  </div>
+  <div class="lr-cell lr-cell-title">
+    <a class="lr-title-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t.get('title', ''))}</a>
+  </div>
+  <div class="lr-cell lr-cell-status">
+    <button type="button" class="lr-edit lr-status" data-edit-field="status" data-status="{_e(status)}">{_e(status)}</button>
+  </div>
+  <div class="lr-cell lr-cell-prio-pill">
+    <button type="button" class="lr-edit lr-prio-pill" data-edit-field="priority" data-p="{_e(prio)}">{_e(prio)}</button>
+  </div>
+  <div class="lr-cell lr-cell-agents">{avatars_html or '<span class="lr-empty">—</span>'}</div>
+  <div class="lr-cell lr-cell-sprint">{sprint_html}</div>
+  <div class="lr-cell lr-cell-updated" title="{_e(upd_full)}">{_e(upd_disp)}</div>
+  <div class="lr-cell lr-cell-menu">
+    <button type="button" class="kc-menu" data-card-menu aria-label="Row actions" title="Actions">⋯</button>
+  </div>
+</div>"""
+
+
+def _list_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
+    """Dense table view of all tickets, grouped by status.
+
+    Header row is sticky-top; each group header (status name + count) is
+    sticky too so it stays visible while its rows scroll. Bulk-action bar
+    is rendered hidden — JS reveals it when at least one row is checked.
+
+    Columns: select | priority dot | ID | title | status | priority pill |
+    agents | sprint | updated | menu. Each row carries the same `data-*`
+    attributes as kanban cards so filter/search/sort logic works in both.
+    """
+    # Statuses in config order; "(unsorted)" catches anything off-config.
+    grouped: dict[str, list[dict]] = {s: [] for s in statuses}
+    extras: list[dict] = []
+    for t in tickets:
+        s = t.get("status", "")
+        (grouped[s] if s in grouped else extras).append(t)
+    if extras:
+        grouped["(unsorted)"] = extras
+
+    head = """<div class="list-head">
+  <div class="lr-cell lr-cell-select">
+    <input type="checkbox" class="lr-checkbox" data-ticket-select-all aria-label="Select all">
+  </div>
+  <div class="lr-cell lr-cell-prio"></div>
+  <div class="lr-cell lr-cell-id">ID</div>
+  <div class="lr-cell lr-cell-title">Title</div>
+  <div class="lr-cell lr-cell-status">Status</div>
+  <div class="lr-cell lr-cell-prio-pill">Priority</div>
+  <div class="lr-cell lr-cell-agents">Agents</div>
+  <div class="lr-cell lr-cell-sprint">Sprint</div>
+  <div class="lr-cell lr-cell-updated">Updated</div>
+  <div class="lr-cell lr-cell-menu"></div>
+</div>"""
+
+    body_chunks = []
+    for status, rows in grouped.items():
+        body_chunks.append(f"""<div class="list-group" data-bucket="{_e(status)}">
+  <div class="list-group-header" data-status="{_e(status)}">
+    <span class="lg-toggle" aria-hidden="true">▾</span>
+    <span class="lg-label">{_e(status)}</span>
+    <span class="lg-count">{len(rows)}</span>
+  </div>
+  <div class="list-group-rows">""")
+        if rows:
+            body_chunks.extend(_list_row_html(t, alias) for t in rows)
+        else:
+            body_chunks.append('<div class="list-group-empty">No tickets in this group</div>')
+        body_chunks.append("</div></div>")
+
+    bulk_bar = """<div class="list-bulk-bar" id="list-bulk-bar" hidden>
+  <span class="lbb-count" id="lbb-count">0 selected</span>
+  <div class="lbb-actions">
+    <button type="button" class="btn btn-sm" data-bulk-move data-status="doing">Move to doing</button>
+    <button type="button" class="btn btn-sm" data-bulk-move data-status="review">Move to review</button>
+    <button type="button" class="btn btn-sm" data-bulk-move data-status="done">Mark done</button>
+    <button type="button" class="btn btn-sm btn-danger" data-bulk-archive>Archive</button>
+  </div>
+  <button type="button" class="lbb-clear" data-bulk-clear aria-label="Clear selection">×</button>
+</div>"""
+
+    return f"""<div class="list-view" id="list-view">
+  {head}
+  <div class="list-body" id="list-body">
+    {"".join(body_chunks)}
+  </div>
+  {bulk_bar}
+</div>"""
+
+
+def _board_page(project: dict, tickets: list[dict], config: dict, view: str = "kanban") -> str:
     """Board page body: header (h1 + path + CTA) → controls → kanban.
 
     The LIVE indicator is no longer here — it lives in the topbar so the
@@ -528,12 +687,15 @@ def _board_page(project: dict, tickets: list[dict], config: dict) -> str:
     <button type="button" class="btn btn-primary" data-new-ticket title="Open inline ticket creator in the first column">+ New ticket</button>
   </div>
 </div>"""
-    return header + _board_controls_html() + _kanban_html(
-        tickets, config["board"]["statuses"], alias, project_root=project_root,
-    )
+    statuses = config["board"]["statuses"]
+    if view == "list":
+        body = _list_html(tickets, statuses, alias)
+    else:
+        body = _kanban_html(tickets, statuses, alias, project_root=project_root)
+    return header + _board_controls_html(view=view) + body
 
 
-def _board_controls_html() -> str:
+def _board_controls_html(view: str = "kanban") -> str:
     """Compact controls strip: view switcher, search, filter chips, sort, group.
 
     Replaces the old expand/collapse panel with 6 always-visible dropdowns.
@@ -558,13 +720,14 @@ def _board_controls_html() -> str:
     ]
     sort_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in sort_opts)
     group_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in group_opts)
-    return f"""<div class="board-controls" id="board-controls">
+    is_list = view == "list"
+    return f"""<div class="board-controls" id="board-controls" data-current-view="{_e(view)}">
   <div class="bc-row bc-row-primary">
     <div class="view-switcher" role="tablist" aria-label="Board view">
-      <button class="view-tab active" data-view="kanban" role="tab" aria-selected="true">
+      <button class="view-tab {'' if is_list else 'active'}" data-view="kanban" role="tab" aria-selected="{'false' if is_list else 'true'}">
         <span class="view-tab-glyph">▦</span> Kanban
       </button>
-      <button class="view-tab" data-view="list" role="tab" aria-selected="false" disabled title="Coming in Phase 2">
+      <button class="view-tab {'active' if is_list else ''}" data-view="list" role="tab" aria-selected="{'true' if is_list else 'false'}">
         <span class="view-tab-glyph">☰</span> List
       </button>
       <button class="view-tab" data-view="timeline" role="tab" aria-selected="false" disabled title="Coming in Phase 3">
@@ -861,17 +1024,19 @@ def home():
 
 
 @app.get("/project/{alias}/board", response_class=HTMLResponse)
-def project_board(alias: str):
+def project_board(alias: str, view: str = "kanban"):
     project = _get_project(alias)
     if not project:
         return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
+    if view not in _VALID_VIEWS:
+        view = "kanban"
     board = Board(Path(project["path"]), project["config"])
     tickets = board.ls()
     # LIVE indicator now lives in the topbar — frees the board header for
     # the project title + path + primary CTA.
     live_action = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
     return _render(
-        project["name"], _board_page(project, tickets, project["config"]),
+        project["name"], _board_page(project, tickets, project["config"], view=view),
         current_alias=alias, current_tab="board",
         breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board"}],
         tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
@@ -1134,6 +1299,24 @@ def api_board_html(alias: str):
     ))
 
 
+@app.get("/api/project/{alias}/list-html", response_class=HTMLResponse)
+def api_list_html(alias: str):
+    """Return just the `<div class="list-view">` fragment for SSE swap.
+
+    Same role as `/board-html`, but for the dense list view. The SSE client
+    picks which fragment to fetch based on the `data-current-view` attr on
+    the `#board-controls` panel.
+    """
+    project = _get_project(alias)
+    if not project:
+        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+    board = Board(Path(project["path"]), project["config"])
+    tickets = board.ls()
+    return HTMLResponse(_list_html(
+        tickets, project["config"]["board"]["statuses"], alias,
+    ))
+
+
 @app.post("/api/project/{alias}/tickets")
 def api_ticket_create(alias: str, payload: dict = Body(...)):
     """Create a ticket from a JSON payload.
@@ -1158,6 +1341,44 @@ def api_ticket_create(alias: str, payload: dict = Body(...)):
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return JSONResponse(status_code=201, content=ticket)
+
+
+@app.patch("/api/project/{alias}/tickets/{ticket_id}")
+def api_ticket_patch(alias: str, ticket_id: str, payload: dict = Body(...)):
+    """Update a single editable field on a ticket.
+
+    Body: `{"field": "priority", "value": "p1"}`. Allowed fields and
+    validation come from `Board.set` — the dashboard is just a pass-through
+    so the CLI / MCP / dashboard all share one code path. Lists may be
+    passed either as actual JSON arrays (`["a","b"]`) or as bracketed
+    strings; non-string scalars are JSON-encoded before handoff so
+    `_parse_set_value` interprets them correctly.
+    """
+    project = _get_project(alias)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    field = (payload.get("field") or "").strip()
+    if not field:
+        raise HTTPException(status_code=400, detail="field is required")
+    raw_value = payload.get("value")
+    if isinstance(raw_value, str):
+        value_str = raw_value
+    elif raw_value is None:
+        value_str = "null"
+    elif isinstance(raw_value, bool):
+        value_str = "true" if raw_value else "false"
+    else:
+        value_str = json.dumps(raw_value)
+    board = Board(Path(project["path"]), project["config"])
+    try:
+        result = board.set(ticket_id, field, value_str)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(content=result)
 
 
 @app.post("/api/project/{alias}/tickets/{ticket_id}/move")

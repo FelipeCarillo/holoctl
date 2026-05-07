@@ -70,13 +70,14 @@
   // ── SSE Live Board Updates ──
 
   function initSSE() {
-    const kanban = document.getElementById('kanban');
-    if (!kanban) return;
+    // Either #kanban (kanban view) or #list-view (list view) anchors SSE.
+    const anchor = document.getElementById('kanban') || document.getElementById('list-view');
+    if (!anchor) return;
 
     const path = window.location.pathname;
     const match = path.match(/\/project\/([^/]+)\/board(?:\/[^/]+)?$/);
-    // Skip on /board/<ticket-id> detail pages (no kanban there).
-    if (!match || !document.getElementById('kanban')) return;
+    // Skip on /board/<ticket-id> detail pages (no board there).
+    if (!match) return;
 
     const alias = match[1];
     const source = new EventSource(`/api/project/${alias}/events`);
@@ -93,15 +94,15 @@
       lastData = e.data;
       inflight = true;
       try {
-        const resp = await fetch(`/api/project/${alias}/board-html`, {
-          cache: 'no-store',
-        });
+        const fragmentUrl = (window.__boardFragmentUrl && window.__boardFragmentUrl(alias))
+          || `/api/project/${alias}/board-html`;
+        const resp = await fetch(fragmentUrl, { cache: 'no-store' });
         if (!resp.ok) return;
         const html = (await resp.text()).trim();
         const wrapper = document.createElement('div');
         wrapper.innerHTML = html;
         const fresh = wrapper.firstElementChild;
-        const current = document.getElementById('kanban');
+        const current = document.getElementById('kanban') || document.getElementById('list-view');
         if (fresh && current) current.replaceWith(fresh);
         // Reapply filter / sort / group state to the freshly-swapped DOM.
         if (window.__reapplyBoardControls) window.__reapplyBoardControls();
@@ -325,8 +326,10 @@
 
   function bcApplySort(state) {
     const cmp = bcGetComparator(state.sort);
-    document.querySelectorAll('.kanban-cards').forEach(container => {
-      const cards = [...container.querySelectorAll('.kanban-card')];
+    // Both views share the .kanban-card class on individual rows/cards;
+    // their containers differ (.kanban-cards vs .list-group-rows).
+    document.querySelectorAll('.kanban-cards, .list-group-rows').forEach(container => {
+      const cards = [...container.querySelectorAll(':scope > .kanban-card, :scope > .ticket-row')];
       cards.sort(cmp).forEach(c => container.appendChild(c));
     });
   }
@@ -821,6 +824,281 @@
     });
   }
 
+  // ── View switcher: kanban ↔ list ──
+
+  function currentView() {
+    const panel = document.getElementById('board-controls');
+    if (panel && panel.dataset.currentView) return panel.dataset.currentView;
+    const url = new URL(window.location.href);
+    return url.searchParams.get('view') || 'kanban';
+  }
+
+  function initViewSwitcher() {
+    const switcher = document.querySelector('.view-switcher');
+    if (!switcher) return;
+    switcher.addEventListener('click', (e) => {
+      const tab = e.target.closest('.view-tab');
+      if (!tab || tab.disabled || tab.classList.contains('active')) return;
+      const view = tab.getAttribute('data-view');
+      if (!view) return;
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', view);
+      // Full navigation — easiest way to swap server-rendered structure +
+      // re-init JS without a partial-update juggling act.
+      window.location.href = url.toString();
+    });
+  }
+
+  // ── List-view multi-select + bulk action bar ──
+
+  function listRows() {
+    return [...document.querySelectorAll('.list-body .ticket-row')];
+  }
+
+  function selectedRows() {
+    return listRows().filter(r => r.dataset.selected === 'true');
+  }
+
+  let _lastClickedRow = null;
+
+  function updateBulkBar() {
+    const bar = document.getElementById('list-bulk-bar');
+    if (!bar) return;
+    const sel = selectedRows();
+    if (sel.length === 0) {
+      bar.hidden = true;
+    } else {
+      bar.hidden = false;
+      const count = bar.querySelector('#lbb-count');
+      if (count) count.textContent = `${sel.length} selected`;
+    }
+    // Sync the "select all" checkbox state with the population.
+    const all = document.querySelector('[data-ticket-select-all]');
+    if (all) {
+      const rows = listRows();
+      const visible = rows.filter(r => !r.classList.contains('bc-hidden'));
+      const sels = visible.filter(r => r.dataset.selected === 'true');
+      all.checked = visible.length > 0 && sels.length === visible.length;
+      all.indeterminate = sels.length > 0 && sels.length < visible.length;
+    }
+  }
+
+  function setRowSelected(row, selected) {
+    if (!row) return;
+    if (selected) row.dataset.selected = 'true';
+    else delete row.dataset.selected;
+    const cb = row.querySelector('[data-ticket-select]');
+    if (cb) cb.checked = !!selected;
+  }
+
+  function clearSelection() {
+    listRows().forEach(r => setRowSelected(r, false));
+    _lastClickedRow = null;
+    updateBulkBar();
+  }
+
+  function projectAliasOrThrow() {
+    const a = projectAlias();
+    if (!a) throw new Error('No project alias on this page');
+    return a;
+  }
+
+  async function moveTicket(id, status) {
+    const alias = projectAliasOrThrow();
+    const resp = await fetch(`/api/project/${encodeURIComponent(alias)}/tickets/${encodeURIComponent(id)}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error(data.detail || `move failed (${resp.status})`);
+    }
+    return resp.json();
+  }
+
+  async function patchTicket(id, field, value) {
+    const alias = projectAliasOrThrow();
+    const resp = await fetch(`/api/project/${encodeURIComponent(alias)}/tickets/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field, value }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error(data.detail || `patch failed (${resp.status})`);
+    }
+    return resp.json();
+  }
+
+  async function bulkMove(targetStatus) {
+    const sel = selectedRows();
+    if (sel.length === 0) return;
+    let ok = 0, fail = 0;
+    // Sequential so a single failure doesn't get drowned in noise.
+    for (const row of sel) {
+      const id = row.getAttribute('data-id');
+      try { await moveTicket(id, targetStatus); ok += 1; }
+      catch (e) { fail += 1; showToast(`Move ${id}: ${e.message}`); }
+    }
+    showToast(`Moved ${ok} ticket${ok === 1 ? '' : 's'}${fail ? ` (${fail} failed)` : ''}`);
+    clearSelection();
+  }
+
+  function initListSelection() {
+    document.addEventListener('click', (e) => {
+      const cb = e.target.closest('[data-ticket-select]');
+      if (cb) {
+        const row = cb.closest('.ticket-row');
+        if (!row) return;
+        // Shift+Click → select range from last-clicked to this row.
+        const wantSelected = cb.checked;
+        if (e.shiftKey && _lastClickedRow) {
+          const rows = listRows();
+          const a = rows.indexOf(_lastClickedRow);
+          const b = rows.indexOf(row);
+          if (a >= 0 && b >= 0) {
+            const [lo, hi] = a < b ? [a, b] : [b, a];
+            for (let i = lo; i <= hi; i++) {
+              if (!rows[i].classList.contains('bc-hidden')) {
+                setRowSelected(rows[i], wantSelected);
+              }
+            }
+          }
+        } else {
+          setRowSelected(row, wantSelected);
+        }
+        _lastClickedRow = row;
+        updateBulkBar();
+        return;
+      }
+      const all = e.target.closest('[data-ticket-select-all]');
+      if (all) {
+        const rows = listRows().filter(r => !r.classList.contains('bc-hidden'));
+        rows.forEach(r => setRowSelected(r, all.checked));
+        updateBulkBar();
+        return;
+      }
+      const move = e.target.closest('[data-bulk-move]');
+      if (move) {
+        bulkMove(move.getAttribute('data-status'));
+        return;
+      }
+      const archive = e.target.closest('[data-bulk-archive]');
+      if (archive) {
+        bulkMove('cancelled');
+        return;
+      }
+      const clear = e.target.closest('[data-bulk-clear]');
+      if (clear) {
+        clearSelection();
+        return;
+      }
+      // Group header collapses on click (avoid swallowing checkbox clicks).
+      const groupHdr = e.target.closest('.list-group-header');
+      if (groupHdr) {
+        const group = groupHdr.closest('.list-group');
+        if (!group) return;
+        const collapsed = group.dataset.collapsed === 'true';
+        if (collapsed) delete group.dataset.collapsed;
+        else group.dataset.collapsed = 'true';
+        return;
+      }
+    });
+  }
+
+  // ── Inline edit popover (status / priority) ──
+
+  const PRIORITIES = ['p0', 'p1', 'p2', 'p3'];
+
+  function closeEditPopover() {
+    document.querySelectorAll('.lr-edit-popover').forEach(p => p.remove());
+    document.querySelectorAll('.lr-edit[aria-expanded="true"]').forEach(b =>
+      b.setAttribute('aria-expanded', 'false'));
+  }
+
+  function openEditPopover(btn) {
+    closeEditPopover();
+    const field = btn.getAttribute('data-edit-field');
+    const row = btn.closest('.ticket-row');
+    if (!row || !field) return;
+    const id = row.getAttribute('data-id');
+    let options;
+    let current;
+    if (field === 'status') {
+      options = statusList();
+      current = btn.getAttribute('data-status');
+    } else if (field === 'priority') {
+      options = PRIORITIES;
+      current = btn.getAttribute('data-p');
+    } else {
+      return;
+    }
+    const pop = document.createElement('div');
+    pop.className = 'lr-edit-popover';
+    pop.setAttribute('role', 'menu');
+    pop.innerHTML = options.map(v =>
+      `<button type="button" class="lr-edit-option" data-value="${v}" ${v === current ? 'aria-current="true"' : ''}>
+        ${field === 'status' ? `<span class="kc-menu-status-dot" data-status="${v}"></span>` : ''}
+        ${v}
+      </button>`
+    ).join('');
+    document.body.appendChild(pop);
+    btn.setAttribute('aria-expanded', 'true');
+    const r = btn.getBoundingClientRect();
+    pop.style.top = (window.scrollY + r.bottom + 4) + 'px';
+    pop.style.left = Math.max(8, window.scrollX + r.left) + 'px';
+    if (r.bottom + pop.offsetHeight + 8 > window.innerHeight) {
+      pop.style.top = (window.scrollY + r.top - pop.offsetHeight - 4) + 'px';
+    }
+    pop.addEventListener('click', async (e) => {
+      const opt = e.target.closest('.lr-edit-option');
+      if (!opt) return;
+      e.stopPropagation();
+      const value = opt.getAttribute('data-value');
+      if (value === current) { closeEditPopover(); return; }
+      opt.disabled = true;
+      try {
+        if (field === 'status') {
+          await moveTicket(id, value); // /move handles status changes (recounts)
+        } else {
+          await patchTicket(id, field, value);
+        }
+        showToast(`${field}: ${value}`);
+      } catch (err) {
+        showToast(`Update failed: ${err.message}`);
+      } finally {
+        closeEditPopover();
+      }
+    });
+  }
+
+  function initInlineEdit() {
+    document.addEventListener('click', (e) => {
+      const trigger = e.target.closest('.lr-edit');
+      if (trigger) {
+        e.preventDefault();
+        e.stopPropagation();
+        const wasOpen = trigger.getAttribute('aria-expanded') === 'true';
+        if (wasOpen) closeEditPopover();
+        else openEditPopover(trigger);
+        return;
+      }
+      if (!e.target.closest('.lr-edit-popover')) closeEditPopover();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeEditPopover();
+    });
+  }
+
+  // SSE: pick the right fragment endpoint per current view.
+  window.__boardFragmentUrl = function (alias) {
+    const view = currentView();
+    return view === 'list'
+      ? `/api/project/${encodeURIComponent(alias)}/list-html`
+      : `/api/project/${encodeURIComponent(alias)}/board-html`;
+  };
+
   // ── Init ──
 
   initTheme();
@@ -833,5 +1111,8 @@
     initBoardControls();
     initCardMenus();
     initInlineAdd();
+    initViewSwitcher();
+    initListSelection();
+    initInlineEdit();
   });
 })();

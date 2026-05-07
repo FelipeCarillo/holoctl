@@ -23,8 +23,10 @@ from holoctl.server.app import (
     _avatar_hue,
     _board_page,
     _format_due,
+    _format_relative_date,
     _initials,
     _kanban_html,
+    _list_html,
     _ticket_preview,
     app,
 )
@@ -421,4 +423,242 @@ class TestApiTicketMove:
             f"/api/project/{alias}/tickets/TST-999/move",
             json={"status": "doing"},
         )
+        assert r.status_code == 404
+
+
+# ── Routes: PATCH /tickets/{id} ───────────────────────────────────────────────
+
+
+class TestApiTicketPatch:
+    def test_priority_update(self, client: TestClient, alias: str, workspace: Path, workspace_config: dict):
+        created = client.post(
+            f"/api/project/{alias}/tickets", json={"title": "T", "priority": "p2"}
+        ).json()
+        r = client.patch(
+            f"/api/project/{alias}/tickets/{created['id']}",
+            json={"field": "priority", "value": "p1"},
+        )
+        assert r.status_code == 200
+        assert r.json()["value"] == "p1"
+        # Persisted.
+        b = Board(workspace, workspace_config)
+        assert b.get(created["id"])["priority"] == "p1"
+
+    def test_sprint_update(self, client: TestClient, alias: str):
+        created = client.post(
+            f"/api/project/{alias}/tickets", json={"title": "T"}
+        ).json()
+        r = client.patch(
+            f"/api/project/{alias}/tickets/{created['id']}",
+            json={"field": "sprint", "value": "s2"},
+        )
+        assert r.status_code == 200
+        assert r.json()["value"] == "s2"
+
+    def test_status_update_recounts(self, client: TestClient, alias: str, workspace: Path, workspace_config: dict):
+        created = client.post(
+            f"/api/project/{alias}/tickets", json={"title": "T"}
+        ).json()
+        r = client.patch(
+            f"/api/project/{alias}/tickets/{created['id']}",
+            json={"field": "status", "value": "doing"},
+        )
+        assert r.status_code == 200
+        # Counts in meta should have moved.
+        b = Board(workspace, workspace_config)
+        assert b.stat()["doing"] == 1
+
+    def test_agent_update_with_array(self, client: TestClient, alias: str):
+        created = client.post(
+            f"/api/project/{alias}/tickets", json={"title": "T"}
+        ).json()
+        r = client.patch(
+            f"/api/project/{alias}/tickets/{created['id']}",
+            json={"field": "agent", "value": ["developer"]},
+        )
+        assert r.status_code == 200
+
+    def test_rejects_unknown_field(self, client: TestClient, alias: str):
+        created = client.post(
+            f"/api/project/{alias}/tickets", json={"title": "T"}
+        ).json()
+        r = client.patch(
+            f"/api/project/{alias}/tickets/{created['id']}",
+            json={"field": "id", "value": "TST-002"},
+        )
+        assert r.status_code == 400
+        assert "editable" in r.json()["detail"].lower() or "id" in r.json()["detail"].lower()
+
+    def test_rejects_invalid_priority(self, client: TestClient, alias: str):
+        created = client.post(
+            f"/api/project/{alias}/tickets", json={"title": "T"}
+        ).json()
+        r = client.patch(
+            f"/api/project/{alias}/tickets/{created['id']}",
+            json={"field": "priority", "value": "p9"},
+        )
+        assert r.status_code == 400
+
+    def test_missing_field_400(self, client: TestClient, alias: str):
+        created = client.post(
+            f"/api/project/{alias}/tickets", json={"title": "T"}
+        ).json()
+        r = client.patch(
+            f"/api/project/{alias}/tickets/{created['id']}",
+            json={"value": "p1"},
+        )
+        assert r.status_code == 400
+
+    def test_unknown_ticket_404(self, client: TestClient, alias: str):
+        r = client.patch(
+            f"/api/project/{alias}/tickets/TST-999",
+            json={"field": "priority", "value": "p1"},
+        )
+        assert r.status_code == 404
+
+
+# ── Helper: _format_relative_date ─────────────────────────────────────────────
+
+
+class TestFormatRelativeDate:
+    def test_iso(self):
+        disp, full = _format_relative_date("2026-05-09T12:00:00Z")
+        assert disp == "May 9"
+        assert full == "2026-05-09T12:00:00Z"
+
+    def test_empty(self):
+        disp, full = _format_relative_date("")
+        assert disp == "—"
+        assert full == ""
+
+    def test_invalid(self):
+        disp, full = _format_relative_date("not a date")
+        assert disp.startswith("not")
+        assert full == "not a date"
+
+
+# ── _list_html: markup contract ───────────────────────────────────────────────
+
+
+class TestListHtml:
+    def test_renders_one_row_per_ticket(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A", "agent": "developer"})
+        b.add({"title": "B", "agent": "developer"})
+        statuses = workspace_config["board"]["statuses"]
+        html = _list_html(b.ls(), statuses, "test")
+        assert html.count('class="ticket-row kanban-card"') == 2
+
+    def test_groups_by_status(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A", "agent": "developer"})
+        b.add({"title": "B", "agent": "developer", "status": "doing"})
+        statuses = workspace_config["board"]["statuses"]
+        html = _list_html(b.ls(), statuses, "test")
+        # One group div per status, in config order.
+        for s in statuses:
+            assert f'data-bucket="{s}"' in html
+        # Backlog group has 1, doing group has 1.
+        assert html.find('data-bucket="backlog"') < html.find('data-bucket="doing"')
+
+    def test_emits_select_checkbox_per_row(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A", "agent": "developer"})
+        statuses = workspace_config["board"]["statuses"]
+        html = _list_html(b.ls(), statuses, "test")
+        assert "data-ticket-select" in html
+        assert "data-ticket-select-all" in html
+
+    def test_emits_inline_edit_buttons(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A", "priority": "p1", "agent": "developer"})
+        statuses = workspace_config["board"]["statuses"]
+        html = _list_html(b.ls(), statuses, "test")
+        assert 'data-edit-field="status"' in html
+        assert 'data-edit-field="priority"' in html
+
+    def test_emits_bulk_bar(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        statuses = workspace_config["board"]["statuses"]
+        html = _list_html(b.ls(), statuses, "test")
+        assert 'id="list-bulk-bar"' in html
+        assert "data-bulk-move" in html
+        assert "data-bulk-archive" in html
+
+    def test_carries_filter_data_attrs(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A", "priority": "p1", "agent": "developer", "sprint": "s1", "tags": "auth"})
+        statuses = workspace_config["board"]["statuses"]
+        html = _list_html(b.ls(), statuses, "test")
+        # Same data-* contract as kanban cards so filter/search/sort
+        # logic on .kanban-card works in both views.
+        assert 'data-status="backlog"' in html
+        assert 'data-p="p1"' in html
+        assert 'data-agent="developer"' in html
+        assert 'data-sprint="s1"' in html
+        assert 'data-tags="auth"' in html
+
+    def test_off_config_status_lands_in_unsorted(self, workspace: Path, workspace_config: dict):
+        # Manually inject a ticket with an unknown status (simulates a
+        # config change that left old tickets behind).
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A", "agent": "developer"})
+        # Direct edit of the index to inject an off-config status.
+        from holoctl.server.app import _list_html as _list
+        tickets = b.ls()
+        tickets[0] = {**tickets[0], "status": "rogue"}
+        statuses = workspace_config["board"]["statuses"]
+        html = _list(tickets, statuses, "test")
+        assert "(unsorted)" in html
+
+
+# ── Route: ?view=list ─────────────────────────────────────────────────────────
+
+
+class TestViewSwitcher:
+    def test_default_view_is_kanban(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board")
+        assert r.status_code == 200
+        # Kanban container exists; list-view does not.
+        assert 'id="kanban"' in r.text
+        assert 'id="list-view"' not in r.text
+
+    def test_view_list_renders_list_markup(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=list")
+        assert r.status_code == 200
+        assert 'id="list-view"' in r.text
+        assert 'class="list-head"' in r.text
+        assert 'id="kanban"' not in r.text
+        # board-controls advertises its current view so the JS knows
+        # which fragment endpoint to fetch on SSE swaps.
+        assert 'data-current-view="list"' in r.text
+
+    def test_view_kanban_explicit(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=kanban")
+        assert r.status_code == 200
+        assert 'id="kanban"' in r.text
+        assert 'data-current-view="kanban"' in r.text
+
+    def test_invalid_view_falls_back_to_kanban(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=ufo")
+        assert r.status_code == 200
+        assert 'id="kanban"' in r.text
+
+    def test_view_switcher_marks_active_tab(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=list")
+        # The List tab must carry .active and aria-selected="true".
+        assert 'data-view="list" role="tab" aria-selected="true"' in r.text
+        assert '.view-tab active" data-view="kanban"' not in r.text
+
+
+class TestApiListHtmlFragment:
+    def test_returns_list_view_fragment(self, client: TestClient, alias: str):
+        r = client.get(f"/api/project/{alias}/list-html")
+        assert r.status_code == 200
+        body = r.text.lstrip()
+        assert body.startswith('<div class="list-view"')
+        assert 'class="list-head"' in body
+
+    def test_unknown_project_404(self, client: TestClient):
+        r = client.get("/api/project/no-such/list-html")
         assert r.status_code == 404
