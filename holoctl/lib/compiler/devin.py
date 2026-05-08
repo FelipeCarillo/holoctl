@@ -12,21 +12,16 @@ def compile_devin(project_root: Path, config: dict, dry_run: bool = False) -> di
     """Compile to Devin CLI format.
 
     Devin reads:
-    - `AGENTS.md` at the project root (always-active rules, plain Markdown)
+    - `AGENTS.md` at the project root (always-active rules, plain Markdown).
+      **Emitted by the `agents` compile target** (cross-tool universal),
+      not here — Devin shares the same AGENTS.md as Claude Code, Codex,
+      Copilot, Cursor, Aider, Zed, etc. Run `hctl compile --target agents`
+      (or include `agents` in `config.targets`) to materialize it.
     - `.devin/skills/<name>/SKILL.md` per skill (slash command equivalent)
       with YAML frontmatter (name, description).
+    - `.devin/agents/<name>/AGENT.md` per subagent (frontmatter + body).
     """
     files = []
-
-    instructions_path = project_root / ".holoctl" / "instructions.md"
-    if instructions_path.exists():
-        content = instructions_path.read_text(encoding="utf-8")
-        out_path = "AGENTS.md"
-        if not dry_run:
-            (project_root / out_path).write_text(
-                _HEADER + resolve_template(content, config), encoding="utf-8"
-            )
-        files.append(out_path)
 
     commands_dir = project_root / ".holoctl" / "commands"
     if commands_dir.exists():
@@ -64,6 +59,61 @@ def compile_devin(project_root: Path, config: dict, dry_run: bool = False) -> di
             (project_root / ".devin" / "skills" / "hctl-upgrade").mkdir(parents=True, exist_ok=True)
             (project_root / out_path).write_text(upgrade_bootstrap, encoding="utf-8")
         files.append(out_path)
+
+    # Subagents → .devin/agents/<name>/AGENT.md
+    agents_src = project_root / ".holoctl" / "agents"
+    if agents_src.exists():
+        for f in sorted(agents_src.glob("*.md")):
+            data_fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
+            name = data_fm.get("name", f.stem)
+            agent_dir = project_root / ".devin" / "agents" / name
+            frontmatter_lines = [
+                "---",
+                f"name: {name}",
+                f"description: {data_fm.get('description', '')}",
+            ]
+            if data_fm.get("model"):
+                frontmatter_lines.append(f"model: {data_fm['model']}")
+            if data_fm.get("tools"):
+                frontmatter_lines.append(f"tools: {data_fm['tools']}")
+            frontmatter_lines.append("---")
+            output = (
+                _HEADER
+                + "\n".join(frontmatter_lines)
+                + "\n\n"
+                + resolve_template(body, config)
+            )
+            out_path = f".devin/agents/{name}/AGENT.md"
+            if not dry_run:
+                agent_dir.mkdir(parents=True, exist_ok=True)
+                (project_root / out_path).write_text(output, encoding="utf-8")
+            files.append(out_path)
+
+    # Hooks → .devin/hooks.v1.json (only emitted if .holoctl/hooks/ has content)
+    hooks_src = project_root / ".holoctl" / "hooks"
+    if hooks_src.exists() and any(hooks_src.glob("*.json")):
+        hooks_combined = {"version": 1, "hooks": []}
+        for hf in sorted(hooks_src.glob("*.json")):
+            try:
+                import json as _json
+                data = _json.loads(hf.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and "hooks" in data:
+                    hooks_combined["hooks"].extend(data["hooks"])
+                elif isinstance(data, list):
+                    hooks_combined["hooks"].extend(data)
+                else:
+                    hooks_combined["hooks"].append(data)
+            except (OSError, _json.JSONDecodeError):
+                pass
+        if hooks_combined["hooks"]:
+            import json as _json
+            out_path = ".devin/hooks.v1.json"
+            if not dry_run:
+                (project_root / ".devin").mkdir(parents=True, exist_ok=True)
+                (project_root / out_path).write_text(
+                    _json.dumps(hooks_combined, indent=2) + "\n", encoding="utf-8"
+                )
+            files.append(out_path)
 
     # Memory topics → .devin/rules/holoctl-memory-*.md (best-effort)
     files.extend(memory_emit.emit_devin(project_root, dry_run=dry_run))

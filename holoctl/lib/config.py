@@ -41,7 +41,11 @@ _DEFAULTS: dict = {
         # corporate AV; off-by-default makes the dashboard instant.
         "checkDirty": False,
     },
-    "targets": ["claude"],
+    # `agents` is the cross-tool universal AGENTS.md emitter (20+ assistants
+    # respect it). Always included so any non-Claude assistant opening the
+    # repo also gets context. `claude` adds Claude Code-native files
+    # (CLAUDE.md, .claude/agents/, .claude/commands/, settings.json).
+    "targets": ["agents", "claude"],
     "server": {
         "port": 4242,
         "theme": "dark",

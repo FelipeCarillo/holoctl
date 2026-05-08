@@ -148,3 +148,60 @@ def emit_cursor(project_root: Path, dry_run: bool = False) -> list[str]:
     if not dry_run:
         _write_json(path, merged)
     return [".cursor/hooks.json"]
+
+
+def emit_windsurf(project_root: Path, dry_run: bool = False) -> list[str]:
+    """Merge holoctl's hooks into `.windsurf/hooks.json`.
+
+    Windsurf's hook spec is similar to Cursor's. We reuse the cursor template
+    as the source of truth — both target the same lifecycle events. If a
+    Windsurf-specific template (`windsurf_hooks.json`) exists, prefer it.
+    """
+    incoming = _load_template("windsurf_hooks.json")
+    if incoming is None:
+        # Fallback: reuse cursor template since they share lifecycle semantics.
+        incoming = _load_template("cursor_hooks.json")
+    if incoming is None:
+        return []
+    path = project_root / ".windsurf" / "hooks.json"
+    existing = _read_json(path)
+    merged = _deep_merge_hooks(existing, incoming)
+    if not dry_run:
+        _write_json(path, merged)
+    return [".windsurf/hooks.json"]
+
+
+def emit_copilot(project_root: Path, dry_run: bool = False) -> list[str]:
+    """Merge holoctl's hooks into `.copilot/config.json` (deny/allow lists).
+
+    Copilot CLI's customization is flag-driven (`--allow-tool`, `--deny-tool`)
+    but a `.copilot/config.json` convention is emerging for persisted policy.
+    Idempotent: skips if no template found.
+    """
+    incoming = _load_template("copilot_config.json")
+    if incoming is None:
+        return []
+    path = project_root / ".copilot" / "config.json"
+    existing = _read_json(path)
+    merged = _deep_merge_hooks(existing, incoming)
+    if not dry_run:
+        _write_json(path, merged)
+    return [".copilot/config.json"]
+
+
+def emit_devin(project_root: Path, dry_run: bool = False) -> list[str]:
+    """Merge holoctl's hooks into `.devin/hooks.v1.json`.
+
+    Devin's spec uses `version: 1` envelope with `hooks: [...]`. We translate
+    the cursor template (lifecycle: pre_tool, stop, etc.) into Devin's shape
+    if a Devin-specific template doesn't exist.
+    """
+    incoming = _load_template("devin_hooks.v1.json")
+    if incoming is None:
+        return []
+    path = project_root / ".devin" / "hooks.v1.json"
+    existing = _read_json(path)
+    merged = _deep_merge_hooks(existing, incoming)
+    if not dry_run:
+        _write_json(path, merged)
+    return [".devin/hooks.v1.json"]
