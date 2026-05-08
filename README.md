@@ -807,7 +807,7 @@ First line is **router-friendly** (parsed by `/holoctl`):
 
 ### Tests fail with `No module named 'httpx'`
 
-- `tests/test_dashboard.py` uses `fastapi.testclient` which needs `httpx`. Install: `pip install httpx` in the venv. (To be added to the test dependencies in a future release.)
+- `tests/test_dashboard.py` uses `fastapi.testclient` which requires `httpx`. `httpx` is declared in `pyproject.toml`'s `[dependency-groups].dev` (PEP 735) — picked up automatically by `uv sync`. If you're using plain `pip` (no uv), install it manually: `pip install httpx pytest`. The CI matrix uses `uv sync --frozen` and runs the full test suite without skipping.
 
 ---
 
