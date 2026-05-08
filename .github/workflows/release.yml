@@ -1,0 +1,167 @@
+name: Release
+
+# Triggers when a `v*` tag is pushed (e.g. `v0.15.0`).
+#
+# This workflow uses **PyPI Trusted Publishers** (OIDC) — no API token in
+# repo secrets. Configure the trusted publisher once at
+# https://pypi.org/manage/account/publishing/ pointing to:
+#   - PyPI Project Name: holoctl
+#   - Owner: FelipeCarillo
+#   - Repository name: holoctl
+#   - Workflow name: release.yml
+#   - Environment name: pypi  (matches the `environment:` key below)
+#
+# After that, `git tag v0.15.0 && git push --tags` is the entire publish
+# ritual. CI re-runs the same checks as the PR, builds wheel + sdist,
+# uploads to PyPI, and creates a GitHub Release with the matching
+# CHANGELOG slice.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write    # needed to create the GitHub Release
+  id-token: write    # needed for PyPI OIDC
+
+jobs:
+  # Re-run the full test matrix that the PR ran. Even though main is
+  # already green, tests on the exact tagged commit are the actual
+  # release contract.
+  test:
+    name: Test ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Smoke test — CLI loads
+        run: |
+          uv run holoctl --version
+          uv run holoctl --help
+      - name: Run pytest
+        run: uv run pytest tests/ -q
+
+  build:
+    name: Build wheel + sdist
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      - name: Verify tag matches pyproject version
+        shell: bash
+        run: |
+          set -e
+          TAG="${GITHUB_REF_NAME#v}"
+          PROJ="$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')"
+          if [ "$TAG" != "$PROJ" ]; then
+            echo "::error::Tag v$TAG does not match pyproject.toml version $PROJ"
+            exit 1
+          fi
+          echo "Tag v$TAG matches pyproject.toml version $PROJ"
+
+      - name: Build
+        run: uv build
+
+      - name: Validate with twine
+        run: uv tool run twine check dist/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 30
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/holoctl
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish via OIDC (Trusted Publishers)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # No password / token — OIDC handshake from this workflow
+          # against the trusted publisher configured on PyPI.
+          packages-dir: dist/
+          # Verify the metadata before upload (twine check ran in `build`,
+          # this is belt-and-suspenders).
+          verify-metadata: true
+          # Skip if a file with the same name already exists (idempotent
+          # re-runs after partial failure).
+          skip-existing: true
+
+  github-release:
+    name: Create GitHub Release
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        shell: bash
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Pull the slice between `## [VERSION]` and the next `## [`.
+          NOTES=$(awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' holoctl/CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            echo "::warning::No CHANGELOG slice found for $VERSION; using fallback."
+            NOTES="See [CHANGELOG.md](holoctl/CHANGELOG.md) for details."
+          fi
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo ""
+            echo "---"
+            echo ""
+            echo "Install: \`uv tool install holoctl==$VERSION\` (or \`pipx install holoctl==$VERSION\`)."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.notes.outputs.notes }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+          draft: false
+          prerelease: false

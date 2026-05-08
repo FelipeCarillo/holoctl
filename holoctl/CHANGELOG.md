@@ -40,7 +40,7 @@ Today's agent and slash-command templates are still instructed to use `hctl` CLI
 
 ### Tests
 
-- 1 test rewritten (`test_emit_claude_idempotent_no_duplicate_hooks`) — instead of asserting "exactly 1 SessionStart hook", it now asserts "no duplicate commands in any event", which is the actual idempotency property and survives the new richer hook set. **260 tests passing** (test_dashboard.py skipped due to a pre-existing `httpx` test-dep gap; tracked separately).
+- 1 test rewritten (`test_emit_claude_idempotent_no_duplicate_hooks`) — instead of asserting "exactly 1 SessionStart hook", it now asserts "no duplicate commands in any event", which is the actual idempotency property and survives the new richer hook set. **260 tests passing** locally without the dashboard suite; the full CI matrix (Python 3.11/3.12/3.13 × Ubuntu/macOS/Windows) runs everything via `uv sync --frozen` (which pulls `httpx` from the `dev` dependency group) and stays green.
 
 ## [0.14.0] — 2026-05-07
 
