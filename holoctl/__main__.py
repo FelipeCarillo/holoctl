@@ -20,8 +20,10 @@ from .cli.repo import app as _repo_app
 from .cli.serve import app as _serve_app, serve_cmd
 from .cli.overview import app as _overview_app, overview_cmd
 from .cli.setup import setup_cmd
+from .cli.setup_global import setup_global_cmd
 from .cli.boot import boot_cmd
 from .cli.handoff import handoff_cmd
+from .cli.coverage import coverage_cmd
 from .cli.curate import app as _curate_app
 from . import __version__
 
@@ -42,6 +44,7 @@ app.add_typer(_repo_app, name="repo", help="Manage repos within a project")
 # Direct commands
 app.command("init")(init_cmd)
 app.command("setup")(setup_cmd)
+app.command("setup-global")(setup_global_cmd)
 app.command("compile")(compile_cmd)
 app.command("sync")(sync_cmd)
 app.command("upgrade")(upgrade_cmd)
@@ -50,6 +53,7 @@ app.command("serve")(serve_cmd)
 app.command("overview")(overview_cmd)
 app.command("boot")(boot_cmd)
 app.command("handoff")(handoff_cmd)
+app.command("coverage")(coverage_cmd)
 
 
 def _version_callback(value: bool):

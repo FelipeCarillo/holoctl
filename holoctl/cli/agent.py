@@ -146,6 +146,150 @@ def agent_add(
     )
 
 
+@app.command("suggest")
+def agent_suggest(
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON instead of pretty output."
+    ),
+):
+    """Inspect the codebase and suggest specialist personas to activate.
+
+    Heuristic — detects the tech stack from package files and patterns in the
+    workspace, then maps to library personas (`developer`, `reviewer`,
+    `architect`, `researcher`). Output is non-destructive — prints the
+    suggested `hctl agent add ...` commands without running them.
+
+    Used by the `/holoctl` slash command in Step 5 of the init flow.
+    """
+    root = _require_root()
+    suggestions = _detect_suggestions(root)
+    active = _active_agent_names(root / ".holoctl" / "agents")
+    library = list_library_agents()
+
+    if json_out:
+        import json as _json
+        payload = {
+            "suggestions": [
+                {"name": s["name"], "reason": s["reason"], "active": s["name"] in active}
+                for s in suggestions
+            ],
+            "active": list(active),
+            "library": list(library),
+        }
+        print(_json.dumps(payload, indent=2))
+        return
+
+    console.print("\n  [bold]Persona suggestions[/bold] [dim](based on codebase)[/dim]")
+    if not suggestions:
+        console.print("  [dim]No specific signals detected — `boardmaster` is enough.[/dim]\n")
+        return
+
+    new_personas = [s for s in suggestions if s["name"] not in active]
+    if not new_personas:
+        console.print(
+            "  [dim](all suggested personas already active)[/dim]\n"
+        )
+        return
+
+    for s in new_personas:
+        in_lib = s["name"] in library
+        marker = "[green]✓[/green]" if in_lib else "[yellow]?[/yellow]"
+        console.print(
+            f"  {marker} [bold]{s['name']:<14}[/bold] [dim]{s['reason']}[/dim]"
+        )
+
+    console.print("\n  [bold]Apply?[/bold] copy/paste:")
+    for s in new_personas:
+        console.print(f"    [dim]$[/dim] hctl agent add {s['name']}")
+    console.print("")
+
+
+def _detect_suggestions(root: Path) -> list[dict]:
+    """Return [{name, reason}] of personas to activate based on workspace signals."""
+    out = []
+    has_code = False
+    has_tests = False
+    has_adrs = False
+    has_interfaces = False
+    has_research = False
+    is_monorepo = False
+
+    # Tech stack signals.
+    for marker in ("package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml"):
+        if (root / marker).exists():
+            has_code = True
+            break
+
+    # Tests presence.
+    for tests_marker in ("tests", "test", "spec", "__tests__"):
+        if (root / tests_marker).is_dir():
+            has_tests = True
+            break
+    if (root / "pyproject.toml").exists():
+        try:
+            content = (root / "pyproject.toml").read_text(encoding="utf-8")
+            if "pytest" in content:
+                has_tests = True
+        except OSError:
+            pass
+
+    # Architecture signals.
+    docs = root / "docs"
+    if docs.exists():
+        for f in docs.rglob("*.md"):
+            name_lower = f.name.lower()
+            if "adr" in name_lower or "decision" in name_lower:
+                has_adrs = True
+                break
+    for pattern in ("**/interface*.py", "**/interface*.ts", "**/*Interface.java"):
+        if any(root.glob(pattern)):
+            has_interfaces = True
+            break
+
+    # Monorepo signal.
+    sub_packages = 0
+    skip = {"node_modules", ".venv", "venv", "dist", "build", "target", "__pycache__"}
+    for child in root.iterdir():
+        if not child.is_dir() or child.name.startswith(".") or child.name in skip:
+            continue
+        for marker in ("package.json", "pyproject.toml", "Cargo.toml", "go.mod"):
+            if (child / marker).exists():
+                sub_packages += 1
+                break
+    is_monorepo = sub_packages >= 2
+
+    # Research signal: papers/notebooks.
+    if (root / "notebooks").is_dir() or any(root.glob("*.ipynb")):
+        has_research = True
+    readme = root / "README.md"
+    if readme.exists():
+        try:
+            text = readme.read_text(encoding="utf-8").lower()
+            if "paper" in text or "research" in text or "ml" in text or "machine learning" in text:
+                has_research = True
+        except OSError:
+            pass
+
+    # Map signals → personas.
+    if has_code:
+        out.append({"name": "developer", "reason": "code package detected"})
+    if has_code and has_tests:
+        out.append({"name": "reviewer", "reason": "tests present — code review fits"})
+    if has_adrs or has_interfaces or is_monorepo:
+        reasons = []
+        if has_adrs:
+            reasons.append("ADRs in docs/")
+        if has_interfaces:
+            reasons.append("interface*.{py,ts,java}")
+        if is_monorepo:
+            reasons.append(f"monorepo ({sub_packages} sub-packages)")
+        out.append({"name": "architect", "reason": " · ".join(reasons)})
+    if has_research:
+        out.append({"name": "researcher", "reason": "research signals (notebooks/papers)"})
+
+    return out
+
+
 @app.command("remove")
 def agent_remove(
     name: str = typer.Argument(..., help="Agent name to deactivate"),
