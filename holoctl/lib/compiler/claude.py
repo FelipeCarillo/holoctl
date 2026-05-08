@@ -72,6 +72,67 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
             (project_root / out_path).write_text(output, encoding="utf-8")
         files.append(out_path)
 
+    # Path-scoped rules → .claude/rules/<name>.md (with `paths:` frontmatter)
+    rules_src = project_root / ".holoctl" / "rules"
+    if rules_src.exists():
+        rules_out = project_root / ".claude" / "rules"
+        if not dry_run:
+            rules_out.mkdir(parents=True, exist_ok=True)
+        for f in sorted(rules_src.glob("*.md")):
+            content = f.read_text(encoding="utf-8")
+            output = _HEADER + resolve_template(content, config)
+            out_path = f".claude/rules/{f.name}"
+            if not dry_run:
+                (project_root / out_path).write_text(output, encoding="utf-8")
+            files.append(out_path)
+
+    # Custom skills (with progressive disclosure) → .claude/skills/<name>/
+    skills_src = project_root / ".holoctl" / "skills"
+    if skills_src.exists():
+        for skill_dir in sorted(p for p in skills_src.iterdir() if p.is_dir()):
+            name = skill_dir.name
+            skill_md = skill_dir / "SKILL.md"
+            if not skill_md.exists():
+                continue
+            out_dir = project_root / ".claude" / "skills" / name
+            if not dry_run:
+                out_dir.mkdir(parents=True, exist_ok=True)
+            content = skill_md.read_text(encoding="utf-8")
+            out_path = f".claude/skills/{name}/SKILL.md"
+            if not dry_run:
+                (project_root / out_path).write_text(
+                    _HEADER + resolve_template(content, config), encoding="utf-8"
+                )
+            files.append(out_path)
+            # Copy support files (references/, scripts/, templates/) verbatim.
+            import shutil as _shutil
+            for support in ("references", "scripts", "templates"):
+                support_src = skill_dir / support
+                if support_src.exists() and not dry_run:
+                    support_dst = out_dir / support
+                    if support_dst.exists():
+                        _shutil.rmtree(support_dst)
+                    _shutil.copytree(support_src, support_dst)
+                    for sf in support_src.rglob("*"):
+                        if sf.is_file():
+                            rel = sf.relative_to(skill_dir)
+                            files.append(f".claude/skills/{name}/{rel.as_posix()}")
+
+    # Output styles → .claude/output_styles/<name>.md (Claude Code-specific)
+    styles_src = project_root / ".holoctl" / "output_styles"
+    if styles_src.exists():
+        styles_out = project_root / ".claude" / "output_styles"
+        if not dry_run:
+            styles_out.mkdir(parents=True, exist_ok=True)
+        for f in sorted(styles_src.glob("*.md")):
+            content = f.read_text(encoding="utf-8")
+            out_path = f".claude/output_styles/{f.name}"
+            if not dry_run:
+                (project_root / out_path).write_text(
+                    _HEADER + resolve_template(content, config), encoding="utf-8"
+                )
+            files.append(out_path)
+
     # Memory topics → .claude/skills/holoctl-memory-*/SKILL.md
     files.extend(memory_emit.emit_claude(project_root, dry_run=dry_run))
 

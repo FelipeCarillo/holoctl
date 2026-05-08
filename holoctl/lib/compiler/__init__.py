@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 
+from .agents import compile_agents
 from .claude import compile_claude
 from .cursor import compile_cursor
 from .windsurf import compile_windsurf
@@ -9,6 +10,8 @@ from .devin import compile_devin
 from .generic import compile_generic
 
 _COMPILERS = {
+    # Cross-tool universal: AGENTS.md respected by 20+ assistants.
+    "agents": compile_agents,
     "claude": compile_claude,
     "cursor": compile_cursor,
     "windsurf": compile_windsurf,

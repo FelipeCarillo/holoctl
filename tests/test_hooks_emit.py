@@ -57,11 +57,23 @@ def test_emit_claude_does_not_overwrite_existing_user_hooks(tmp_path: Path):
 
 
 def test_emit_claude_idempotent_no_duplicate_hooks(tmp_path: Path):
+    """Re-running emit_claude must not duplicate any hook commands."""
     hooks_emit.emit_claude(tmp_path)
+    first = json.loads(
+        (tmp_path / ".claude/settings.json").read_text(encoding="utf-8")
+    )
     hooks_emit.emit_claude(tmp_path)
-    settings = json.loads((tmp_path / ".claude/settings.json").read_text(encoding="utf-8"))
-    cmds = [h["command"] for h in settings["hooks"]["SessionStart"]]
-    assert len(cmds) == 1
+    second = json.loads(
+        (tmp_path / ".claude/settings.json").read_text(encoding="utf-8")
+    )
+    # Second run must produce the same shape (no duplicates).
+    assert first == second
+    # Each command appears exactly once per event.
+    for event, hooks in second["hooks"].items():
+        cmds = [h.get("command") for h in hooks if "command" in h]
+        assert len(cmds) == len(set(cmds)), (
+            f"duplicate command in {event}: {cmds}"
+        )
 
 
 def test_emit_claude_includes_write_tool_permissions(tmp_path: Path):

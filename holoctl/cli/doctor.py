@@ -1,10 +1,13 @@
 from __future__ import annotations
 import json
+import re
+from pathlib import Path
 
 import typer
 from ._console import console
 
 from ..lib.config import find_project_root, load_config
+from .. import __version__
 
 app = typer.Typer()
 
@@ -14,17 +17,63 @@ _TARGET_OUTPUTS = {
     "cursor": [".cursor/rules/holoctl.md", ".cursor/commands"],
     "windsurf": [".windsurfrules", ".windsurf/workflows"],
     "copilot": [".github/copilot-instructions.md", ".github/prompts"],
-    "devin": ["AGENTS.md", ".devin/skills"],
+    "devin": [".devin/skills"],
+    "agents": ["AGENTS.md"],
 }
 
 
+def _semver_lt(a: str, b: str) -> bool:
+    def t(v):
+        m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", str(v).strip())
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0, 0, 0)
+    return t(a) < t(b)
+
+
 @app.command("doctor")
-def doctor_cmd():
-    """Check project health."""
+def doctor_cmd(
+    global_check: bool = typer.Option(
+        False,
+        "--global",
+        help="Check global router installation drift across tools (Claude/Copilot/Devin).",
+    ),
+):
+    """Check project health.
+
+    First line of output is router-friendly:
+      - `holoctl: not initialized`  → no .holoctl/ found
+      - `holoctl: outdated`         → workspace below installed hctl version
+      - `holoctl: ok`               → workspace healthy
+
+    Slash command routers (Claude `/holoctl`, Devin `holoctl` skill, Copilot
+    prompt) parse this line to choose init / upgrade / operate flow.
+
+    Pass `--global` to check ~/.claude, ~/.copilot, ~/.config/devin install
+    drift instead of project-level health.
+    """
+    if global_check:
+        _doctor_global()
+        return
+
     root = find_project_root()
     if not root:
-        console.print("[red]No .holoctl/ found. Run `holoctl init` first.[/red]")
+        # Router-friendly first line.
+        print("holoctl: not initialized")
+        console.print(
+            "[dim]No .holoctl/ found at or above the current directory. "
+            "Run `hctl init` to start.[/dim]"
+        )
         raise typer.Exit(1)
+
+    # Detect outdated / ok before any other check (so router gets it fast).
+    try:
+        config_pre = load_config(root)
+        ws_version = config_pre.get("holoctlVersion", "0.0.0")
+    except Exception:
+        ws_version = "0.0.0"
+    if _semver_lt(ws_version, __version__):
+        print("holoctl: outdated")
+    else:
+        print("holoctl: ok")
 
     console.print("\n  [bold]holoctl doctor[/bold]\n")
     issues = 0
@@ -124,3 +173,59 @@ def doctor_cmd():
 def _check(category: str, message: str, ok: bool) -> None:
     icon = "[green]✓[/green]" if ok else "[red]✗[/red]"
     console.print(f"  {icon} [dim]{category:<14}[/dim] {message}")
+
+
+def _doctor_global() -> None:
+    """Check that global routers are installed and current across all tools."""
+    print("holoctl: global-check")
+    console.print("\n  [bold]hctl doctor --global[/bold]\n")
+
+    from ..lib.compiler.template import load_bootstrap
+
+    issues = 0
+
+    # Claude
+    claude_path = Path.home() / ".claude" / "commands" / "holoctl.md"
+    template = load_bootstrap("holoctl-claude.md")
+    if not claude_path.exists():
+        _check("Claude", "router missing — run `hctl setup-global --target claude`", False)
+        issues += 1
+    elif template and claude_path.read_text(encoding="utf-8") != template:
+        _check("Claude", "router stale (drift) — run `hctl setup-global --target claude`", False)
+        issues += 1
+    else:
+        _check("Claude", f"router up-to-date ({claude_path})", True)
+
+    # Copilot
+    copilot_path = Path.home() / ".copilot" / "AGENTS.md"
+    if not copilot_path.exists():
+        _check("Copilot", "no ~/.copilot/AGENTS.md — run `hctl setup-global --target copilot`", False)
+        issues += 1
+    else:
+        existing = copilot_path.read_text(encoding="utf-8")
+        if "<!-- holoctl:start -->" not in existing or "<!-- holoctl:end -->" not in existing:
+            _check("Copilot", "AGENTS.md missing holoctl block — run `hctl setup-global --target copilot`", False)
+            issues += 1
+        else:
+            _check("Copilot", f"holoctl block present ({copilot_path})", True)
+
+    # Devin
+    devin_path = Path.home() / ".config" / "devin" / "skills" / "holoctl" / "SKILL.md"
+    template_d = load_bootstrap("holoctl-devin.md")
+    if not devin_path.exists():
+        _check("Devin", "skill missing — run `hctl setup-global --target devin`", False)
+        issues += 1
+    elif template_d and devin_path.read_text(encoding="utf-8") != template_d:
+        _check("Devin", "skill stale (drift) — run `hctl setup-global --target devin`", False)
+        issues += 1
+    else:
+        _check("Devin", f"skill up-to-date ({devin_path})", True)
+
+    console.print("")
+    if issues == 0:
+        console.print("[green]  All global routers up-to-date.[/green]\n")
+    else:
+        console.print(
+            f"[yellow]  {issues} issue(s). Run "
+            f"[bold]hctl setup-global --target all[/bold] to fix.[/yellow]\n"
+        )

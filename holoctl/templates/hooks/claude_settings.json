@@ -4,6 +4,12 @@
       {
         "type": "command",
         "command": "{{HCTL_BIN}} journal record session_start --source claude --quiet"
+      },
+      {
+        "type": "command",
+        "command": "{{HCTL_BIN}} boot --plain --target claude",
+        "matcher": "always",
+        "description": "Print session-zero teaser (~1KB) before user types"
       }
     ],
     "PostToolUse": [
@@ -12,10 +18,23 @@
         "command": "{{HCTL_BIN}} journal record tool_use --source claude --stdin --quiet"
       }
     ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "Edit|Write",
+        "command": "{{HCTL_BIN}} journal record write_attempt --source claude --stdin --quiet --deny-glob '.holoctl/board/index.json,.holoctl/memory/MEMORY.md,.holoctl/activity.jsonl'",
+        "description": "Block direct writes to derived state — force CLI usage"
+      }
+    ],
     "Stop": [
       {
         "type": "command",
         "command": "{{HCTL_BIN}} journal record stop --source claude --quiet"
+      },
+      {
+        "type": "command",
+        "command": "{{HCTL_BIN}} handoff --quiet --auto",
+        "description": "Persist session-trail line on every Stop. --auto skips if session was trivial."
       }
     ]
   },
@@ -27,6 +46,14 @@
       "mcp__holoctl__agent_add",
       "mcp__holoctl__memory_add",
       "mcp__holoctl__curate_silence"
+    ],
+    "deny": [
+      "Write(.holoctl/board/index.json)",
+      "Write(.holoctl/memory/MEMORY.md)",
+      "Write(.holoctl/activity.jsonl)",
+      "Edit(.holoctl/board/index.json)",
+      "Edit(.holoctl/memory/MEMORY.md)",
+      "Edit(.holoctl/activity.jsonl)"
     ]
   }
 }

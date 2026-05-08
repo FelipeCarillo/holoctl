@@ -2,6 +2,46 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.15.0] — 2026-05-08
+
+### Added (cross-tool primitives + rich `/holoctl` router)
+
+- **New compile target `agents`** — `holoctl/lib/compiler/agents.py` emits `AGENTS.md` at the project root following the [agents.md](https://agents.md/) standard, respected by 20+ assistants (Claude Code, Codex, Copilot, Cursor, Devin, Zed, Aider, Junie, Jules, Factory, goose, Windsurf, UiPath, VS Code, …). Decoupled from the `devin` compiler that previously owned AGENTS.md emission. **Default `config.targets` is now `["agents", "claude"]`** so any AGENTS.md-aware assistant opening the repo gets context out of the box.
+- **`hctl setup-global --target {claude|copilot|devin|all}`** — installs the `/holoctl` router globally for each AI tool. Idempotent via marker-fenced blocks (`<!-- holoctl:start ... end -->`) that preserve user-edited content outside the markers. Cursor/Windsurf intentionally excluded (no user-level surface; per-project compile covers them).
+- **`hctl coverage [--only-present] [--target X]`** — prints the source-to-target matrix for the workspace: what's in `.holoctl/` and where each piece materializes per compile target. Useful for debugging "why isn't my hook firing in Cursor?" and auditing cross-tool gaps.
+- **`hctl agent suggest [--json]`** — heuristic that inspects the codebase (package files, tests, ADRs, interfaces, monorepo signals, research notebooks) and proposes which library personas to activate via `hctl agent add`. Used by `/holoctl` Step 5 to recommend `developer`/`reviewer`/`architect`/`researcher` based on what the project actually is.
+- **`hctl doctor` rewritten with router-friendly first line** — `holoctl: not initialized | outdated | ok`. Slash-command routers (Claude `/holoctl`, Devin skill, Copilot prompt) parse this line to choose init / upgrade / operate flow. The previous output buried the verdict in Rich-formatted markup, so the slash command couldn't actually route. New `--global` flag detects drift between installed package version and the global routers in `~/.claude`/`~/.copilot`/`~/.config/devin` and points to the exact `hctl setup-global --target X` command to fix it.
+
+### Changed (compilers — wider native-primitive coverage)
+
+- **`compiler/devin.py`** now emits `.devin/agents/<n>/AGENT.md` (subagents — was missing despite Devin having the format) and `.devin/hooks.v1.json` (lifecycle hooks — was missing). AGENTS.md emission removed (now handled by the dedicated `agents` target).
+- **`compiler/windsurf.py`** now imports `hooks_emit` and emits `.windsurf/hooks.json` (was missing entirely — Windsurf received zero hooks even when `.holoctl/hooks/` was populated).
+- **`compiler/copilot.py`** now emits `.copilot/config.json` for hook merge.
+- **`compiler/claude.py`** now emits `.claude/rules/` (path-scoped rules with `paths:` frontmatter), `.claude/skills/<n>/...` (custom skills with progressive disclosure: `references/`/`scripts/`/`templates/` copied verbatim) and `.claude/output_styles/`.
+- **`templates/hooks/claude_settings.json`** extended with `SessionStart` → `hctl boot --plain` teaser, `Stop` → `hctl handoff --auto`, `PreToolUse` `Edit|Write` deny-glob on derived state, plus `permissions.deny` enforcement on `.holoctl/board/index.json` / `memory/MEMORY.md` / `activity.jsonl` (so even if the agent forgets the instruction, the harness blocks the tool call).
+- **`hooks_emit.py`** grows `emit_windsurf`, `emit_copilot`, `emit_devin` functions. Cursor template is reused as fallback when a target-specific template is absent — same lifecycle semantics, different file location.
+- **`templates/commands/holoctl-claude.md`** synced with the rewritten global router (DRY).
+
+### Fixed
+
+- **`/holoctl` no longer "stalls" on init.** The global skill at `~/.claude/commands/holoctl.md` was a 4-step `hctl init` → `hctl boot` → "stop and wait" stub, while the rich 7-step flow (detect → init → discover → configure → suggest personas → seed memory → overview-react) lived only in the per-project compiled template (which doesn't exist before init runs). Plus a hardcoded venv path referencing the legacy `projctl` name. Replaced by the same 7-step flow as the per-project template, with PATH-based `hctl` invocation. Legacy `~/.claude/commands/projctl.md` and `projhub.md` are flagged for removal in the README's Migration section.
+
+### Anti-overengineering invariant preserved
+
+Compilers only emit what exists in `.holoctl/`. Optional source surfaces (`hooks/`, `rules/`, `skills/`, `output_styles/`, `ignore`) are **not** created by `hctl init` — they're opt-in directories users create when they need them. Empty input → empty output (no JSON `{}` blobs polluting workspaces).
+
+### Docs
+
+- **READMEs (EN + pt-BR) comprehensively rewritten** — 879 lines each with full parity. New sections: Anatomy of `.holoctl/`, expanded Installation (with the `pip` venv gotcha explained: PEP 668, alias/wrapper recipes for bash/zsh/PowerShell), Per-machine global setup, `/holoctl` 7-step deep dive, Compilation cross-tool with full source→target matrix, **MCP vs CLI design-choice section**, Daily workflows, Lifecycle hooks (actual `settings.json` content), Per-assistant guide, Coverage and doctor, Troubleshooting (8 real failure modes), FAQ (9), Roadmap.
+
+### MCP vs CLI — design choice (documented honestly)
+
+Today's agent and slash-command templates are still instructed to use `hctl` CLI, not the MCP server tools. The MCP server (`hctl serve --mcp`, 14 tools, write-tools landing in `permissions.ask`) is installed by `hctl init` and runs in parallel — but `boardmaster.md` says `hctl board add ...`, not `mcp__holoctl__board_create`. Trade-off: universality (CLI works in any terminal/agent/shell) vs granular permission gating (MCP). Roadmap entry added to flip to MCP-first once a probe step is added to `/holoctl` Step 1.5.
+
+### Tests
+
+- 1 test rewritten (`test_emit_claude_idempotent_no_duplicate_hooks`) — instead of asserting "exactly 1 SessionStart hook", it now asserts "no duplicate commands in any event", which is the actual idempotency property and survives the new richer hook set. **260 tests passing** (test_dashboard.py skipped due to a pre-existing `httpx` test-dep gap; tracked separately).
+
 ## [0.14.0] — 2026-05-07
 
 ### Added (autonomous curator — the "alive" of the system)
