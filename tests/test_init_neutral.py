@@ -54,6 +54,7 @@ def test_get_templates_returns_essential_scaffolding():
         ".holoctl/agents/boardmaster.md",
         ".holoctl/commands/status.md",
         ".holoctl/commands/ticket.md",
+        ".holoctl/commands/spec.md",
         ".holoctl/commands/board.md",
         ".holoctl/commands/sprint.md",
         ".holoctl/commands/decision.md",

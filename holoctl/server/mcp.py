@@ -67,10 +67,21 @@ def _tool_board_list(args: dict) -> Any:
     root = _project_root()
     board = Board(root, load_config(root))
     filters: dict[str, Any] = {}
-    for key in ("status", "priority", "agent", "tag", "sprint"):
+    for key in ("status", "priority", "agent", "tag", "sprint", "kind", "parent", "project"):
         if key in args:
             filters[key] = args[key]
     return {"tickets": board.ls(filters) if filters else board.ls()}
+
+
+def _tool_board_children(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    pid = args.get("id")
+    if not pid:
+        raise ValueError("missing required arg: id")
+    return board.children(pid)
 
 
 def _tool_board_get(args: dict) -> Any:
@@ -85,6 +96,98 @@ def _tool_board_get(args: dict) -> Any:
     if t is None:
         raise ValueError(f"ticket not found: {tid}")
     return t
+
+
+def _tool_board_show(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    tid = args.get("id")
+    if not tid:
+        raise ValueError("missing required arg: id")
+    return board.show(tid)
+
+
+def _tool_board_ack(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    tid = args.get("id")
+    idx = args.get("idx")
+    if not tid or idx is None:
+        raise ValueError("missing required args: id, idx")
+    return board.ack(tid, int(idx))
+
+
+def _tool_board_note(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    tid = args.get("id")
+    text = args.get("text")
+    if not tid or not text:
+        raise ValueError("missing required args: id, text")
+    return board.note(tid, str(text))
+
+
+def _tool_board_batch(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    shared = args.get("shared") or {}
+    tickets = args.get("tickets") or []
+    return board.batch_add(shared, tickets)
+
+
+def _tool_board_delete(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    tid = args.get("id")
+    if not tid:
+        raise ValueError("missing required arg: id")
+    return board.delete(tid)
+
+
+def _tool_board_batch_move(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    ids = args.get("ids") or []
+    status = args.get("status")
+    if not ids or not status:
+        raise ValueError("missing required args: ids, status")
+    return board.batch_move(list(ids), status)
+
+
+def _tool_board_batch_set(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    ids = args.get("ids") or []
+    field = args.get("field")
+    value = args.get("value")
+    if not ids or not field:
+        raise ValueError("missing required args: ids, field")
+    return board.batch_set(list(ids), field, value)
+
+
+def _tool_board_batch_delete(args: dict) -> Any:
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    board = Board(root, load_config(root))
+    ids = args.get("ids") or []
+    if not ids:
+        raise ValueError("missing required arg: ids")
+    return board.batch_delete(list(ids))
 
 
 def _tool_board_create(args: dict) -> Any:
@@ -213,6 +316,53 @@ def _tool_agent_list_available(args: dict) -> Any:
     }
 
 
+def _tool_agent_create(args: dict) -> Any:
+    """Create a NEW custom persona (one not in the library) from a designed body.
+
+    Used by the /agent-new workflow after the agent-designer persona has
+    drafted the body. Writes to .holoctl/agents/<name>.md directly; user
+    has already approved via permissions.ask gating on the MCP call.
+    """
+    from ..lib.markdown import parse_frontmatter
+    root = _project_root()
+    name = args.get("name")
+    body = args.get("body")
+    if not name or not body:
+        raise ValueError("missing required args: name, body")
+    # Validate name: kebab-case, no path separators.
+    import re as _re
+    if not _re.fullmatch(r"[a-z0-9][a-z0-9-]*", name):
+        raise ValueError(f"invalid name {name!r}: must be lowercase kebab-case")
+    # Validate body has parseable frontmatter with at least `name` and `description`.
+    fm, body_md = parse_frontmatter(body)
+    if not fm.get("name"):
+        raise ValueError("body's frontmatter is missing `name:` field")
+    if not fm.get("description"):
+        raise ValueError("body's frontmatter is missing `description:` field")
+    if str(fm["name"]) != name:
+        raise ValueError(
+            f"frontmatter name {fm['name']!r} doesn't match arg name {name!r}"
+        )
+    if not body_md.strip():
+        raise ValueError("body markdown is empty (no content after frontmatter)")
+    # Refuse to clobber an existing active persona.
+    agents_dir = root / ".holoctl" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    target = agents_dir / f"{name}.md"
+    if target.exists() and not args.get("force"):
+        raise ValueError(
+            f"persona {name!r} already active at .holoctl/agents/{name}.md — "
+            f"pass `force: true` to overwrite"
+        )
+    target.write_text(body, encoding="utf-8")
+    return {
+        "name": name,
+        "path": str(target.relative_to(root)).replace("\\", "/"),
+        "model": fm.get("model", "standard"),
+        "paths": fm.get("paths", []),
+    }
+
+
 def _tool_agent_add(args: dict) -> Any:
     from ..lib.agent_library import materialize_agent
     from ..lib.config import load_config
@@ -255,6 +405,13 @@ def _tool_curate_suggestions(args: dict) -> Any:
     return {"suggestions": out}
 
 
+def _tool_config_show(args: dict) -> Any:
+    """Return the resolved workspace config (defaults merged with .holoctl/config.json)."""
+    from ..lib.config import load_config
+    root = _project_root()
+    return load_config(root)
+
+
 def _tool_curate_silence(args: dict) -> Any:
     from ..lib.curator import silence_pattern, SUPPRESSION_DAYS
     pid = args.get("pattern_id")
@@ -268,7 +425,7 @@ def _tool_curate_silence(args: dict) -> Any:
 TOOLS: list[dict] = [
     {
         "name": "holoctl.board_list",
-        "description": "List tickets on the project board with optional filters.",
+        "description": "List work items on the project board with optional filters.",
         "schema": {
             "type": "object",
             "properties": {
@@ -277,9 +434,33 @@ TOOLS: list[dict] = [
                 "agent": {"type": "string"},
                 "tag": {"type": "string"},
                 "sprint": {"type": "string"},
+                "kind": {
+                    "type": "string",
+                    "description": "Filter by kind: task | story | bug | spec | epic | rfc | ...",
+                },
+                "parent": {
+                    "type": "string",
+                    "description": "Filter by parent ID — children of a spec/story/epic",
+                },
+                "project": {"type": "string"},
             },
         },
         "handler": _tool_board_list,
+        "write": False,
+    },
+    {
+        "name": "holoctl.board_children",
+        "description": (
+            "Return direct children of a work item plus aggregate DoD progress. "
+            "Use to inspect how a spec/story/epic is doing — list of child tasks, "
+            "their statuses, and total/acked DoD counts."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+        },
+        "handler": _tool_board_children,
         "write": False,
     },
     {
@@ -295,26 +476,198 @@ TOOLS: list[dict] = [
     },
     {
         "name": "holoctl.board_create",
-        "description": "Create a new ticket. Pass title, agent, priority, goal, etc.",
+        "description": (
+            "Create a new work item. The CLI generates id, status, created, "
+            "updated, completed automatically — never pass those. Required: "
+            "title. Recommended: agent, priority, acceptance, files. The `kind` "
+            "field (default 'task') marks story/bug/spec/epic; `parent` links "
+            "to a containing item (e.g. a task whose parent is a spec). "
+            "`source_*` fields preserve the external-board origin (Trello, "
+            "Linear, Azure DevOps, GitHub, Slack)."
+        ),
         "schema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string"},
-                "agent": {"type": "string"},
-                "priority": {"type": "string"},
+                "title": {"type": "string", "description": "verb + object"},
+                "kind": {
+                    "type": "string",
+                    "description": "task (default) | story | bug | spec | epic | rfc | incident | ...",
+                },
+                "parent": {
+                    "type": "string",
+                    "description": "ID of the containing work item, if any (e.g. spec ID for tasks).",
+                },
+                "agent": {"type": "string", "description": "one of the personas in .holoctl/agents/"},
+                "priority": {"type": "string", "enum": ["p0", "p1", "p2", "p3"]},
+                "acceptance": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "DoD criteria (preferred name; goal is a legacy alias)",
+                },
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "paths this ticket touches; recommended for parallel decomposition",
+                },
                 "projects": {"type": "array", "items": {"type": "string"}},
-                "files": {"type": "array", "items": {"type": "string"}},
-                "goal": {"type": "array", "items": {"type": "string"}},
-                "context": {"type": "string"},
-                "outOfScope": {"type": "string"},
-                "executionNotes": {"type": "string"},
+                "context": {"type": "string", "description": "why this ticket exists"},
+                "out_of_scope": {"type": "string", "description": "what NOT to do (preferred name)"},
+                "depends": {"type": "array", "items": {"type": "string"}},
                 "tags": {"type": "array", "items": {"type": "string"}},
-                "sprint": {"type": "string"},
-                "status": {"type": "string"},
+                "source_provider": {
+                    "type": "string",
+                    "description": "trello | linear | azure_devops | jira | github | slack | shortcut | manual",
+                },
+                "source_ref": {"type": "string", "description": "Native ID on the source board (e.g. ENG-123, #4567)"},
+                "source_url": {"type": "string", "description": "Canonical URL of the source item"},
+                "source_label": {"type": "string", "description": "Short human label for the source ('Card ABC: Add JWT')"},
+                "goal": {"type": "array", "items": {"type": "string"}, "description": "DEPRECATED: use `acceptance`"},
+                "outOfScope": {"type": "string", "description": "DEPRECATED: use `out_of_scope`"},
             },
             "required": ["title"],
         },
         "handler": _tool_board_create,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_batch",
+        "description": (
+            "Create N parallel-safe tickets atomically. Each ticket MUST declare "
+            "`files` and the file sets MUST be disjoint between siblings — the "
+            "CLI rejects overlap before creating anything. Prefer this over "
+            "board_create when work can be split into independent pieces."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "shared": {
+                    "type": "object",
+                    "description": "Fields merged into every ticket (tags, projects, sprint).",
+                },
+                "tickets": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Each item is a ticket spec — same shape as board_create.",
+                },
+            },
+            "required": ["tickets"],
+        },
+        "handler": _tool_board_batch,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_show",
+        "description": (
+            "Read a ticket's full content (frontmatter + body) — the single "
+            "source of truth for inspection. Use this instead of reading the "
+            ".md file directly (which is blocked by permissions.deny)."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+        },
+        "handler": _tool_board_show,
+        "write": False,
+    },
+    {
+        "name": "holoctl.board_ack",
+        "description": (
+            "Toggle a Definition-of-Done checkbox by zero-based index. "
+            "Counts checkboxes in document order. Use this instead of editing "
+            "the .md file by hand."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "idx": {"type": "integer", "description": "zero-based DoD index"},
+            },
+            "required": ["id", "idx"],
+        },
+        "handler": _tool_board_ack,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_note",
+        "description": (
+            "Append a timestamped note to the ticket's # Notes section. "
+            "Append-only — never rewrites existing notes."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "text": {"type": "string"},
+            },
+            "required": ["id", "text"],
+        },
+        "handler": _tool_board_note,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_delete",
+        "description": (
+            "Hard-delete a ticket: removes the .md file AND the index entry. "
+            "Irreversible. For soft-delete use board_move with status='cancelled'."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+        },
+        "handler": _tool_board_delete,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_batch_move",
+        "description": (
+            "Move N tickets to the same status in one call. Atomic per-ticket; "
+            "returns {moved: [...], errors: [...]} so partial success is visible."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "string"}},
+                "status": {"type": "string"},
+            },
+            "required": ["ids", "status"],
+        },
+        "handler": _tool_board_batch_move,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_batch_set",
+        "description": (
+            "Set the same field=value on N tickets. Atomic per-ticket; "
+            "returns {updated: [...], errors: [...]}."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "string"}},
+                "field": {"type": "string"},
+                "value": {},
+            },
+            "required": ["ids", "field"],
+        },
+        "handler": _tool_board_batch_set,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_batch_delete",
+        "description": (
+            "Hard-delete N tickets in one call. Atomic per-ticket; "
+            "returns {deleted: [...], errors: [...]}. Irreversible."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["ids"],
+        },
+        "handler": _tool_board_batch_delete,
         "write": True,
     },
     {
@@ -425,6 +778,45 @@ TOOLS: list[dict] = [
         },
         "handler": _tool_agent_add,
         "write": True,
+    },
+    {
+        "name": "holoctl.agent_create",
+        "description": (
+            "Create a NEW custom persona — one not in the library — by writing "
+            "a pre-designed body to .holoctl/agents/<name>.md. The body must "
+            "have valid frontmatter (name, description) and non-empty content. "
+            "Used by /agent-new after agent-designer drafts the persona."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "kebab-case persona name"},
+                "body": {
+                    "type": "string",
+                    "description": "Complete .md content — frontmatter + markdown body, designed by agent-designer.",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Overwrite if persona already active (default: false — refuse to clobber).",
+                },
+            },
+            "required": ["name", "body"],
+        },
+        "handler": _tool_agent_create,
+        "write": True,
+    },
+    {
+        "name": "holoctl.config_show",
+        "description": (
+            "Return the resolved workspace config — defaults merged with "
+            ".holoctl/config.json. Read-only. Use to discover provider catalog "
+            "(`providers.<name>.url_pattern` / `.mcp_fetch_tool`), board "
+            "config (statuses/priorities), and project metadata without "
+            "parsing the file directly."
+        ),
+        "schema": {"type": "object", "properties": {}},
+        "handler": _tool_config_show,
+        "write": False,
     },
     {
         "name": "holoctl.curate_suggestions",

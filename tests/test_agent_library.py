@@ -44,7 +44,12 @@ def test_materialize_agent_resolves_project_placeholders():
     assert body is not None
     assert "{{project.name}}" not in body
     assert "Acme" in body
-    assert "ACM-XXX" in body  # boardmaster references {{project.prefix}}-XXX
+
+    # boardmaster references {{project.prefix}} in its report format examples
+    bm = materialize_agent("boardmaster", config)
+    assert bm is not None
+    assert "{{project.prefix}}" not in bm
+    assert "ACM-001" in bm
 
 
 def test_materialize_agent_resolves_board_joined_fields():

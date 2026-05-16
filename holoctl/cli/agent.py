@@ -270,6 +270,12 @@ def _detect_suggestions(root: Path) -> list[dict]:
         except OSError:
             pass
 
+    # M17.5 signals: dba / devops / security-auditor / tech-writer.
+    dba_signals = _detect_dba_signals(root)
+    devops_signals = _detect_devops_signals(root)
+    security_signals = _detect_security_signals(root)
+    docs_signals = _detect_docs_signals(root)
+
     # Map signals → personas.
     if has_code:
         out.append({"name": "developer", "reason": "code package detected"})
@@ -286,8 +292,101 @@ def _detect_suggestions(root: Path) -> list[dict]:
         out.append({"name": "architect", "reason": " · ".join(reasons)})
     if has_research:
         out.append({"name": "researcher", "reason": "research signals (notebooks/papers)"})
+    if dba_signals:
+        out.append({"name": "dba", "reason": " · ".join(dba_signals)})
+    if devops_signals:
+        out.append({"name": "devops", "reason": " · ".join(devops_signals)})
+    if security_signals:
+        out.append({"name": "security-auditor", "reason": " · ".join(security_signals)})
+    if docs_signals:
+        out.append({"name": "tech-writer", "reason": " · ".join(docs_signals)})
 
     return out
+
+
+def _detect_dba_signals(root: Path) -> list[str]:
+    """Migration dirs, *.sql files, ORM schema files."""
+    reasons: list[str] = []
+    skip = {"node_modules", ".venv", "venv", "dist", "build", "target", "__pycache__"}
+
+    def _walk_count(glob: str, *, limit: int = 6) -> int:
+        n = 0
+        for f in root.glob(glob):
+            if any(part in skip for part in f.parts):
+                continue
+            if f.is_file():
+                n += 1
+                if n >= limit:
+                    break
+        return n
+
+    sql_count = _walk_count("**/*.sql")
+    if sql_count >= 3:
+        reasons.append(f"{'>=' if sql_count >= 6 else ''}{sql_count} *.sql files")
+    if any((root / d).is_dir() for d in ("migrations", "alembic", "db/migrate")):
+        reasons.append("migrations dir present")
+    for prisma in root.glob("**/schema.prisma"):
+        if any(part in skip for part in prisma.parts):
+            continue
+        reasons.append("prisma schema")
+        break
+    return reasons
+
+
+def _detect_devops_signals(root: Path) -> list[str]:
+    """Workflows, Dockerfiles, terraform, k8s."""
+    reasons: list[str] = []
+    if (root / ".github" / "workflows").is_dir():
+        reasons.append("GitHub Actions workflows")
+    if (root / ".gitlab-ci.yml").exists() or (root / ".circleci").is_dir():
+        reasons.append("CI config")
+    for df in root.glob("**/Dockerfile*"):
+        if "node_modules" in df.parts:
+            continue
+        reasons.append("Dockerfile present")
+        break
+    if (root / "terraform").is_dir() or any(root.glob("**/*.tf")):
+        reasons.append("Terraform IaC")
+    if (root / "k8s").is_dir() or (root / "kubernetes").is_dir() or (root / "helm").is_dir():
+        reasons.append("k8s/helm manifests")
+    return reasons
+
+
+def _detect_security_signals(root: Path) -> list[str]:
+    """SECURITY.md or audit configs."""
+    reasons: list[str] = []
+    if (root / "SECURITY.md").exists() or (root / ".github" / "SECURITY.md").exists():
+        reasons.append("SECURITY.md present")
+    audit_configs = (".snyk", "bandit.yaml", ".bandit", "audit-ci.json")
+    for cfg in audit_configs:
+        if (root / cfg).exists():
+            reasons.append(f"{cfg} present")
+            break
+    return reasons
+
+
+def _detect_docs_signals(root: Path) -> list[str]:
+    """A docs/ directory with substantial md content, or an active CHANGELOG."""
+    reasons: list[str] = []
+    docs = root / "docs"
+    if docs.is_dir():
+        md_count = 0
+        for f in docs.rglob("*.md"):
+            md_count += 1
+            if md_count > 10:
+                break
+        if md_count > 10:
+            reasons.append("docs/ with >10 markdown files")
+        elif md_count >= 5:
+            reasons.append(f"docs/ with {md_count} markdown files")
+    if (root / "CHANGELOG.md").exists():
+        try:
+            size = (root / "CHANGELOG.md").stat().st_size
+            if size > 2000:
+                reasons.append("active CHANGELOG.md")
+        except OSError:
+            pass
+    return reasons
 
 
 @app.command("remove")

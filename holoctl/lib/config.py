@@ -50,7 +50,89 @@ _DEFAULTS: dict = {
         "port": 4242,
         "theme": "dark",
     },
+    # External-board provider catalog. Each entry describes how holoctl
+    # recognizes a card URL from that provider and (optionally) which MCP
+    # tool name to probe at runtime to fetch the card body. The transport
+    # (the MCP itself) is configured outside holoctl — in Claude Code's
+    # `.mcp.json` or via a gateway. holoctl just declares what it knows
+    # how to use. Defaults are populated lazily by `_apply_provider_defaults`
+    # so `_deep_merge` on legacy configs gives them automatically.
+    "providers": {},
 }
+
+
+def _default_providers() -> dict:
+    """Defaults for the 6 well-known external boards.
+
+    `mcp_fetch_tool` names are best-guesses — when wrong, `enabled: auto`
+    causes the skill to fall back silently to paste. User can override per
+    workspace by editing `config.providers.<name>.mcp_fetch_tool` or via
+    `hctl provider add` / `hctl provider enable`.
+    """
+    return {
+        "linear": {
+            "enabled": "auto",
+            "url_pattern": r"^https?://linear\.app/[^/]+/issue/(?P<ref>[A-Z]+-\d+)",
+            "mcp_fetch_tool": "mcp__linear__get_issue",
+            "mcp_search_tool": "mcp__linear__list_issues",
+            "label_template": "{ref}: {title}",
+        },
+        "github": {
+            "enabled": "auto",
+            "url_pattern": (
+                r"^https?://github\.com/(?P<org>[^/]+)/(?P<repo>[^/]+)/issues/(?P<ref>\d+)"
+            ),
+            "mcp_fetch_tool": "mcp__github__get_issue",
+            "mcp_search_tool": "mcp__github__search_issues",
+            "label_template": "{org}/{repo}#{ref}: {title}",
+        },
+        "trello": {
+            "enabled": "auto",
+            "url_pattern": r"^https?://trello\.com/c/(?P<ref>[A-Za-z0-9]+)",
+            "mcp_fetch_tool": "mcp__trello__get_card",
+            "label_template": "{ref}: {title}",
+        },
+        "azure_devops": {
+            "enabled": "auto",
+            "url_pattern": (
+                r"^https?://dev\.azure\.com/(?P<org>[^/]+)/.*/_workitems/edit/(?P<ref>\d+)"
+            ),
+            "mcp_fetch_tool": "mcp__azure_devops__get_work_item",
+            "label_template": "{org} #{ref}: {title}",
+        },
+        "jira": {
+            "enabled": "auto",
+            "url_pattern": (
+                r"^https?://(?P<org>[^.]+)\.atlassian\.net/browse/(?P<ref>[A-Z]+-\d+)"
+            ),
+            "mcp_fetch_tool": "mcp__jira__get_issue",
+            "label_template": "{ref}: {title}",
+        },
+        "slack": {
+            "enabled": "auto",
+            "url_pattern": (
+                r"^https?://(?P<org>[^.]+)\.slack\.com/archives/(?P<channel>[A-Z0-9]+)/p(?P<ref>\d+)"
+            ),
+            "mcp_fetch_tool": "mcp__slack__get_message",
+            "label_template": "slack#{channel}: {title}",
+        },
+    }
+
+
+def _apply_provider_defaults(config: dict) -> dict:
+    """Ensure `config.providers` has the 6 well-known entries — additive only.
+
+    Custom user-added providers (e.g. an internal company board) are
+    preserved untouched. Existing entries (even known providers) keep their
+    user-set values; we only add missing keys.
+    """
+    if not isinstance(config.get("providers"), dict):
+        config["providers"] = {}
+    defaults = _default_providers()
+    for name, entry in defaults.items():
+        if name not in config["providers"]:
+            config["providers"][name] = entry
+    return config
 
 
 # Markers checked when locating a project root. `.holoctl` is canonical;
@@ -93,7 +175,10 @@ def load_config(project_root: Path) -> dict:
         raise FileNotFoundError(f"No .holoctl/config.json found at {project_root}")
     config_path = project_root / marker / "config.json"
     raw = json.loads(config_path.read_text(encoding="utf-8"))
-    return _deep_merge(copy.deepcopy(_DEFAULTS), raw)
+    config = _deep_merge(copy.deepcopy(_DEFAULTS), raw)
+    # Apply provider defaults additively — workspaces from v0.16 don't have
+    # `providers` set; v0.17 auto-fills the 6 well-known ones on load.
+    return _apply_provider_defaults(config)
 
 
 def save_config(project_root: Path, config: dict) -> None:
@@ -107,7 +192,8 @@ def save_config(project_root: Path, config: dict) -> None:
 
 
 def get_defaults() -> dict:
-    return copy.deepcopy(_DEFAULTS)
+    config = copy.deepcopy(_DEFAULTS)
+    return _apply_provider_defaults(config)
 
 
 def _deep_merge(target: dict, source: dict) -> dict:
