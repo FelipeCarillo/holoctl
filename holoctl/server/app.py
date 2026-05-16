@@ -466,6 +466,85 @@ def _deps_chip_html(depends_list: list[str], alias: str) -> str:
             f'{_e(head)}{extra}</span>')
 
 
+# v0.16 introduced `kind` (task|story|bug|spec|epic|rfc|incident|custom) as a
+# first-class field on every ticket. The CLI surfaces it; the board UI used to
+# treat every card the same. The chip below puts the kind back on the card so
+# specs/epics/bugs stand out visually, while plain `task` (the default for the
+# majority of tickets) stays glyph-less to keep the card uncluttered.
+_KIND_GLYPHS = {
+    "spec":     "◆",
+    "epic":     "◇",
+    "story":    "◉",
+    "bug":      "●",
+    "rfc":      "✎",
+    "incident": "⚠",
+}
+
+
+def _kind_chip_html(kind: str) -> str:
+    """Small chip on the card top row identifying the work-item kind.
+
+    `task` is the default and renders blank (no chip) so the typical card
+    is unchanged. Specs/epics/bugs/rfc/incident get a colored glyph + name
+    (the CSS uses `[data-kind="…"]` selectors to pick the hue). An unknown
+    kind (config-defined custom string) falls back to a neutral square.
+    """
+    if not kind or kind == "task":
+        return ""
+    glyph = _KIND_GLYPHS.get(kind, "◾")
+    return (f'<span class="kc-kind" data-kind="{_e(kind)}" '
+            f'title="kind: {_e(kind)}">'
+            f'<span class="kc-kind-glyph" aria-hidden="true">{glyph}</span>'
+            f'{_e(kind)}</span>')
+
+
+# Maps a provider id (config catalog: linear, github, trello, jira, azure,
+# slack, plus any internal board the user registers via `hctl provider add`)
+# to a short visual marker on the card. Falls back to ↗ when unknown so a
+# custom provider still shows up as "external origin".
+_PROVIDER_GLYPHS = {
+    "linear": "L",
+    "github": "GH",
+    "trello": "T",
+    "jira":   "J",
+    "azure":  "AZ",
+    "slack":  "S",
+}
+
+
+def _source_chip_html(provider: str | None, url: str | None,
+                      ref: str | None, label: str | None) -> str:
+    """Card chip pointing at the external board this ticket came from.
+
+    Renders e.g. `L · ENG-42` for a Linear ticket, `GH · 1234` for a
+    GitHub issue. Always a `<span>` (never `<a>`) inside the kanban-card
+    link wrapper — the clickable external URL lives on the detail page
+    Properties panel to keep card navigation unambiguous. Empty when the
+    ticket has no `source_*` metadata.
+    """
+    if not (provider or url or ref or label):
+        return ""
+    glyph = _PROVIDER_GLYPHS.get((provider or "").lower(), "↗")
+    body = _e(ref or label or provider or "ext")
+    tip = " · ".join(b for b in (label, provider, ref, url) if b)
+    return (f'<span class="kc-source" data-provider="{_e((provider or "").lower())}" '
+            f'title="from {_e(tip)}">'
+            f'<span class="kc-source-glyph" aria-hidden="true">{_e(glyph)}</span>'
+            f'<span class="kc-source-ref">{body}</span></span>')
+
+
+def _parent_chip_html(parent_id: str | None) -> str:
+    """Subtle '↑ PRJ-099' indicator in the card meta row when this ticket
+    belongs to a parent spec/epic. Visual cousin of the deps chip — same
+    weight, opposite arrow direction (parents are above; deps block).
+    """
+    if not parent_id:
+        return ""
+    return (f'<span class="kc-parent" title="parent: {_e(parent_id)}">'
+            f'<span class="kc-parent-glyph" aria-hidden="true">↑</span>'
+            f'{_e(parent_id)}</span>')
+
+
 def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
                  project_root: Path | None = None) -> str:
     """Build the `<div class="kanban">` block. Used by both the full board page
@@ -490,6 +569,12 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
             projects_csv = ",".join(projects_list)
             depends_list = [d for d in (t.get("depends") or []) if d]
             depends_csv = ",".join(depends_list)
+            kind = t.get("kind") or "task"
+            parent = t.get("parent") or ""
+            src_provider = t.get("source_provider") or ""
+            src_ref = t.get("source_ref") or ""
+            src_url = t.get("source_url") or ""
+            src_label = t.get("source_label") or ""
             preview = _ticket_preview(project_root, t) if project_root else ""
             due = _format_due(t.get("due") or "")
             data_attrs = (
@@ -501,6 +586,9 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
                 f' data-tags="{_e(tags_csv)}"'
                 f' data-projects="{_e(projects_csv)}"'
                 f' data-depends="{_e(depends_csv)}"'
+                f' data-kind="{_e(kind)}"'
+                f' data-parent="{_e(parent)}"'
+                f' data-source="{_e(src_provider)}"'
                 f' data-title="{_e(t.get("title", ""))}"'
                 f' data-created="{_e(t.get("created", ""))}"'
                 f' data-updated="{_e(t.get("updated", ""))}"'
@@ -517,14 +605,19 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
             due_html = f'<span class="kc-due">⏱ {_e(due)}</span>' if due else ""
             repo_html = _repo_chip_html(projects_list)
             deps_html = _deps_chip_html(depends_list, alias)
+            kind_html = _kind_chip_html(kind)
+            source_html = _source_chip_html(src_provider, src_url, src_ref, src_label)
+            parent_html = _parent_chip_html(parent)
             preview_html = f'<div class="kc-preview">{_e(preview)}</div>' if preview else ""
-            meta_inner = avatars_html + sprint_html + deps_html + due_html
+            meta_inner = avatars_html + sprint_html + parent_html + deps_html + due_html
             meta_html = f'<div class="kc-meta">{meta_inner}</div>' if meta_inner else ""
             cards += f"""<a href="/project/{_e(alias)}/board/{_e(t['id'])}" class="kanban-card" {data_attrs}>
   <div class="kc-top">
     <span class="kc-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
+    {kind_html}
     <span class="kc-id">{_e(t['id'])}</span>
     {repo_html}
+    {source_html}
     <button type="button" class="kc-menu" data-card-menu aria-label="Card actions" title="Actions">⋯</button>
   </div>
   <div class="kc-title">{_e(t['title'])}</div>
@@ -597,6 +690,9 @@ def _list_row_html(t: dict, alias: str) -> str:
     projects_csv = ",".join(projects_list)
     depends_list = [d for d in (t.get("depends") or []) if d]
     depends_csv = ",".join(depends_list)
+    kind = t.get("kind") or "task"
+    parent = t.get("parent") or ""
+    src_provider = t.get("source_provider") or ""
     upd_disp, upd_full = _format_relative_date(t.get("updated", ""))
     avatars_html = ""
     if agents_list:
@@ -609,6 +705,16 @@ def _list_row_html(t: dict, alias: str) -> str:
     sprint_html = f'<span class="lr-sprint">#{_e(sprint)}</span>' if sprint else '<span class="lr-empty">—</span>'
     repo_html = _repo_chip_html(projects_list) or '<span class="lr-empty">—</span>'
     deps_html = _deps_chip_html(depends_list, alias) or '<span class="lr-empty">—</span>'
+    # Kind + parent ride inline with the title cell — same row as the title
+    # link so the eye picks them up without adding new columns. Plain `task`
+    # stays glyph-less; specs/epics/bugs/etc. get a colored marker.
+    kind_html = _kind_chip_html(kind)
+    parent_html = _parent_chip_html(parent)
+    title_prefix = ""
+    if kind_html:
+        title_prefix += kind_html
+    if parent_html:
+        title_prefix += parent_html
     data_attrs = (
         f'data-id="{_e(t["id"])}"'
         f' data-status="{_e(status)}"'
@@ -618,6 +724,9 @@ def _list_row_html(t: dict, alias: str) -> str:
         f' data-tags="{_e(tags_csv)}"'
         f' data-projects="{_e(projects_csv)}"'
         f' data-depends="{_e(depends_csv)}"'
+        f' data-kind="{_e(kind)}"'
+        f' data-parent="{_e(parent)}"'
+        f' data-source="{_e(src_provider)}"'
         f' data-title="{_e(t.get("title", ""))}"'
         f' data-created="{_e(t.get("created", ""))}"'
         f' data-updated="{_e(t.get("updated", ""))}"'
@@ -633,7 +742,7 @@ def _list_row_html(t: dict, alias: str) -> str:
     <a class="lr-id-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t['id'])}</a>
   </div>
   <div class="lr-cell lr-cell-title">
-    <a class="lr-title-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t.get('title', ''))}</a>
+    {title_prefix}<a class="lr-title-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t.get('title', ''))}</a>
   </div>
   <div class="lr-cell lr-cell-status">
     <button type="button" class="lr-edit lr-status" data-edit-field="status" data-status="{_e(status)}" aria-haspopup="listbox" aria-expanded="false">{_e(status)}</button>
@@ -1255,6 +1364,18 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
     tags_list = [t for t in (ticket.get("tags") or []) if t]
     projects_list = [p for p in (ticket.get("projects") or []) if p]
     depends_list = [d for d in (ticket.get("depends") or []) if d]
+    # v0.16 hierarchy + external-board origin. Surfaced in Properties + Linked
+    # below so the visual board doesn't lag behind the schema/CLI surface.
+    kind = ticket.get("kind") or "task"
+    parent_id = ticket.get("parent") or ""
+    src_provider = ticket.get("source_provider") or ""
+    src_ref = ticket.get("source_ref") or ""
+    src_url = ticket.get("source_url") or ""
+    src_label = ticket.get("source_label") or ""
+    children_list: list[dict] = []
+    if all_tickets is not None:
+        ours = ticket.get("id")
+        children_list = [t for t in all_tickets if t.get("parent") == ours and t.get("id") != ours]
     blocks_list: list[str] = []
     if all_tickets is not None:
         ours = ticket.get("id")
@@ -1313,6 +1434,25 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
     created_disp = _format_iso_datetime(created) or "—"
     updated_disp = _format_iso_datetime(updated) or "—"
 
+    # Kind / Parent / Source rows. Kind always shows (so the user sees the
+    # default "task" and knows the field exists); Parent + Source render an
+    # empty-dash when unset so they're discoverable on every ticket.
+    kind_display = _kind_chip_html(kind) if kind != "task" else f'<span class="dr-prop-text">{_e(kind)}</span>'
+    if parent_id:
+        parent_display = (f'<a class="dr-prop-link mono" '
+                          f'href="/project/{_e(alias)}/board/{_e(parent_id)}">{_e(parent_id)}</a>')
+    else:
+        parent_display = '<span class="dr-prop-empty">—</span>'
+    if src_provider or src_url or src_ref or src_label:
+        chip = _source_chip_html(src_provider, src_url, src_ref, src_label)
+        if src_url:
+            source_display = (f'{chip} <a class="dr-prop-link mono" '
+                              f'href="{_e(src_url)}" target="_blank" rel="noopener">↗ open</a>')
+        else:
+            source_display = chip
+    else:
+        source_display = '<span class="dr-prop-empty">—</span>'
+
     properties = f"""<div class="dr-card" data-detail-row data-id="{_e(ticket['id'])}">
   <div class="dr-card-title">Properties</div>
   <div class="dr-prop">
@@ -1322,6 +1462,14 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
   <div class="dr-prop">
     <span class="dr-prop-label">Priority</span>
     <button type="button" class="dr-prop-edit lr-edit lr-prio-pill" data-edit-field="priority" data-p="{_e(prio)}">{_e(prio)}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Kind</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="kind" data-current="{_e(kind)}">{kind_display}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Parent</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="parent" data-current="{_e(parent_id)}">{parent_display}</button>
   </div>
   <div class="dr-prop">
     <span class="dr-prop-label">Agents</span>
@@ -1339,6 +1487,10 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
     <span class="dr-prop-label">Repo</span>
     <button type="button" class="dr-prop-edit-text" data-edit-text-field="projects" data-current="{_e(','.join(projects_list))}">{projects_display}</button>
   </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Source</span>
+    <span class="dr-prop-value">{source_display}</span>
+  </div>
   <hr class="dr-divider">
   <div class="dr-prop dr-prop-readonly">
     <span class="dr-prop-label">Created</span>
@@ -1351,7 +1503,23 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
 </div>"""
 
     # ── Right rail: Linked card ────────────────────────────────────────
-    if depends_list or blocks_list:
+    # Order: parent first (the spec this lives under), then children
+    # (work this ticket spawns), then depends (blockers above this one),
+    # then blocks (downstream of this one). Reads top-down like a tree.
+    if depends_list or blocks_list or parent_id or children_list:
+        parent_item = ""
+        if parent_id:
+            parent_item = (
+                f'<a class="dr-linked-item" href="/project/{_e(alias)}/board/{_e(parent_id)}">'
+                f'<span class="dr-linked-arrow">↑</span> parent {_e(parent_id)}</a>'
+            )
+        child_items = "".join(
+            f'<a class="dr-linked-item" href="/project/{_e(alias)}/board/{_e(c.get("id",""))}">'
+            f'<span class="dr-linked-arrow">↓</span> child {_e(c.get("id",""))} '
+            f'<span class="dr-linked-meta">· {_e((c.get("kind") or "task"))} · '
+            f'{_e(c.get("status",""))}</span></a>'
+            for c in children_list
+        )
         dep_items = "".join(
             f'<a class="dr-linked-item" href="/project/{_e(alias)}/board/{_e(d)}">'
             f'<span class="dr-linked-arrow">↳</span> depends on {_e(d)}</a>'
@@ -1362,7 +1530,7 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
             f'<span class="dr-linked-arrow">↳</span> blocks {_e(b)}</a>'
             for b in blocks_list
         )
-        linked_body = dep_items + blk_items
+        linked_body = parent_item + child_items + dep_items + blk_items
     else:
         linked_body = '<div class="dr-empty">No linked tickets</div>'
 
