@@ -1084,6 +1084,98 @@ code {
 .kc-deps-glyph { font-size: 12px; opacity: 0.7; line-height: 1; }
 .kc-deps-extra { color: var(--text-3); font-weight: 500; }
 
+/* ── v0.16 chips: kind / source / parent ──────────────────────────────
+   These three small badges surface the new schema fields (kind, parent,
+   source_*) directly on the kanban card. They share the same height and
+   font-size family as the existing repo / sprint / deps chips so the
+   card meta row stays visually balanced; only the color tokens change to
+   distinguish the field axis. */
+
+/* Kind: rendered next to the priority dot. `task` is the default and is
+   NOT rendered (would be visual noise on the majority of cards). The
+   [data-kind="…"] selectors below tint the chip per kind so a board with
+   a mix of specs / epics / bugs reads at a glance. */
+.kc-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-1);
+  text-transform: lowercase;
+}
+.kc-kind-glyph { font-size: 11px; line-height: 1; opacity: 0.9; }
+.kc-kind[data-kind="spec"]     { background: var(--blue-subtle);   color: var(--blue);   }
+.kc-kind[data-kind="epic"]     { background: var(--purple-subtle); color: var(--purple); }
+.kc-kind[data-kind="story"]    { background: var(--cyan-subtle);   color: var(--cyan);   }
+.kc-kind[data-kind="bug"]      { background: var(--red-subtle);    color: var(--red);    }
+.kc-kind[data-kind="rfc"]      { background: var(--accent-subtle); color: var(--accent); }
+.kc-kind[data-kind="incident"] { background: var(--orange-subtle); color: var(--orange); }
+
+/* External-board origin chip (Linear / GitHub / Jira / …). Sits on the
+   top row after the repo chip; rendered as a <span> (not <a>) because
+   it lives inside the kanban-card link wrapper — the clickable URL is
+   exposed on the detail page Properties panel instead. */
+.kc-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kc-source-glyph {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--bg);
+  line-height: 1.4;
+}
+.kc-source[data-provider="linear"] { background: var(--purple-subtle); color: var(--purple); }
+.kc-source[data-provider="linear"] .kc-source-glyph { background: var(--purple); }
+.kc-source[data-provider="github"] { background: var(--bg-hover); color: var(--text-1); }
+.kc-source[data-provider="github"] .kc-source-glyph { background: var(--text-1); }
+.kc-source[data-provider="jira"]   { background: var(--blue-subtle); color: var(--blue); }
+.kc-source[data-provider="jira"]   .kc-source-glyph { background: var(--blue); }
+.kc-source[data-provider="trello"] { background: var(--cyan-subtle); color: var(--cyan); }
+.kc-source[data-provider="trello"] .kc-source-glyph { background: var(--cyan); }
+.kc-source[data-provider="azure"]  { background: var(--blue-subtle); color: var(--blue); }
+.kc-source[data-provider="azure"]  .kc-source-glyph { background: var(--blue); }
+.kc-source[data-provider="slack"]  { background: var(--yellow-subtle); color: var(--yellow); }
+.kc-source[data-provider="slack"]  .kc-source-glyph { background: var(--yellow); }
+
+/* Parent indicator: lives in the meta row, visually identical to deps
+   but with the arrow pointing up — parents are above this ticket; deps
+   block it from beside. Subtle by default; on hover the card already
+   raises so we don't add anything extra here. */
+.kc-parent {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: -0.2px;
+}
+.kc-parent-glyph { font-size: 12px; opacity: 0.7; line-height: 1; }
+
 .kc-due {
   font-size: 11px;
   color: var(--text-2);
@@ -1803,6 +1895,29 @@ code {
 .dr-linked-arrow {
   color: var(--text-3);
   font-size: 13px;
+}
+
+.dr-linked-meta {
+  color: var(--text-3);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  margin-left: 4px;
+}
+
+/* Inline link inside a Properties row — used for Parent (internal ticket
+   link) and Source (external URL). Mono font so IDs align with the rest
+   of the right-rail readonly values. */
+.dr-prop-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12px;
+}
+.dr-prop-link:hover {
+  text-decoration: underline;
+}
+.dr-prop-link.mono {
+  font-family: var(--font-mono);
+  letter-spacing: -0.2px;
 }
 
 /* Activity timeline — vertical, dot + label + time. */
