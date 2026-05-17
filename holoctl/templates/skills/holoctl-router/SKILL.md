@@ -48,6 +48,22 @@ After any action, **react to its output**:
 - If `board_list` showed p0 pendings, propose the next action (move to doing, delegate to agent).
 - If `curate show` proposes a ticket, ask the user "approve? (move to done auto-executes the action)".
 
+## Tiebreak — spec-flow × work-item-router × ticket-discipline
+
+These three skills all fire on "user described work that needs tracking" and their descriptions overlap. Pick by **signal strength**, top-down — first row that matches wins:
+
+| Signal in the user's turn                                                  | Skill to invoke         | Why                                                              |
+|----------------------------------------------------------------------------|-------------------------|-------------------------------------------------------------------|
+| URL pasted (Trello/Linear/Azure/Jira/GitHub Issue/Slack) **or** multi-paragraph brief **or** "vamos planejar / preciso definir como vai funcionar X" | `holoctl-spec-flow`     | External source or design-level scope → intake + decompose pipeline |
+| Single sentence with ambiguous kind ("história de…", "bug em…", "epic de…", "RFC pra…") | `holoctl-work-item-router` | Just need to pick `kind` before routing                          |
+| Short imperative ("vou refatorar X", "preciso adicionar Y") **and no ticket exists yet**, non-trivial scope                                | `holoctl-ticket-discipline` | Bare announce-then-do — wants a ticket created defensively       |
+| Trivial change (typo, formatting, one-liner)                              | none — just do it       | Don't ticket-spam                                                |
+
+**Rules of thumb when two could fire:**
+- `spec-flow` always beats `work-item-router` when an external URL was pasted or the user gave a multi-paragraph brief. Don't downgrade to `work-item-router` just because the kind looks obvious.
+- `work-item-router` beats `ticket-discipline` when the inferred kind is **not `task`** (story/spec/epic/rfc/bug/incident). Those kinds want the structured flow.
+- `ticket-discipline` only fires for `task`-shaped work that the user is about to start without a ticket — its job is to insert the ticket, not to design the work.
+
 ## Hard rules (never violate)
 
 - **Never** edit `.holoctl/board/index.json` or `.holoctl/memory/MEMORY.md` by hand. Always via `mcp__holoctl__*` or `hctl <subcommand>`.

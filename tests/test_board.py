@@ -661,3 +661,142 @@ def test_batch_add_propagates_parent_kind_source_from_shared(workspace: Path, wo
         assert t["source_provider"] == "linear"
         assert t["source_ref"] == "ENG-42"
         assert "par:auth-flow" in t["tags"]
+
+
+# ---- Parent cycle validation (v0.17 follow-up) ---------------------------
+
+
+def test_set_parent_to_self_raises(workspace: Path, workspace_config: dict):
+    """A ticket cannot be its own parent."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "Loop me", "kind": "spec"})
+    with pytest.raises(ValueError, match="cycle|self"):
+        board.set(t["id"], "parent", t["id"])
+
+
+def test_set_parent_to_nonexistent_raises(workspace: Path, workspace_config: dict):
+    """Parent ID must reference an existing ticket."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "Orphan", "agent": "developer"})
+    with pytest.raises((KeyError, ValueError), match="TST-999|not found"):
+        board.set(t["id"], "parent", "TST-999")
+
+
+def test_set_parent_two_level_cycle_raises(workspace: Path, workspace_config: dict):
+    """A→B exists; setting B.parent=A creates A→B→A and must fail."""
+    board = Board(workspace, workspace_config)
+    a = board.add({"title": "A", "kind": "spec"})
+    b = board.add({"title": "B", "kind": "spec", "parent": a["id"]})
+    # Now try to make A's parent = B → would close a cycle.
+    with pytest.raises(ValueError, match="cycle"):
+        board.set(a["id"], "parent", b["id"])
+
+
+def test_set_parent_three_level_cycle_raises(workspace: Path, workspace_config: dict):
+    """A→B→C; setting A.parent=C closes the cycle and must fail."""
+    board = Board(workspace, workspace_config)
+    a = board.add({"title": "A", "kind": "spec"})
+    b = board.add({"title": "B", "kind": "spec", "parent": a["id"]})
+    c = board.add({"title": "C", "kind": "spec", "parent": b["id"]})
+    with pytest.raises(ValueError, match="cycle"):
+        board.set(a["id"], "parent", c["id"])
+
+
+def test_set_parent_clears_with_empty_value(workspace: Path, workspace_config: dict):
+    """Empty/null string clears the parent (orphan the item)."""
+    board = Board(workspace, workspace_config)
+    spec = board.add({"title": "S", "kind": "spec"})
+    child = board.add({"title": "C", "agent": "developer", "parent": spec["id"]})
+    board.set(child["id"], "parent", "")
+    assert board.get(child["id"])["parent"] in (None, "")
+
+
+def test_set_parent_to_valid_sibling_succeeds(workspace: Path, workspace_config: dict):
+    """Re-parenting between two unrelated specs is allowed."""
+    board = Board(workspace, workspace_config)
+    s1 = board.add({"title": "S1", "kind": "spec"})
+    s2 = board.add({"title": "S2", "kind": "spec"})
+    t = board.add({"title": "T", "agent": "developer", "parent": s1["id"]})
+    board.set(t["id"], "parent", s2["id"])
+    assert board.get(t["id"])["parent"] == s2["id"]
+
+
+def test_add_with_nonexistent_parent_raises(workspace: Path, workspace_config: dict):
+    """`board add` rejects a parent reference that doesn't exist yet."""
+    board = Board(workspace, workspace_config)
+    with pytest.raises((KeyError, ValueError), match="TST-999|not found"):
+        board.add({"title": "Orphan", "agent": "developer", "parent": "TST-999"})
+
+
+# ---- Tree rendering (v0.17 follow-up) ------------------------------------
+
+
+def test_tree_flat_when_no_parents(workspace: Path, workspace_config: dict):
+    """With no parent relationships, every ticket is a root (depth 0, empty prefix)."""
+    board = Board(workspace, workspace_config)
+    board.add({"title": "A", "agent": "developer"})
+    board.add({"title": "B", "agent": "developer"})
+    rows = board.tree()
+    assert len(rows) == 2
+    for r in rows:
+        assert r["depth"] == 0
+        assert r["prefix"] == ""
+
+
+def test_tree_renders_two_level_hierarchy(workspace: Path, workspace_config: dict):
+    """A spec with two children renders with ├─ for inner, └─ for last child."""
+    board = Board(workspace, workspace_config)
+    spec = board.add({"title": "Spec", "kind": "spec"})
+    board.add({"title": "C1", "agent": "developer", "parent": spec["id"]})
+    board.add({"title": "C2", "agent": "developer", "parent": spec["id"]})
+
+    rows = board.tree()
+    by_id = {r["ticket"]["id"]: r for r in rows}
+    assert by_id[spec["id"]]["depth"] == 0
+    assert by_id[spec["id"]]["prefix"] == ""
+    # First child is not the last → uses ├─
+    first_child_id = sorted(t["id"] for t in [r["ticket"] for r in rows] if t["id"] != spec["id"])[0]
+    last_child_id = sorted(t["id"] for t in [r["ticket"] for r in rows] if t["id"] != spec["id"])[-1]
+    assert by_id[first_child_id]["prefix"] == "├─ "
+    assert by_id[last_child_id]["prefix"] == "└─ "
+
+
+def test_tree_three_levels_uses_pipe_padding(workspace: Path, workspace_config: dict):
+    """Grandchildren get the `│  ` continuation glyph for ancestors that still have siblings."""
+    board = Board(workspace, workspace_config)
+    spec = board.add({"title": "Spec", "kind": "spec"})
+    a = board.add({"title": "A", "agent": "developer", "parent": spec["id"]})
+    board.add({"title": "B", "agent": "developer", "parent": spec["id"]})  # makes A non-last
+    board.add({"title": "A1", "agent": "developer", "parent": a["id"]})  # only child of A
+    rows = board.tree()
+    by_id = {r["ticket"]["id"]: r for r in rows}
+    # A is non-last sibling under spec → ancestor padding for its child uses │
+    a1 = next(r for r in rows if r["ticket"]["title"] == "A1")
+    assert a1["prefix"] == "│  └─ "
+
+
+def test_tree_filters_apply_but_keep_ancestors(workspace: Path, workspace_config: dict):
+    """`tree({"kind":"task"})` filters tasks but still anchors them under their spec parent."""
+    board = Board(workspace, workspace_config)
+    spec = board.add({"title": "Spec", "kind": "spec"})
+    board.add({"title": "T1", "agent": "developer", "parent": spec["id"]})
+    rows = board.tree({"kind": "task"})
+    ids = {r["ticket"]["id"] for r in rows}
+    # The spec itself isn't a task, but it shows as an anchor so the hierarchy reads.
+    assert spec["id"] in ids
+    # The task shows up nested under the spec.
+    task_row = next(r for r in rows if r["ticket"]["title"] == "T1")
+    assert task_row["depth"] == 1
+
+
+def test_tree_rooted_at_parent_id(workspace: Path, workspace_config: dict):
+    """`tree(root=SPEC_ID)` returns only the subtree under SPEC_ID."""
+    board = Board(workspace, workspace_config)
+    s1 = board.add({"title": "S1", "kind": "spec"})
+    s2 = board.add({"title": "S2", "kind": "spec"})
+    board.add({"title": "C1", "agent": "developer", "parent": s1["id"]})
+    board.add({"title": "C2", "agent": "developer", "parent": s2["id"]})
+
+    rows = board.tree(root=s1["id"])
+    titles = {r["ticket"]["title"] for r in rows}
+    assert titles == {"S1", "C1"}

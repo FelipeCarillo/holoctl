@@ -656,6 +656,70 @@ class TestViewSwitcher:
         assert 'data-view="list" role="tab" aria-selected="true"' in r.text
         assert '.view-tab active" data-view="kanban"' not in r.text
 
+    def test_view_tree_renders_tree_markup(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=tree")
+        assert r.status_code == 200
+        assert 'id="tree-view"' in r.text
+        assert 'data-current-view="tree"' in r.text
+        assert 'id="kanban"' not in r.text
+        # The Tree tab is in the switcher and marked active.
+        assert 'data-view="tree" role="tab" aria-selected="true"' in r.text
+
+
+class TestTreeHtml:
+    def test_renders_root_and_children_with_data_attrs(
+        self, workspace: Path, workspace_config: dict
+    ):
+        from holoctl.server.app import _tree_html
+        b = Board(workspace, workspace_config)
+        spec = b.add({"title": "Auth flow", "kind": "spec"})
+        c1 = b.add({"title": "Sign", "agent": "developer", "parent": spec["id"]})
+        c2 = b.add({"title": "Verify", "agent": "developer", "parent": spec["id"]})
+
+        tickets = b.ls()
+        html = _tree_html(tickets, workspace_config["board"]["statuses"], "x")
+        # Every ticket has its own row…
+        assert f'data-id="{spec["id"]}"' in html
+        assert f'data-id="{c1["id"]}"' in html
+        assert f'data-id="{c2["id"]}"' in html
+        # Children carry data-parent so DOM-side filters can still group.
+        assert f'data-parent="{spec["id"]}"' in html
+        # Depth signal — the spec is depth 0, children are depth 1.
+        assert 'data-depth="0"' in html
+        assert 'data-depth="1"' in html
+        # Connector glyphs appear for the children (CSS draws the actual lines).
+        assert "tr-glyph-mid" in html or "tr-glyph-last" in html
+
+    def test_orphan_with_missing_parent_promotes_to_root(
+        self, workspace: Path, workspace_config: dict
+    ):
+        """A ticket whose declared parent is absent from the board still renders —
+        as a root, not as a dangling row that disappears from the tree."""
+        from holoctl.server.app import _tree_html
+        b = Board(workspace, workspace_config)
+        # Build directly: an orphan whose parent ID was never created.
+        b.add({"title": "Orphan", "agent": "developer"})
+        # Inject a phantom parent reference via the index so we can simulate
+        # a dangling ref without going through add()'s validation.
+        import json
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        data["tickets"][0]["parent"] = "PHANTOM-999"
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        tickets = b.ls()
+        html = _tree_html(tickets, workspace_config["board"]["statuses"], "x")
+        # The orphan still appears at depth 0 (no glyph gutter).
+        assert 'data-depth="0"' in html
+        assert "Orphan" in html
+
+    def test_empty_workspace_shows_friendly_message(
+        self, workspace: Path, workspace_config: dict
+    ):
+        from holoctl.server.app import _tree_html
+        html = _tree_html([], workspace_config["board"]["statuses"], "x")
+        assert "tree-empty" in html or "No tickets" in html
+
 
 class TestApiListHtmlFragment:
     def test_returns_list_view_fragment(self, client: TestClient, alias: str):

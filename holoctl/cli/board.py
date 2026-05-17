@@ -49,8 +49,14 @@ def ls_cmd(
     project: Optional[str] = typer.Option(None, "--project", help="Filter by project (subdir name discovered in workspace)"),
     kind: Optional[str] = typer.Option(None, "--kind", help="Filter by kind (task, story, bug, spec, epic, ...)"),
     parent: Optional[str] = typer.Option(None, "--parent", help="Filter by parent ID (children of a spec/story/epic)"),
+    tree: bool = typer.Option(False, "--tree", help="Render the parent/child hierarchy with ├─ └─ glyphs"),
 ):
-    """List tickets with optional filters."""
+    """List tickets with optional filters.
+
+    With ``--tree``, the result is rendered as a hierarchy: roots first,
+    children indented with ``├─`` / ``└─``. Filters still apply — ancestors
+    of matched items are kept so the structure stays readable.
+    """
     board, _, _ = _get_board()
     filters: dict = {}
     if sprint:
@@ -69,6 +75,23 @@ def ls_cmd(
         filters["kind"] = kind
     if parent:
         filters["parent"] = parent
+
+    if tree:
+        rows = board.tree(filters or None)
+        if not rows:
+            console.print("[dim]No tickets match the filters.[/dim]")
+            return
+        for row in rows:
+            t = row["ticket"]
+            kind_str = t.get("kind") or "task"
+            kind_disp = f"[magenta]{kind_str[:6]:<6}[/magenta]"
+            agents = ", ".join(t.get("agent") or []) or "—"
+            console.print(
+                f"{row['prefix']}[bold]{t['id']}[/bold]  {kind_disp}  "
+                f"{_status_color(t['status'])}  {t['title'][:60]}  "
+                f"[dim]({agents})[/dim]"
+            )
+        return
 
     tickets = board.ls(filters)
     if not tickets:
@@ -92,11 +115,18 @@ def ls_cmd(
 def children_cmd(
     parent_id: str = typer.Argument(..., help="Parent work item ID (spec/story/epic)"),
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    deep: bool = typer.Option(
+        False, "--deep",
+        help="Render the full subtree (grandchildren and beyond) with ├─ └─ glyphs",
+    ),
 ):
     """Show direct children of a work item + aggregate DoD progress.
 
     Useful for inspecting a spec/story/epic: lists each child task with status,
     plus a roll-up of how many acceptance items are checked vs total.
+
+    ``--deep`` walks the whole subtree (grandchildren and below) and renders
+    it as an ASCII tree.
     """
     board, _, _ = _get_board()
     try:
@@ -110,14 +140,32 @@ def children_cmd(
         return
 
     parent = result["parent"]
+    total = result["total_acceptance"]
+    acked = result["acked"]
+    pct = int(100 * acked / total) if total else 0
+
+    if deep:
+        rows = board.tree(root=parent_id)
+        for row in rows:
+            t = row["ticket"]
+            ckind = t.get("kind") or "task"
+            kind_disp = f"[magenta]{ckind[:6]:<6}[/magenta]"
+            console.print(
+                f"{row['prefix']}[bold]{t['id']}[/bold]  {kind_disp}  "
+                f"{_priority_color(t['priority'])}  {_status_color(t['status'])}  "
+                f"{t['title'][:55]}"
+            )
+        console.print(
+            f"\n[dim]DoD progress (direct children):[/dim] {acked}/{total} ({pct}%)  "
+            f"[dim]by_status:[/dim] {result['by_status'] or '(none)'}"
+        )
+        return
+
     kind = parent.get("kind") or "task"
     console.print(
         f"[bold]{parent['id']}[/bold] [magenta]{kind}[/magenta] "
         f"{_status_color(parent['status'])} {parent.get('title', '')[:60]}"
     )
-    total = result["total_acceptance"]
-    acked = result["acked"]
-    pct = int(100 * acked / total) if total else 0
     console.print(
         f"  [dim]DoD progress:[/dim] {acked}/{total} ({pct}%)  "
         f"[dim]by_status:[/dim] {result['by_status'] or '(none)'}"
@@ -125,11 +173,13 @@ def children_cmd(
     if not result["children"]:
         console.print("  [dim](no children)[/dim]")
         return
-    for c in result["children"]:
+    last_idx = len(result["children"]) - 1
+    for i, c in enumerate(result["children"]):
+        glyph = "└─ " if i == last_idx else "├─ "
         ckind = c.get("kind") or "task"
         kind_disp = f"[magenta]{ckind[:6]:<6}[/magenta]"
         console.print(
-            f"  [bold]{c['id']}[/bold]  {kind_disp}  {_priority_color(c['priority'])}  "
+            f"{glyph}[bold]{c['id']}[/bold]  {kind_disp}  {_priority_color(c['priority'])}  "
             f"{_status_color(c['status'])}  {c['title'][:55]}"
         )
 
@@ -254,17 +304,71 @@ def add_cmd(ticket_json: str = typer.Argument(..., help="JSON ticket data")):
         raise typer.Exit(1)
 
 
-@app.command("batch")
-def batch_cmd(
-    payload: Optional[str] = typer.Argument(None, help="JSON: {\"shared\":{...},\"tickets\":[...]}"),
-    from_file: Optional[str] = typer.Option(None, "--from-file", "-f", help="Read JSON from a file instead of argv"),
-):
-    """Create N parallel-safe tickets in one call.
+_BATCH_SCHEMA_HELP = """Create N parallel-safe tickets in one atomic call.
 
-    Validates that each ticket declares `files` and that file sets are
-    disjoint between siblings (no two tickets touch the same path). Aborts
-    atomically on any violation — no partial creation.
-    """
+Validates that each ticket declares `files` and that file sets are disjoint
+between siblings (no two tickets touch the same path). Aborts atomically on
+any violation — no partial creation.
+
+JSON schema (top-level object):
+
+    {
+      "shared": {                       // applied to every ticket below
+        "parent":           "TST-001",  //   optional — anchor children under a spec
+        "kind":             "task",     //   optional — task|story|bug|spec|epic|rfc|incident
+        "agent":            ["developer"],
+        "tags":             ["par:auth-flow"],
+        "projects":         ["app"],
+        "priority":         "p2",
+        "sprint":           "2026-W20",
+        "depends":          [],
+        "source_provider":  "linear",   //   optional — inherits to children
+        "source_ref":       "ENG-42",
+        "source_url":       "https://...",
+        "source_label":     "ENG-42: Add JWT"
+      },
+      "tickets": [                      // one row per child to create
+        {
+          "title":      "JWT signing",  //   required
+          "files":      ["src/auth/jwt.py"],   // required — used for disjoint check
+          "acceptance": ["a", "b"],     //   optional — DoD checkboxes
+          "agent":      ["developer"]   //   optional — overrides shared.agent
+        },
+        {
+          "title": "Middleware",
+          "files": ["src/middleware/auth.py"]
+        }
+      ]
+    }
+
+Minimal example:
+
+    hctl board batch '{
+      "shared": {"agent": ["developer"]},
+      "tickets": [
+        {"title": "A", "files": ["src/a.py"]},
+        {"title": "B", "files": ["src/b.py"]}
+      ]
+    }'
+
+Read from a file with --from-file payload.json, or pipe via stdin.
+"""
+
+
+@app.command("batch", help=_BATCH_SCHEMA_HELP)
+def batch_cmd(
+    payload: Optional[str] = typer.Argument(
+        None,
+        help='JSON object: {"shared":{...},"tickets":[{...},...]}. See `--help` for full schema.',
+    ),
+    from_file: Optional[str] = typer.Option(None, "--from-file", "-f", help="Read JSON from a file instead of argv"),
+    schema: bool = typer.Option(False, "--schema", help="Print the JSON payload schema + example and exit"),
+):
+    """Create N parallel-safe tickets in one call. See --help for schema."""
+    if schema:
+        print(_BATCH_SCHEMA_HELP)
+        raise typer.Exit(0)
+
     import sys
     from pathlib import Path as _Path
     board, _, _ = _get_board()
@@ -278,7 +382,7 @@ def batch_cmd(
     else:
         console.print(
             "[red]Pass JSON as argument, via --from-file <path>, or via stdin.[/red]\n"
-            "[dim]Example: hctl board batch '{\"shared\":{\"tags\":[\"par:auth\"]},\"tickets\":[{...},{...}]}'[/dim]"
+            "[dim]Run `hctl board batch --schema` to see the full payload structure.[/dim]"
         )
         raise typer.Exit(1)
 

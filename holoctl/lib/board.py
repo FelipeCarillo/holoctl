@@ -107,6 +107,52 @@ class Board:
                 f"Defined: {', '.join(sorted(defined))}"
             )
 
+    def _validate_parent_change(
+        self, tickets: list[dict], child_id: str, new_parent: object
+    ) -> str | None:
+        """Reject self-parenting, missing parents, and cycles.
+
+        Walks the proposed ancestor chain; if it loops back to ``child_id``
+        the move would close a cycle in the hierarchy. Empty/None clears
+        the parent (orphan-by-design).
+        """
+        if new_parent is None or new_parent == "":
+            return None
+        parent_id = str(new_parent).strip()
+        if not parent_id:
+            return None
+        if parent_id == child_id:
+            raise ValueError(
+                f"Refusing to set parent: ticket {child_id} cannot be its own parent (cycle)."
+            )
+        by_id = {t["id"]: t for t in tickets}
+        if parent_id not in by_id:
+            raise KeyError(
+                f"Parent ticket {parent_id} not found. "
+                "Create it first or pass an existing ID."
+            )
+        # Walk up: if we ever land on child_id, the new parent is actually
+        # a descendant — would close a cycle. Cap depth as a belt-and-braces
+        # guard against any pre-existing corruption.
+        seen: set[str] = set()
+        cursor: str | None = parent_id
+        for _ in range(len(tickets) + 1):
+            if cursor is None or cursor == "":
+                return parent_id
+            if cursor == child_id:
+                raise ValueError(
+                    f"Refusing to set parent: {parent_id} is a descendant of "
+                    f"{child_id} — would create a cycle in the hierarchy."
+                )
+            if cursor in seen:
+                # Pre-existing cycle upstream — refuse rather than loop forever.
+                raise ValueError(
+                    f"Hierarchy is already cyclic at {cursor}; refusing to extend it."
+                )
+            seen.add(cursor)
+            cursor = (by_id.get(cursor) or {}).get("parent")
+        return parent_id
+
     def stat(self) -> dict:
         data = self._load()
         return {**data["meta"]["counts"], "nextId": data["meta"]["nextId"]}
@@ -138,6 +184,105 @@ class Board:
             tickets = [t for t in tickets if t.get("parent") == f["parent"]]
 
         return tickets
+
+    def tree(
+        self,
+        filters: dict | None = None,
+        root: str | None = None,
+    ) -> list[dict]:
+        """Return tickets as a flat list pre-annotated for tree rendering.
+
+        Each row is ``{"ticket": <ticket dict>, "depth": int, "prefix": str}``.
+        ``prefix`` is the pre-baked ASCII glyph string the CLI prints before
+        the ticket id (e.g. ``"│  └─ "``); empty for roots.
+
+        ``filters`` accepts the same keys as :meth:`ls`. When filters drop a
+        descendant whose parent is kept, the parent still shows so the
+        hierarchy reads correctly. Conversely, an ancestor that doesn't match
+        is *kept* if at least one of its descendants matches — pruning a tree
+        from the middle would lie about the structure.
+
+        ``root`` restricts the result to the subtree rooted at that id.
+        """
+        data = self._load()
+        all_tickets: list[dict] = data["tickets"]
+        by_id: dict[str, dict] = {t["id"]: t for t in all_tickets}
+
+        # 1. Apply filters to compute the "matched" set.
+        matched_set: set[str]
+        if filters:
+            matched_set = {t["id"] for t in self.ls(filters)}
+        else:
+            matched_set = {t["id"] for t in all_tickets}
+
+        # 2. Expand matched set with every ancestor — keeps the tree readable.
+        keep: set[str] = set()
+        for tid in matched_set:
+            cursor: str | None = tid
+            depth_guard = 0
+            while cursor and depth_guard <= len(all_tickets):
+                if cursor in keep:
+                    break
+                keep.add(cursor)
+                cursor = (by_id.get(cursor) or {}).get("parent") or None
+                depth_guard += 1
+
+        # 3. Build the children adjacency, then DFS from roots, recording depth
+        #    and whether each ancestor was the last child of its parent (so
+        #    the renderer can decide between │ and a blank for padding).
+        kids: dict[str | None, list[str]] = {}
+        for t in all_tickets:
+            if t["id"] not in keep:
+                continue
+            p = t.get("parent") or None
+            # An item whose parent is outside `keep` is treated as a root
+            # in the rendered tree — otherwise we'd dangle it.
+            if p is not None and p not in keep:
+                p = None
+            kids.setdefault(p, []).append(t["id"])
+
+        # Sort children stably by id for deterministic output.
+        for v in kids.values():
+            v.sort()
+
+        if root is not None:
+            if root not in by_id:
+                raise KeyError(f"Ticket {root} not found")
+            roots = [root]
+        else:
+            roots = kids.get(None, [])
+
+        # `pipe_flags` carries one bool per ancestor level *above* the
+        # current node, in order from the outermost root down: True means
+        # that ancestor had more siblings after it (draw "│  " for the
+        # continuation column), False means it was the last child (draw
+        # "   "). The node itself contributes nothing to `pipe_flags`
+        # until we recurse into its children.
+        out: list[dict] = []
+
+        def _emit(tid: str, depth: int, pipe_flags: list[bool], is_last: bool) -> None:
+            pad = "".join("│  " if flag else "   " for flag in pipe_flags)
+            if depth == 0:
+                prefix = ""
+            else:
+                prefix = pad + ("└─ " if is_last else "├─ ")
+            out.append({"ticket": by_id[tid], "depth": depth, "prefix": prefix})
+            child_ids = kids.get(tid, [])
+            # For the children's prefix: append a column reflecting whether
+            # *this* node had a sibling after it. Roots don't add a column —
+            # the depth-0 row prints nothing in front of the title, so its
+            # children start at column 0 too.
+            if depth == 0:
+                next_flags = pipe_flags
+            else:
+                next_flags = pipe_flags + [not is_last]
+            for i, cid in enumerate(child_ids):
+                _emit(cid, depth + 1, next_flags, i == len(child_ids) - 1)
+
+        for i, rid in enumerate(roots):
+            _emit(rid, 0, [], i == len(roots) - 1)
+
+        return out
 
     def children(self, parent_id: str) -> dict:
         """Return direct children of a work item plus aggregate progress.
@@ -254,6 +399,11 @@ class Board:
             parsed = _normalize_array(parsed if isinstance(parsed, (list, str)) else value)
             if field == "agent":
                 self._validate_agents(parsed)
+        elif field == "parent":
+            # Empty string / null → orphan the item (allowed). Otherwise
+            # the target must exist AND not be a descendant of this ticket,
+            # else we'd close a cycle in the hierarchy.
+            parsed = self._validate_parent_change(data["tickets"], ticket_id, parsed)
 
         now = _now()
         ticket[field] = parsed
@@ -320,6 +470,17 @@ class Board:
         parent = patch.get("parent")
         if parent is not None and not isinstance(parent, str):
             parent = str(parent)
+        if parent:
+            # Existence check: a new ticket can't reference a parent that
+            # isn't on the board yet. (Cycle isn't possible — this row's
+            # ID doesn't exist yet, so no descendant can point back.)
+            if not any(t["id"] == parent for t in data["tickets"]):
+                raise KeyError(
+                    f"Parent ticket {parent} not found. "
+                    "Create the parent first, or omit `parent`."
+                )
+        elif parent == "":
+            parent = None
 
         # External source linkage — when the work item came from a board
         # outside holoctl (Trello card, Linear issue, Azure DevOps PBI,

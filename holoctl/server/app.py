@@ -648,7 +648,7 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
     return f'<div class="kanban" id="kanban">{cols}</div>'
 
 
-_VALID_VIEWS = {"kanban", "list", "timeline"}
+_VALID_VIEWS = {"kanban", "list", "timeline", "tree"}
 
 
 def _format_relative_date(iso: str) -> tuple[str, str]:
@@ -833,6 +833,110 @@ def _list_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
 </div>"""
 
 
+def _tree_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
+    """Hierarchical view: tickets nested by parent/child with ├─ / └─ glyphs.
+
+    Specs/epics anchor their children directly underneath. Tickets that don't
+    name a parent appear as top-level rows. The same `data-*` attributes
+    kanban cards carry are mirrored here so filter/search/sort logic still
+    applies — the tree view just changes how rows are laid out, not what
+    rows exist.
+    """
+    by_id: dict[str, dict] = {t["id"]: t for t in tickets}
+    kids: dict[str | None, list[str]] = {}
+    for t in tickets:
+        p = t.get("parent") or None
+        # Dangling parent reference → treat as root, so the row still renders.
+        if p is not None and p not in by_id:
+            p = None
+        kids.setdefault(p, []).append(t["id"])
+    for v in kids.values():
+        v.sort()
+
+    roots = kids.get(None, [])
+
+    def _row(t: dict, depth: int, pipe_flags: list[bool], is_last: bool) -> str:
+        prio = t.get("priority", "p2")
+        kind = t.get("kind") or "task"
+        sprint = t.get("sprint") or ""
+        agents_list = [a for a in (t.get("agent") or []) if a]
+        agents_csv = ",".join(agents_list)
+        tags_csv = ",".join(t.get("tags") or [])
+        projects_list = [p for p in (t.get("projects") or []) if p]
+        projects_csv = ",".join(projects_list)
+        depends_csv = ",".join(t.get("depends") or [])
+        parent = t.get("parent") or ""
+        src_provider = t.get("source_provider") or ""
+        # Build the glyph column: one span per pipe flag + the final connector.
+        glyph_cells = "".join(
+            f'<span class="tr-glyph tr-glyph-{"pipe" if flag else "blank"}"></span>'
+            for flag in pipe_flags
+        )
+        if depth > 0:
+            connector_cls = "tr-glyph-last" if is_last else "tr-glyph-mid"
+            glyph_cells += f'<span class="tr-glyph {connector_cls}"></span>'
+        kind_html = _kind_chip_html(kind)
+        agents_html = ""
+        if agents_list:
+            avs = "".join(
+                f'<span class="avatar-initials" data-hue="{_avatar_hue(a)}" '
+                f'title="{_e(a)}">{_e(_initials(a))}</span>'
+                for a in agents_list
+            )
+            agents_html = f'<span class="avatar-stack">{avs}</span>'
+        sprint_html = f'<span class="tr-sprint">#{_e(sprint)}</span>' if sprint else ""
+        data_attrs = (
+            f'data-id="{_e(t["id"])}"'
+            f' data-status="{_e(t.get("status", ""))}"'
+            f' data-p="{_e(prio)}"'
+            f' data-agent="{_e(agents_csv)}"'
+            f' data-sprint="{_e(sprint)}"'
+            f' data-tags="{_e(tags_csv)}"'
+            f' data-projects="{_e(projects_csv)}"'
+            f' data-depends="{_e(depends_csv)}"'
+            f' data-kind="{_e(kind)}"'
+            f' data-parent="{_e(parent)}"'
+            f' data-source="{_e(src_provider)}"'
+            f' data-title="{_e(t.get("title", ""))}"'
+            f' data-depth="{depth}"'
+        )
+        return f"""<a class="tree-row" href="/project/{_e(alias)}/board/{_e(t['id'])}" {data_attrs}>
+  <span class="tr-gutter">{glyph_cells}</span>
+  <span class="tr-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
+  {kind_html}
+  <span class="tr-id">{_e(t['id'])}</span>
+  <span class="tr-status" data-status="{_e(t.get("status", ""))}">{_e(t.get("status", ""))}</span>
+  <span class="tr-title">{_e(t.get("title", ""))}</span>
+  {agents_html}
+  {sprint_html}
+</a>"""
+
+    rows_html: list[str] = []
+
+    def _emit(tid: str, depth: int, pipe_flags: list[bool], is_last: bool) -> None:
+        t = by_id[tid]
+        rows_html.append(_row(t, depth, pipe_flags, is_last))
+        child_ids = kids.get(tid, [])
+        if depth == 0:
+            next_flags = pipe_flags
+        else:
+            next_flags = pipe_flags + [not is_last]
+        for i, cid in enumerate(child_ids):
+            _emit(cid, depth + 1, next_flags, i == len(child_ids) - 1)
+
+    for i, rid in enumerate(roots):
+        _emit(rid, 0, [], i == len(roots) - 1)
+
+    if not rows_html:
+        body = '<div class="tree-empty">No tickets to render.</div>'
+    else:
+        body = "".join(rows_html)
+
+    return f"""<div class="tree-view" id="tree-view">
+  <div class="tree-body">{body}</div>
+</div>"""
+
+
 def _timeline_lane_key(ticket: dict, group_by: str) -> tuple[str, str]:
     """(bucket-id, display-label) for a ticket given the current group axis."""
     if group_by == "agent":
@@ -1005,6 +1109,8 @@ def _board_page(project: dict, tickets: list[dict], config: dict, view: str = "k
         body = _list_html(tickets, statuses, alias)
     elif view == "timeline":
         body = _timeline_html(tickets, statuses, alias)
+    elif view == "tree":
+        body = _tree_html(tickets, statuses, alias)
     else:
         body = _kanban_html(tickets, statuses, alias, project_root=project_root)
     return header + _board_controls_html(view=view) + body
@@ -1037,12 +1143,14 @@ def _board_controls_html(view: str = "kanban") -> str:
     group_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in group_opts)
     is_list = view == "list"
     is_timeline = view == "timeline"
-    is_kanban = not (is_list or is_timeline)
+    is_tree = view == "tree"
+    is_kanban = not (is_list or is_timeline or is_tree)
     def _tab(active: bool) -> tuple[str, str]:
         return ("active" if active else "", "true" if active else "false")
     k_cls, k_sel = _tab(is_kanban)
     l_cls, l_sel = _tab(is_list)
     t_cls, t_sel = _tab(is_timeline)
+    tr_cls, tr_sel = _tab(is_tree)
     return f"""<div class="board-controls" id="board-controls" data-current-view="{_e(view)}">
   <div class="bc-row bc-row-primary">
     <div class="view-switcher" role="tablist" aria-label="Board view">
@@ -1054,6 +1162,9 @@ def _board_controls_html(view: str = "kanban") -> str:
       </button>
       <button class="view-tab {t_cls}" data-view="timeline" role="tab" aria-selected="{t_sel}">
         <span class="view-tab-glyph">⤳</span> Timeline
+      </button>
+      <button class="view-tab {tr_cls}" data-view="tree" role="tab" aria-selected="{tr_sel}">
+        <span class="view-tab-glyph">⫶</span> Tree
       </button>
     </div>
     <div class="bc-search">

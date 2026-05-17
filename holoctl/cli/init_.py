@@ -104,6 +104,7 @@ def init_cmd(
     mem = Memory(cwd)
     mem.ensure_seed(project_name)
     mem.ensure_gitignore()
+    _ensure_workspace_gitignore(cwd)
 
     templates = get_templates(config)
     for rel_path, content in templates.items():
@@ -173,6 +174,7 @@ def _resync_existing(cwd: Path, config: dict, *, skip_compile: bool, bare: bool)
     mem = Memory(cwd)
     mem.ensure_seed(config.get("project", {}).get("name", cwd.name))
     mem.ensure_gitignore()
+    _ensure_workspace_gitignore(cwd)
 
     # Materialize template-managed files but never overwrite user content.
     # The conservative default: only write essentials (matches what
@@ -211,6 +213,26 @@ def _resync_existing(cwd: Path, config: dict, *, skip_compile: bool, bare: bool)
         except Exception as e:
             console.print(f"  [red]✗ compile {tgt}:[/red] {e}")
     console.print("")
+
+
+def _ensure_workspace_gitignore(cwd: Path) -> None:
+    """Seed `.holoctl/.gitignore` so transient debris stays out of git.
+
+    Idempotent: never overwrites an existing file. The defaults cover the
+    persona-suggester cache (`.cache/`) and other ephemeral artefacts that
+    skills/agents stash inside the workspace dir.
+    """
+    gi = cwd / ".holoctl" / ".gitignore"
+    if gi.exists():
+        return
+    gi.parent.mkdir(parents=True, exist_ok=True)
+    gi.write_text(
+        "# holoctl workspace — local-only debris (edit freely).\n"
+        "# Skill caches, persona-suggester memo, MCP scratch files, etc.\n"
+        ".cache/\n"
+        "*.tmp\n",
+        encoding="utf-8",
+    )
 
 
 def _semver_lt(a: str, b: str) -> bool:
