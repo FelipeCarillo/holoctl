@@ -53,9 +53,11 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 from .routes.home import router as _home_router  # noqa: E402
 from .routes.project_board import router as _project_board_router  # noqa: E402
 from .routes.project_detail import router as _project_detail_router  # noqa: E402
+from .routes.project_meta import router as _project_meta_router  # noqa: E402
 app.include_router(_home_router)
 app.include_router(_project_board_router)
 app.include_router(_project_detail_router)
+app.include_router(_project_meta_router)
 
 # Cache for _get_projects() — git_info subprocess is slow with many repos.
 # TTL is short so the dashboard still feels live.
@@ -1570,48 +1572,6 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
 
 # ── routes ───────────────────────────────────────────────────────────────────
 
-@app.get("/project/{alias}/agents", response_class=HTMLResponse)
-def project_agents(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    agents = _read_agents(Path(project["path"]))
-    return _render(
-        project["name"], _agents_page(agents, alias),
-        current_alias=alias, current_tab="agents",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Agents"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/commands", response_class=HTMLResponse)
-def project_commands(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    commands = _read_commands(Path(project["path"]))
-    return _render(
-        project["name"], _commands_page(commands, alias),
-        current_alias=alias, current_tab="commands",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Commands"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/context", response_class=HTMLResponse)
-def project_context(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    docs = _read_context_docs(Path(project["path"]))
-    return _render(
-        project["name"], _context_page(docs, alias),
-        current_alias=alias, current_tab="context",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Context"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
 def _doc_detail_page(title: str, body: str, alias: str, kind: str, meta: dict | None = None) -> str:
     back = f'<a class="back-link" href="/project/{_e(alias)}/{_e(kind)}"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to {_e(kind.capitalize())}</a>'
     body_html = _render_markdown(_strip_empty_sections(body))
@@ -1722,50 +1682,10 @@ def project_context_detail(alias: str, filename: str):
     )
 
 
-@app.get("/project/{alias}/repos", response_class=HTMLResponse)
-def project_repos(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    # Dirty-flag fetching is opt-in via config.git.checkDirty (default false).
-    # When off, this route still works — it just won't show the dirty asterisk.
-    # When on, each subrepo costs one `git status --porcelain` subprocess.
-    check_dirty = project["config"].get("git", {}).get("checkDirty", False)
-    repos = discover_repos(
-        Path(project["path"]),
-        include_manual=project["config"]["project"].get("repos", []),
-        with_dirty=check_dirty,
-    )
-    board = Board(Path(project["path"]), project["config"])
-    all_tickets = board.ls()
-    for r in repos:
-        r["ticketCount"] = sum(1 for t in all_tickets if r["name"] in (t.get("projects") or []))
-    return _render(
-        project["name"], _repos_page(repos, alias),
-        current_alias=alias, current_tab="repos",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Repos"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
 @app.get("/project/{alias}")
 def project_redirect(alias: str):
     from fastapi.responses import RedirectResponse
     return RedirectResponse(f"/project/{alias}/board")
-
-
-@app.get("/agents", response_class=HTMLResponse)
-def global_agents():
-    projects = _get_projects()
-    all_agents = []
-    for p in projects:
-        for a in _read_agents(Path(p["path"])):
-            all_agents.append({**a, "project": p["alias"]})
-    return _render(
-        "Agent Registry", _agents_page(all_agents),
-        projects=projects,
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": "Agent Registry"}],
-    )
 
 
 # ── API ───────────────────────────────────────────────────────────────────────

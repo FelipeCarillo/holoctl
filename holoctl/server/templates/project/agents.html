@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+{% if is_empty %}
+<div class="empty-state"><p>No agents defined.</p></div>
+{% else %}
+<div class="agent-grid">
+  {% for a in cards %}
+  <a href="{{ a.link }}" class="agent-card">
+    <div class="agent-card-header">
+      <span class="agent-card-name">{{ a.name }}</span>
+      <span class="trigger-badge">{{ a.trigger }}</span>
+      <span class="model-badge {{ a.model }}">{{ a.model }}</span>
+    </div>
+    <div class="agent-card-desc">{{ a.desc }}</div>
+    <div class="agent-card-meta">
+      {% for t in a.tools %}<span class="tool-chip">{{ t }}</span>{% endfor %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
