@@ -1,39 +1,20 @@
 /* ── Responsive
-   Breakpoints (mobile-first comments, but rules are max-width):
+   Breakpoints (rules are max-width):
    - 1280: minor density tweaks
-   - 1024: auto-collapse sidebar to icon-only column (mirrors
-           [data-sidebar="collapsed"] rules so we don't depend on JS)
-   - 768:  drop breadcrumbs and project path, kanban columns scroll-snap
-   - 480:  shrink sidebar to 56px, hide search and view-tab labels,
-           kanban columns occupy near-full viewport width
+   - 768:  hide breadcrumb + board path, kanban columns scroll-snap,
+           detail page stacks to single column
+   - 480:  shrink topbar, drop search and view-tab labels, kanban
+           columns occupy near-full viewport width
    ────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 1280px) {
   :root { --col-w: 280px; }
 }
 
-@media (max-width: 1024px) {
-  .sidebar { width: 64px; }
-  .main { margin-left: 64px; }
-  .nav-item-text,
-  .sidebar-brand-name,
-  .nav-item .badge,
-  .nav-group-label,
-  .project-path { display: none; }
-  .nav-item { justify-content: center; padding: 8px; }
-  .sidebar-header {
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 8px;
-    align-items: center;
-  }
-  .sidebar-brand { gap: 0; }
-  .sidebar-header-actions { flex-direction: column; }
-  .sidebar-footer { padding: 12px 8px; }
-}
-
 @media (max-width: 768px) {
   .topbar-breadcrumb { display: none; }
+  .topbar-brand .brand-name { display: none; }
+  .topbar { padding: 0 12px; }
   .board-header { flex-wrap: wrap; gap: 8px; }
   .board-header-text .board-path { display: none; }
   /* Snap-scroll between status columns instead of cramming them all
@@ -59,8 +40,6 @@
 
 @media (max-width: 480px) {
   :root { --header-h: 44px; }
-  .sidebar { width: 56px; }
-  .main { margin-left: 56px; }
   .board-header { padding: 10px 12px; }
   .board-title { font-size: 18px; }
   .bc-search { display: none; }

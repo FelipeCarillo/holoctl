@@ -1,3 +1,7 @@
+<a href="/" class="topbar-brand" title="holoctl home">
+  <span class="logo">P</span>
+  <span class="brand-name">holoctl</span>
+</a>
 <div class="topbar-breadcrumb">
 {%- for b in breadcrumbs or [] -%}
   {%- if b.get('href') -%}
@@ -6,4 +10,11 @@
     <span>{{ b['label'] }}</span>
   {%- endif -%}
 {%- endfor -%}
-</div><div class="topbar-actions">{{ actions | safe }}</div>
+</div>
+<div class="topbar-actions">
+  {{ actions | safe }}
+  <button class="icon-btn" onclick="__toggleTheme()" title="Toggle theme">
+    <span class="theme-icon-dark">{% include "icons/moon.svg" %}</span>
+    <span class="theme-icon-light">{% include "icons/sun.svg" %}</span>
+  </button>
+</div>

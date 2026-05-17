@@ -10,7 +10,6 @@
 </head>
 <body>
   <div class="app" id="app">
-    <aside class="sidebar" id="sidebar">{% include "partials/_sidebar.html" %}</aside>
     <div class="main">
       <div class="topbar">{% include "partials/_topbar.html" %}</div>
       <div class="content-wrap">{% if tabs %}{% include "partials/_tabs.html" %}{% endif %}<div class="content"><div class="content-body">{% block content %}{{ content | safe }}{% endblock %}</div></div></div>

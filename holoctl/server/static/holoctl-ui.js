@@ -27,21 +27,6 @@
     updateThemeIcons(next);
   };
 
-  // ── Sidebar collapse (state lives on <html data-sidebar="collapsed">,
-  //    set by the inline boot script in <head> to avoid layout flash) ──
-
-  window.__toggleSidebar = function () {
-    const html = document.documentElement;
-    const collapsed = html.getAttribute('data-sidebar') === 'collapsed';
-    if (collapsed) {
-      html.removeAttribute('data-sidebar');
-      localStorage.setItem('holoctl-sidebar', 'open');
-    } else {
-      html.setAttribute('data-sidebar', 'collapsed');
-      localStorage.setItem('holoctl-sidebar', 'collapsed');
-    }
-  };
-
   // ── Toast Notifications ──
 
   function showToast(message) {

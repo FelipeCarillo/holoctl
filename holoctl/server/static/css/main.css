@@ -1,6 +1,5 @@
 /* ── Main ── */
 .main {
-  margin-left: var(--sidebar-w);
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -32,6 +31,34 @@
 [data-theme="light"] .topbar { background: rgba(248,248,250,0.85); }
 [data-theme="dark"] .topbar { background: rgba(14,14,18,0.85); }
 
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--text-0);
+  flex-shrink: 0;
+}
+
+.topbar-brand .logo {
+  width: 26px; height: 26px;
+  background: var(--accent);
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: white;
+  font-family: var(--font-mono);
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.topbar-brand .brand-name { color: var(--text-0); }
+.topbar-brand:hover .brand-name { color: var(--accent); }
+
 .topbar-breadcrumb {
   font-size: 13px;
   color: var(--text-2);
@@ -39,6 +66,8 @@
   align-items: center;
   gap: 6px;
   font-weight: 500;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
 }
 
 .topbar-breadcrumb a { color: var(--text-2); transition: color 0.15s; }
@@ -46,6 +75,30 @@
 .topbar-breadcrumb .sep { color: var(--text-3); font-size: 11px; }
 
 .topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* Topbar icon buttons (theme toggle etc.) — same shape used by sidebar
+   previously, now lives here. */
+.icon-btn {
+  width: 30px; height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease);
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--text-0);
+}
+
+.icon-btn svg { width: 16px; height: 16px; }
 
 .content {
   flex: 1;
