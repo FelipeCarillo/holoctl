@@ -13,6 +13,9 @@ from ..lib.config import find_project_root, load_config
 from ..lib.board import Board
 from ..lib.discover import discover_repos
 from ..lib.markdown import parse_frontmatter
+from .jinja import render as _jinja_render
+from .views.avatars import initials as _initials, avatar_hue as _avatar_hue
+from .views.dates import format_relative_date as _format_relative_date
 
 
 def _list_workspace_compat() -> list[dict]:
@@ -161,99 +164,11 @@ def _read_context_docs(project_path: Path) -> list[dict]:
 
 
 # ── layout ───────────────────────────────────────────────────────────────────
-
-def _layout(title: str, body: str, *, sidebar: str = "", topbar: str = "") -> str:
-    # Inline script in <head> applies theme + sidebar state BEFORE first paint to
-    # avoid the dark→light flash on navigation.
-    boot_script = (
-        "<script>(function(){try{"
-        "var t=localStorage.getItem('holoctl-theme')||'dark';"
-        "document.documentElement.setAttribute('data-theme',t);"
-        "if(localStorage.getItem('holoctl-sidebar')==='collapsed'){"
-        "document.documentElement.setAttribute('data-sidebar','collapsed');"
-        "}"
-        "}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>"
-    )
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{_e(title)} — holoctl</title>
-  {boot_script}
-  <link rel="stylesheet" href="/static/holoctl.css">
-</head>
-<body>
-  <div class="app" id="app">
-    <aside class="sidebar" id="sidebar">{sidebar}</aside>
-    <div class="main">
-      <div class="topbar">{topbar}</div>
-      <div class="content-wrap">{body}</div>
-    </div>
-  </div>
-  <script src="/static/holoctl-ui.js"></script>
-</body>
-</html>"""
-
-
-def _sidebar(projects: list[dict], current_alias: str = "") -> str:
-    links = ""
-    for p in projects:
-        active = "active" if p["alias"] == current_alias else ""
-        doing = p.get("counts", {}).get("doing", 0)
-        badge = f'<span class="badge">{int(doing)}</span>' if doing > 0 else ""
-        initial = (p.get("prefix") or p["name"][:2] or "?")[:2].upper()
-        links += (
-            f'<a href="/project/{_e(p["alias"])}/board" class="nav-item {active}" title="{_e(p["name"])}">'
-            f'<span class="nav-icon">{_e(initial)}</span>'
-            f'<span class="nav-item-text">{_e(p["name"])}</span>'
-            f'{badge}</a>'
-        )
-
-    theme_btn = f"""<button class="icon-btn" onclick="__toggleTheme()" title="Toggle theme">
-      <span class="theme-icon-dark">{_ICON_MOON}</span>
-      <span class="theme-icon-light">{_ICON_SUN}</span>
-    </button>"""
-    collapse_btn = f'<button class="icon-btn" onclick="__toggleSidebar()" title="Toggle sidebar">{_ICON_MENU}</button>'
-
-    empty_nav = '<div class="nav-item" style="opacity:.5"><span class="nav-icon">?</span><span class="nav-item-text">No projects</span></div>'
-    return f"""
-<div class="sidebar-header">
-  <a href="/" class="sidebar-brand" title="holoctl home">
-    <span class="logo">P</span>
-    <span class="sidebar-brand-name">holoctl</span>
-  </a>
-  <div class="sidebar-header-actions">{theme_btn}{collapse_btn}</div>
-</div>
-<nav class="sidebar-nav">
-  <div class="nav-group">
-    <div class="nav-group-label">Projects</div>
-    {links if links else empty_nav}
-  </div>
-</nav>
-<div class="sidebar-footer">
-  <a href="/agents" class="nav-item" title="Agents"><span class="nav-icon">★</span><span class="nav-item-text">Agents</span></a>
-</div>"""
-
-
-def _topbar(title: str, breadcrumbs: list[dict] = None, actions: str = "") -> str:
-    crumbs = ""
-    for b in (breadcrumbs or []):
-        if b.get("href"):
-            crumbs += f'<a href="{_e(b["href"])}">{_e(b["label"])}</a><span class="sep">/</span>'
-        else:
-            crumbs += f'<span>{_e(b["label"])}</span>'
-    return f'<div class="topbar-breadcrumb">{crumbs}</div><div class="topbar-actions">{actions}</div>'
-
-
-def _tabs(tabs: list[dict], current: str, base: str) -> str:
-    out = '<div class="tabs">'
-    for t in tabs:
-        active = "active" if t["id"] == current else ""
-        out += f'<a href="{_e(base)}/{_e(t["id"])}" class="tab {active}">{_e(t["label"])}</a>'
-    out += "</div>"
-    return out
-
+#
+# The shell (doctype, sidebar, topbar, tabs, content wrapper) lives in Jinja2
+# templates under `server/templates/`. Python here only wires data into them.
+# Page bodies are still string-built by `_xxx_html()` helpers and passed as
+# `content=` for now; each view migrates to its own template in later PRs.
 
 _PROJECT_TABS = [
     {"id": "board", "label": "Board"},
@@ -269,22 +184,22 @@ def _render(title: str, content: str, *, projects: list[dict] | None = None,
             breadcrumbs: list[dict] | None = None,
             tabs: list[dict] | None = None, tab_base: str = "",
             actions: str = "") -> str:
-    all_projects = projects if projects is not None else _get_projects()
-    sidebar = _sidebar(all_projects, current_alias)
-    topbar = _topbar(title, breadcrumbs or [], actions)
-    tabs_html = _tabs(tabs, current_tab, tab_base) if tabs else ""
-    # Inner `.content-body` is the scroll container. CSS picks the right
-    # behavior per page: vertical-scroll for grids/lists, flex-column with
-    # internal kanban scroll on the board.
-    return _layout(
-        title,
-        tabs_html + f'<div class="content"><div class="content-body">{content}</div></div>',
-        sidebar=sidebar, topbar=topbar,
+    return _jinja_render(
+        "base.html",
+        title=title,
+        content=content,
+        projects=projects if projects is not None else _get_projects(),
+        current_alias=current_alias,
+        current_tab=current_tab,
+        breadcrumbs=breadcrumbs or [],
+        tabs=tabs,
+        tab_base=tab_base,
+        actions=actions,
     )
 
 
 def _not_found_html(msg: str = "Not found") -> str:
-    return f'<div class="empty-state"><h3>{_e(msg)}</h3></div>'
+    return _jinja_render("partials/_empty_state.html", msg=msg)
 
 
 # ── page generators ───────────────────────────────────────────────────────────
@@ -323,29 +238,6 @@ def _home_page(projects: list[dict]) -> str:
   <div class="project-card-meta">{targets}</div>
 </a>"""
     return f'<div class="project-grid">{cards}</div>'
-
-
-_AVATAR_HUE_COUNT = 6
-
-
-def _initials(name: str) -> str:
-    """Two-character uppercase glyph for an avatar circle."""
-    if not name:
-        return "?"
-    parts = re.split(r"[\s\-_./]+", name.strip())
-    parts = [p for p in parts if p]
-    if not parts:
-        return name.strip()[:2].upper()
-    if len(parts) == 1:
-        return parts[0][:2].upper()
-    return (parts[0][:1] + parts[1][:1]).upper()
-
-
-def _avatar_hue(name: str) -> int:
-    """Deterministic 0..5 hue index — same name always lands the same color."""
-    if not name:
-        return 0
-    return sum(ord(c) for c in name) % _AVATAR_HUE_COUNT
 
 
 def _ticket_preview(project_root: Path, ticket: dict, max_chars: int = 80) -> str:
@@ -649,28 +541,6 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
 
 
 _VALID_VIEWS = {"kanban", "list", "timeline", "tree"}
-
-
-def _format_relative_date(iso: str) -> tuple[str, str]:
-    """Return (display, full) — display is short, full is the original ISO.
-
-    Used in the dense list view so the Updated column reads "May 7" / "2h ago"
-    instead of dragging the full ISO string. We don't reach for full
-    locale-aware relative time here; dashboards are short-lived sessions
-    and the agent typically wants "today / yesterday / older".
-    """
-    if not iso:
-        return ("—", "")
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(iso))
-    if not m:
-        return (str(iso)[:10], str(iso))
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    try:
-        mo = int(m.group(2)); day = int(m.group(3))
-        return (f"{months[mo - 1]} {day}", str(iso))
-    except (ValueError, IndexError):
-        return (str(iso)[:10], str(iso))
 
 
 def _list_row_html(t: dict, alias: str) -> str:

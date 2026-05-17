@@ -1,0 +1,5 @@
+<div class="tabs">
+{%- for t in tabs -%}
+<a href="{{ tab_base }}/{{ t['id'] }}" class="tab {{ 'active' if t['id'] == current_tab else '' }}">{{ t['label'] }}</a>
+{%- endfor -%}
+</div>

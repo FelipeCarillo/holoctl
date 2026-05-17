@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}{{ title }} — holoctl{% endblock %}</title>
+  {% include "partials/_boot.html" %}
+  <link rel="stylesheet" href="/static/holoctl.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">{% include "partials/_sidebar.html" %}</aside>
+    <div class="main">
+      <div class="topbar">{% include "partials/_topbar.html" %}</div>
+      <div class="content-wrap">{% if tabs %}{% include "partials/_tabs.html" %}{% endif %}<div class="content"><div class="content-body">{% block content %}{{ content | safe }}{% endblock %}</div></div></div>
+    </div>
+  </div>
+  <script src="/static/holoctl-ui.js"></script>
+</body>
+</html>
