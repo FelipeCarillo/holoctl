@@ -51,7 +51,9 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 # Modular routers. Each lives under server/routes/. New views land here as
 # they migrate from string-built helpers below to Jinja templates.
 from .routes.home import router as _home_router  # noqa: E402
+from .routes.project_board import router as _project_board_router  # noqa: E402
 app.include_router(_home_router)
+app.include_router(_project_board_router)
 
 # Cache for _get_projects() — git_info subprocess is slow with many repos.
 # TTL is short so the dashboard still feels live.
@@ -1566,27 +1568,6 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
 
 # ── routes ───────────────────────────────────────────────────────────────────
 
-@app.get("/project/{alias}/board", response_class=HTMLResponse)
-def project_board(alias: str, view: str = "kanban"):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    if view not in _VALID_VIEWS:
-        view = "kanban"
-    board = Board(Path(project["path"]), project["config"])
-    tickets = board.ls()
-    # LIVE indicator now lives in the topbar — frees the board header for
-    # the project title + path + primary CTA.
-    live_action = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
-    return _render(
-        project["name"], _board_page(project, tickets, project["config"], view=view),
-        current_alias=alias, current_tab="board",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-        actions=live_action,
-    )
-
-
 @app.get("/project/{alias}/agents", response_class=HTMLResponse)
 def project_agents(alias: str):
     project = _get_project(alias)
@@ -1827,26 +1808,6 @@ def api_board(alias: str):
     if index_path.exists():
         return json.loads(index_path.read_text(encoding="utf-8"))
     return {"meta": {}, "tickets": []}
-
-
-@app.get("/api/project/{alias}/board-html", response_class=HTMLResponse)
-def api_board_html(alias: str):
-    """Return just the `<div class="kanban">` fragment.
-
-    The dashboard's SSE client swaps this into the page on every
-    `board-update` event, so tickets appear/move/disappear without a
-    full reload.
-    """
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
-    project_root = Path(project["path"])
-    board = Board(project_root, project["config"])
-    tickets = board.ls()
-    return HTMLResponse(_kanban_html(
-        tickets, project["config"]["board"]["statuses"], alias,
-        project_root=project_root,
-    ))
 
 
 @app.get("/api/project/{alias}/list-html", response_class=HTMLResponse)

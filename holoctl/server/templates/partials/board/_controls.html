@@ -1,0 +1,73 @@
+{% set SORT_OPTS = [
+  ('created', 'Created · old → new'),
+  ('created-desc', 'Created · new → old'),
+  ('updated-desc', 'Updated · recent first'),
+  ('priority', 'Priority · p0 → p3'),
+  ('title', 'Title · A → Z'),
+  ('id', 'ID · numeric')
+] %}
+{% set GROUP_OPTS = [
+  ('status', 'Status'),
+  ('priority', 'Priority'),
+  ('sprint', 'Sprint'),
+  ('agent', 'Agent'),
+  ('tag', 'Tag')
+] %}
+<div class="board-controls" id="board-controls" data-current-view="{{ view }}">
+  <div class="bc-row bc-row-primary">
+    <div class="view-switcher" role="tablist" aria-label="Board view">
+      <button class="view-tab {{ 'active' if view == 'kanban' else '' }}" data-view="kanban" role="tab" aria-selected="{{ 'true' if view == 'kanban' else 'false' }}">
+        <span class="view-tab-glyph">▦</span> Kanban
+      </button>
+      <button class="view-tab {{ 'active' if view == 'list' else '' }}" data-view="list" role="tab" aria-selected="{{ 'true' if view == 'list' else 'false' }}">
+        <span class="view-tab-glyph">☰</span> List
+      </button>
+      <button class="view-tab {{ 'active' if view == 'timeline' else '' }}" data-view="timeline" role="tab" aria-selected="{{ 'true' if view == 'timeline' else 'false' }}">
+        <span class="view-tab-glyph">⤳</span> Timeline
+      </button>
+      <button class="view-tab {{ 'active' if view == 'tree' else '' }}" data-view="tree" role="tab" aria-selected="{{ 'true' if view == 'tree' else 'false' }}">
+        <span class="view-tab-glyph">⫶</span> Tree
+      </button>
+    </div>
+    <div class="bc-search">
+      <span class="bc-search-glyph" aria-hidden="true">🔍</span>
+      <input type="search" id="bc-search" placeholder="Search tickets…" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+  <div class="bc-row bc-row-secondary">
+    <div class="bc-chips" id="bc-chips" aria-label="Active filters"></div>
+    <button class="bc-add-filter" id="bc-add-filter" aria-haspopup="dialog" aria-expanded="false">
+      <span class="bc-add-filter-glyph">+</span> Add filter
+    </button>
+    <div class="bc-spacer"></div>
+    <label class="bc-inline-select">
+      <span>Sort</span>
+      <select id="bc-sort" data-sort>{% for v, label in SORT_OPTS %}<option value="{{ v }}">{{ label }}</option>{% endfor %}</select>
+    </label>
+    <label class="bc-inline-select">
+      <span>Group</span>
+      <select id="bc-group" data-group>{% for v, label in GROUP_OPTS %}<option value="{{ v }}">{{ label }}</option>{% endfor %}</select>
+    </label>
+    <button class="bc-reset" id="bc-reset" data-bc-reset title="Reset filters / sort / group">↺</button>
+  </div>
+  <div class="bc-popover" id="bc-popover" hidden role="dialog" aria-label="Add filter">
+    <div class="bc-popover-step" data-step="axis">
+      <div class="bc-popover-title">Filter by</div>
+      <div class="bc-popover-axes">
+        <button class="bc-popover-axis" data-axis="status">Status</button>
+        <button class="bc-popover-axis" data-axis="priority">Priority</button>
+        <button class="bc-popover-axis" data-axis="agent">Agent</button>
+        <button class="bc-popover-axis" data-axis="sprint">Sprint</button>
+        <button class="bc-popover-axis" data-axis="tag">Tag</button>
+        <button class="bc-popover-axis" data-axis="project">Project</button>
+      </div>
+    </div>
+    <div class="bc-popover-step" data-step="value" hidden>
+      <div class="bc-popover-title">
+        <button class="bc-popover-back" id="bc-popover-back" aria-label="Back to axis selection">‹</button>
+        <span id="bc-popover-axis-label">Filter by</span>
+      </div>
+      <div class="bc-popover-values" id="bc-popover-values"></div>
+    </div>
+  </div>
+</div>

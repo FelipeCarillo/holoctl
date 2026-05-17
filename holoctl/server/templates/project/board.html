@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "partials/board/_header.html" %}
+{% include "partials/board/_controls.html" %}
+{% if view == 'kanban' %}
+{% include "partials/board/_kanban.html" %}
+{% else %}
+{{ body_html | safe }}
+{% endif %}
+{% endblock %}

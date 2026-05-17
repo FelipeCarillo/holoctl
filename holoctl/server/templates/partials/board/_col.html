@@ -1,0 +1,15 @@
+{% from "partials/board/_card.html" import kanban_card %}
+<div class="kanban-col" data-status="{{ col.status }}" data-bucket="{{ col.status }}">
+  <div class="kanban-col-header">
+    <span class="col-label">{{ col.status }}</span>
+    <span class="count">{{ col.count }}</span>
+  </div>
+  <div class="kanban-cards">
+    {%- if col.tickets -%}
+      {% for c in col.tickets %}{{ kanban_card(c) }}{% endfor %}
+    {%- else -%}
+      <div class="kanban-empty"><div class="kanban-empty-glyph">·</div><div class="kanban-empty-msg">No tickets here</div></div>
+    {%- endif -%}
+  </div>
+  <button type="button" class="kanban-col-add" data-add-ticket data-status="{{ col.status }}" aria-expanded="false"><span class="kanban-col-add-glyph">+</span> Add ticket</button>
+</div>
