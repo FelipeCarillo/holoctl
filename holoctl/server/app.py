@@ -53,10 +53,12 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 from .routes.home import router as _home_router  # noqa: E402
 from .routes.project_board import router as _project_board_router  # noqa: E402
 from .routes.project_detail import router as _project_detail_router  # noqa: E402
+from .routes.project_doc import router as _project_doc_router  # noqa: E402
 from .routes.project_meta import router as _project_meta_router  # noqa: E402
 app.include_router(_home_router)
 app.include_router(_project_board_router)
 app.include_router(_project_detail_router)
+app.include_router(_project_doc_router)
 app.include_router(_project_meta_router)
 
 # Cache for _get_projects() — git_info subprocess is slow with many repos.
@@ -1056,100 +1058,6 @@ def _board_controls_html(view: str = "kanban") -> str:
 </div>"""
 
 
-def _agents_page(agents: list[dict], alias: str = "") -> str:
-    if not agents:
-        return '<div class="empty-state"><p>No agents defined.</p></div>'
-    cards = ""
-    for a in agents:
-        name = a.get("name", a.get("file", "?").replace(".md", ""))
-        model = a.get("model", "standard")
-        trigger = a.get("trigger", "ticket")
-        desc = a.get("description", "")
-        tools = a.get("tools", [])
-        if isinstance(tools, str):
-            tools = [t.strip() for t in tools.split(",")]
-        tool_chips = "".join(f'<span class="tool-chip">{_e(t)}</span>' for t in tools)
-        link = f"/project/{_e(alias)}/agents/{_e(a.get('file','').replace('.md',''))}" if alias else "#"
-        cards += f"""<a href="{link}" class="agent-card">
-  <div class="agent-card-header">
-    <span class="agent-card-name">{_e(name)}</span>
-    <span class="trigger-badge">{_e(trigger)}</span>
-    <span class="model-badge {_e(model)}">{_e(model)}</span>
-  </div>
-  <div class="agent-card-desc">{_e(desc)}</div>
-  <div class="agent-card-meta">{tool_chips}</div>
-</a>"""
-    return f'<div class="agent-grid">{cards}</div>'
-
-
-def _commands_page(commands: list[dict], alias: str) -> str:
-    if not commands:
-        return '<div class="empty-state"><p>No commands defined.</p></div>'
-    items = ""
-    for c in commands:
-        name = c.get("name", c.get("file", "?").replace(".md", ""))
-        desc = c.get("description", "")
-        link = f"/project/{_e(alias)}/commands/{_e(c.get('file','').replace('.md',''))}"
-        items += f"""<a href="{link}" class="context-item">
-  <div class="context-item-icon command">{_ICON_CMD}</div>
-  <div>
-    <div class="context-item-name">/{_e(name)}</div>
-    <div class="context-item-desc">{_e(desc)}</div>
-  </div>
-</a>"""
-    return f'<div class="context-list">{items}</div>'
-
-
-def _context_page(docs: list[dict], alias: str) -> str:
-    if not docs:
-        return '<div class="empty-state"><p>No context documents.</p></div>'
-    _icon_map = {
-        "objective": "objective", "architecture": "architecture",
-        "conventions": "conventions", "decisions": "folder",
-        "documents": "folder",
-    }
-    items = ""
-    for d in docs:
-        stem = d["name"].replace(".md", "").lower()
-        if d["isDir"]:
-            icon_cls = _icon_map.get(stem, "folder")
-            icon_svg = _ICON_FOLDER
-        else:
-            icon_cls = _icon_map.get(stem, "doc")
-            icon_svg = _ICON_DOC
-        link = f"/project/{_e(alias)}/context/{_e(d['name'])}" if not d["isDir"] else "#"
-        items += f"""<a href="{link}" class="context-item">
-  <div class="context-item-icon {icon_cls}">{icon_svg}</div>
-  <div>
-    <div class="context-item-name">{_e(d['name'])}</div>
-    <div class="context-item-desc">{_e(d['description'])}</div>
-  </div>
-</a>"""
-    return f'<div class="context-list">{items}</div>'
-
-
-def _repos_page(repos: list[dict], alias: str) -> str:
-    if not repos:
-        return '<div class="empty-state"><p>No repos registered. Run <code>holoctl repo add &lt;path&gt;</code>.</p></div>'
-    items = ""
-    for r in repos:
-        git = r.get("git", {})
-        branch = git.get("branch", "—") if git.get("isGit") else "no git"
-        dirty = " *" if git.get("dirty") else ""
-        items += f"""<div class="context-item">
-  <div class="context-item-icon doc">{_ICON_REPO}</div>
-  <div style="flex:1">
-    <div class="context-item-name">{_e(r['name'])}</div>
-    <div class="context-item-desc">{_e(r.get('path',''))}</div>
-  </div>
-  <div style="display:flex;gap:6px;align-items:center">
-    <span class="chip chip-agent">{_e(branch)}{dirty}</span>
-    <span class="chip chip-sprint">{int(r.get('ticketCount',0))} tickets</span>
-  </div>
-</div>"""
-    return f'<div class="context-list">{items}</div>'
-
-
 _PLACEHOLDER_PATTERNS = (
     re.compile(r"^\([^)]*\)\s*$"),                        # `(some hint)`
     re.compile(r"^[-*]\s*\[\s*[xX ]?\s*\]\s+\([^)]*\)\s*$"),  # `- [ ] (criteria)`
@@ -1571,116 +1479,6 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
-
-def _doc_detail_page(title: str, body: str, alias: str, kind: str, meta: dict | None = None) -> str:
-    back = f'<a class="back-link" href="/project/{_e(alias)}/{_e(kind)}"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to {_e(kind.capitalize())}</a>'
-    body_html = _render_markdown(_strip_empty_sections(body))
-    sidebar_html = ""
-    if meta:
-        rows = "".join(
-            f'<div><div class="detail-field-label">{_e(k)}</div><div class="detail-field-value mono">{_e(v)}</div></div>'
-            for k, v in meta.items() if v is not None and v != ""
-        )
-        if rows:
-            sidebar_html = f'<div class="detail-sidebar">{rows}</div>'
-
-    if sidebar_html:
-        grid = f'<div class="detail-grid"><div class="detail-main"><div class="detail-section"><div class="detail-section-body">{body_html}</div></div></div>{sidebar_html}</div>'
-    else:
-        grid = f'<div class="detail-main"><div class="detail-section"><div class="detail-section-body">{body_html}</div></div></div>'
-
-    return f"""{back}
-<div class="detail-page">
-  <div class="detail-header">
-    <div class="detail-title">{_e(title)}</div>
-  </div>
-  {grid}
-</div>"""
-
-
-@app.get("/project/{alias}/agents/{slug}", response_class=HTMLResponse)
-def project_agent_detail(alias: str, slug: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    agents_root = (Path(project["path"]) / ".holoctl" / "agents").resolve()
-    f = (agents_root / f"{slug}.md").resolve()
-    try:
-        f.relative_to(agents_root)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    if not f.exists():
-        return HTMLResponse(_render("Not Found", _not_found_html("Agent not found")), status_code=404)
-    fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
-    title = fm.get("name", slug)
-    meta = {
-        "Model": fm.get("model"),
-        "Trigger": fm.get("trigger"),
-        "Tools": ", ".join(fm.get("tools", [])) if isinstance(fm.get("tools"), list) else fm.get("tools"),
-        "Description": fm.get("description"),
-    }
-    return _render(
-        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "agents", meta),
-        current_alias=alias, current_tab="agents",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Agents", "href": f"/project/{alias}/agents"}, {"label": title}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/commands/{slug}", response_class=HTMLResponse)
-def project_command_detail(alias: str, slug: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    commands_root = (Path(project["path"]) / ".holoctl" / "commands").resolve()
-    f = (commands_root / f"{slug}.md").resolve()
-    try:
-        f.relative_to(commands_root)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    if not f.exists():
-        return HTMLResponse(_render("Not Found", _not_found_html("Command not found")), status_code=404)
-    fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
-    title = f"/{fm.get('name', slug)}"
-    meta = {
-        "Description": fm.get("description"),
-        "Arguments": fm.get("arguments"),
-    }
-    return _render(
-        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "commands", meta),
-        current_alias=alias, current_tab="commands",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Commands", "href": f"/project/{alias}/commands"}, {"label": title}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/context/{filename}", response_class=HTMLResponse)
-def project_context_detail(alias: str, filename: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    context_root = (Path(project["path"]) / ".holoctl" / "context").resolve()
-    f = (context_root / filename).resolve()
-    try:
-        f.relative_to(context_root)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    if not f.exists() or not f.is_file():
-        return HTMLResponse(_render("Not Found", _not_found_html("Context document not found")), status_code=404)
-    raw = f.read_text(encoding="utf-8")
-    if f.suffix == ".md":
-        fm, body = parse_frontmatter(raw)
-    else:
-        fm, body = {}, raw
-    title = fm.get("title", f.name)
-    meta = {k.capitalize(): v for k, v in fm.items() if k not in ("title",) and v is not None}
-    return _render(
-        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "context", meta),
-        current_alias=alias, current_tab="context",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Context", "href": f"/project/{alias}/context"}, {"label": title}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
 
 @app.get("/project/{alias}")
 def project_redirect(alias: str):
