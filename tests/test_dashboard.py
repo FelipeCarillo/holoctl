@@ -317,7 +317,7 @@ class TestReadRoutes:
 
     def test_static_assets_served(self, client: TestClient, dashboard_css: str):
         css = client.get("/static/css/index.css")
-        js = client.get("/static/holoctl-ui.js")
+        js = client.get("/static/js/index.js")
         assert css.status_code == 200
         assert js.status_code == 200
         # Sanity: new tokens / classes shipped (checked against the resolved
@@ -1392,17 +1392,16 @@ class TestDetailPageStatusList:
         )
         assert f'data-statuses="{",".join(statuses)}"' in html
 
-    def test_status_list_js_prefers_data_statuses(self):
-        js = (Path(app_module.__file__).parent / "static" / "holoctl-ui.js").read_text("utf-8")
+    def test_status_list_js_prefers_data_statuses(self, dashboard_js: str):
         # Both lookups must ship — `[data-statuses]` is the new fallback
         # used outside the kanban view, the old kanban-col query stays
         # for views that mine the columns directly.
-        assert "[data-statuses]" in js
-        assert ".kanban-col[data-status]" in js
+        assert "[data-statuses]" in dashboard_js
+        assert ".kanban-col[data-status]" in dashboard_js
         # And `[data-statuses]` must appear *before* the column query in
         # the file so the new path takes precedence.
-        i_attr = js.find("[data-statuses]")
-        i_col = js.find(".kanban-col[data-status]")
+        i_attr = dashboard_js.find("[data-statuses]")
+        i_col = dashboard_js.find(".kanban-col[data-status]")
         assert 0 <= i_attr < i_col, (
             "data-statuses lookup must come before the .kanban-col fallback "
             "in statusList() so the detail page's wrapper attr wins"
@@ -1425,11 +1424,10 @@ class TestTimelineDayZoom:
         i_quarter = r.text.find('data-tl-zoom="quarter"')
         assert -1 < i_day < i_week < i_month < i_quarter
 
-    def test_day_zoom_config_present_in_js(self):
-        js = (Path(app_module.__file__).parent / "static" / "holoctl-ui.js").read_text("utf-8")
+    def test_day_zoom_config_present_in_js(self, dashboard_js: str):
         # `day` config must be in TL_ZOOM with sensible per-day pixel value
         # so each day reads as its own column.
-        m = re.search(r"const TL_ZOOM\s*=\s*\{[^}]*?\}", js, re.S)
+        m = re.search(r"const TL_ZOOM\s*=\s*\{[^}]*?\}", dashboard_js, re.S)
         assert m
         block = m.group(0)
         assert "day:" in block

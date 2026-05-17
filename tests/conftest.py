@@ -72,3 +72,30 @@ def dashboard_css() -> str:
     for m in re.finditer(r'@import\s+"\./([^"]+)"\s*;', index):
         parts.append((css_dir / m.group(1)).read_text("utf-8"))
     return "".join(parts)
+
+
+@pytest.fixture
+def dashboard_js() -> str:
+    """Concatenated JS the dashboard ships — all `.js` files in `static/js/`
+    joined into one string. Order matches index.js's import declarations.
+    Tests assert against this instead of the old monolithic `holoctl-ui.js`."""
+    import re
+    from holoctl.server import app as app_module
+    js_dir = Path(app_module.__file__).parent / "static" / "js"
+    index = (js_dir / "index.js").read_text("utf-8")
+    parts: list[str] = [index]
+    # Collect both `import { ... } from './x.js'` and bare `import './x.js'`.
+    seen: set[str] = set()
+    for m in re.finditer(r"import\s+(?:[^'\"]*\s+from\s+)?['\"]\./([^'\"]+)['\"]\s*;", index):
+        name = m.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+        parts.append((js_dir / name).read_text("utf-8"))
+    # Pull in remaining modules not directly imported by index.js (e.g.
+    # transitive deps like toast, view-switcher).
+    for f in sorted(js_dir.glob("*.js")):
+        if f.name == "index.js" or f.name in seen:
+            continue
+        parts.append(f.read_text("utf-8"))
+    return "\n".join(parts)
