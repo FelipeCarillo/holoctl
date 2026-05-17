@@ -1,0 +1,16 @@
+<div class="dr-card">
+  <div class="dr-card-title">Activity</div>
+  {% if activity %}
+  <ol class="dr-activity">
+    {% for ev in activity %}
+    <li class="dr-act-item" data-type="{{ ev.type }}">
+      <span class="dr-act-dot"></span>
+      <span class="dr-act-label">{{ ev.label }}</span>
+      <span class="dr-act-time mono" title="{{ ev.ts }}">{{ ev.ts_display }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <div class="dr-empty">No activity yet</div>
+  {% endif %}
+</div>

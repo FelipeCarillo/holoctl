@@ -1,0 +1,72 @@
+{% from "partials/board/_avatars.html" import avatar_stack %}
+{% from "partials/board/_chips.html" import chip_kind, chip_source %}
+
+<div class="dr-card" data-detail-row data-id="{{ ticket.id }}">
+  <div class="dr-card-title">Properties</div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Status</span>
+    <button type="button" class="dr-prop-edit lr-edit lr-status" data-edit-field="status" data-status="{{ status }}">{{ status }}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Priority</span>
+    <button type="button" class="dr-prop-edit lr-edit lr-prio-pill" data-edit-field="priority" data-p="{{ priority }}">{{ priority }}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Kind</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="kind" data-current="{{ kind }}">
+      {%- if kind != 'task' -%}{{ chip_kind(kind) }}{%- else -%}<span class="dr-prop-text">{{ kind }}</span>{%- endif -%}
+    </button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Parent</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="parent" data-current="{{ parent_id }}">
+      {%- if parent_id -%}
+      <a class="dr-prop-link mono" href="/project/{{ alias }}/board/{{ parent_id }}">{{ parent_id }}</a>
+      {%- else -%}<span class="dr-prop-empty">—</span>{%- endif -%}
+    </button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Agents</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="agent" data-current="{{ agents_csv }}">
+      {%- if agents -%}
+      {{ avatar_stack(agents) }}<span class="dr-prop-text">{{ agents | join(', ') }}</span>
+      {%- else -%}<span class="dr-prop-empty">—</span>{%- endif -%}
+    </button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Sprint</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="sprint" data-current="{{ sprint }}">
+      {%- if sprint -%}#{{ sprint }}{%- else -%}<span class="dr-prop-empty">—</span>{%- endif -%}
+    </button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Tags</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="tags" data-current="{{ tags_csv }}">
+      {%- if tags -%}{{ tags | join(', ') }}{%- else -%}<span class="dr-prop-empty">—</span>{%- endif -%}
+    </button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Repo</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="projects" data-current="{{ projects_csv }}">
+      {%- if projects -%}{{ projects | join(', ') }}{%- else -%}<span class="dr-prop-empty">—</span>{%- endif -%}
+    </button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Source</span>
+    <span class="dr-prop-value">
+      {%- if src_provider or src_url or src_ref or src_label -%}
+      {{ chip_source(src_provider, src_url, src_ref, src_label) }}
+      {%- if src_url %} <a class="dr-prop-link mono" href="{{ src_url }}" target="_blank" rel="noopener">↗ open</a>{% endif -%}
+      {%- else -%}<span class="dr-prop-empty">—</span>{%- endif -%}
+    </span>
+  </div>
+  <hr class="dr-divider">
+  <div class="dr-prop dr-prop-readonly">
+    <span class="dr-prop-label">Created</span>
+    <span class="dr-prop-value mono" title="{{ created }}">{{ created_display }}</span>
+  </div>
+  <div class="dr-prop dr-prop-readonly">
+    <span class="dr-prop-label">Updated</span>
+    <span class="dr-prop-value mono" title="{{ updated }}">{{ updated_display }}</span>
+  </div>
+</div>

@@ -52,8 +52,10 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 # they migrate from string-built helpers below to Jinja templates.
 from .routes.home import router as _home_router  # noqa: E402
 from .routes.project_board import router as _project_board_router  # noqa: E402
+from .routes.project_detail import router as _project_detail_router  # noqa: E402
 app.include_router(_home_router)
 app.include_router(_project_board_router)
+app.include_router(_project_detail_router)
 
 # Cache for _get_projects() — git_info subprocess is slow with many repos.
 # TTL is short so the dashboard still feels live.
@@ -1606,32 +1608,6 @@ def project_context(alias: str):
         project["name"], _context_page(docs, alias),
         current_alias=alias, current_tab="context",
         breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Context"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/board/{ticket_id}", response_class=HTMLResponse)
-def project_ticket(alias: str, ticket_id: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    project_root = Path(project["path"])
-    board = Board(project_root, project["config"])
-    ticket = board.get(ticket_id)
-    if not ticket:
-        return HTMLResponse(_render("Not Found", _not_found_html("Ticket not found")), status_code=404)
-    ticket_file = project_root / ".holoctl" / "board" / ticket["file"]
-    _, body = parse_frontmatter(ticket_file.read_text(encoding="utf-8")) if ticket_file.exists() else ({}, "")
-    # Pull the rest of the tickets so the detail page can compute the
-    # `blocks` reverse links without a second pass at click time.
-    all_tickets = board.ls()
-    return _render(
-        f"{ticket_id} — {project['name']}",
-        _ticket_detail_page(ticket, body, alias,
-                            all_tickets=all_tickets, project_root=project_root,
-                            statuses=project["config"]["board"]["statuses"]),
-        current_alias=alias, current_tab="board",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board", "href": f"/project/{alias}/board"}, {"label": ticket_id}],
         tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
     )
 
