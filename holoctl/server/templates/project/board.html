@@ -4,6 +4,10 @@
 {% include "partials/board/_controls.html" %}
 {% if view == 'kanban' %}
 {% include "partials/board/_kanban.html" %}
+{% elif view == 'list' %}
+{% include "partials/board/_list.html" %}
+{% elif view == 'tree' %}
+{% include "partials/board/_tree.html" %}
 {% else %}
 {{ body_html | safe }}
 {% endif %}

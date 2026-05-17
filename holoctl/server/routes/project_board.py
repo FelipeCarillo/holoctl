@@ -6,6 +6,8 @@ from fastapi.responses import HTMLResponse
 
 from ..jinja import render
 from ..views.board import board_context
+from ..views.list import list_context
+from ..views.tree import tree_context
 
 router = APIRouter()
 
@@ -22,13 +24,9 @@ _PROJECT_TABS = [
 
 @router.get("/project/{alias}/board", response_class=HTMLResponse)
 def project_board(alias: str, view: str = "kanban"):
-    # Lazy import: app.py still owns project lookup + the non-kanban view
-    # renderers (_list_html, _timeline_html, _tree_html). PRs #4 and #5
-    # replace those with Jinja-powered presenters.
-    from ..app import (
-        _get_project, _not_found_html,
-        _list_html, _timeline_html, _tree_html,
-    )
+    # Lazy import: timeline view still uses the legacy renderer in app.py.
+    # PR #5 will move it. Same for project lookup helpers (PR #10).
+    from ..app import _get_project, _not_found_html, _timeline_html
     from ...lib.board import Board
 
     project = _get_project(alias)
@@ -45,14 +43,14 @@ def project_board(alias: str, view: str = "kanban"):
     statuses = project["config"]["board"]["statuses"]
 
     body_html = ""
+    ctx = board_context(project, tickets, project["config"], view=view)
     if view == "list":
-        body_html = _list_html(tickets, statuses, alias)
+        ctx.update(list_context(tickets, statuses, alias))
+    elif view == "tree":
+        ctx.update(tree_context(tickets, alias))
     elif view == "timeline":
         body_html = _timeline_html(tickets, statuses, alias)
-    elif view == "tree":
-        body_html = _tree_html(tickets, statuses, alias)
 
-    ctx = board_context(project, tickets, project["config"], view=view)
     return render(
         "project/board.html",
         title=project["name"],
@@ -84,3 +82,19 @@ def api_board_html(alias: str):
     tickets = board.ls()
     ctx = board_context(project, tickets, project["config"], view="kanban")
     return HTMLResponse(render("partials/board/_kanban.html", **ctx))
+
+
+@router.get("/api/project/{alias}/list-html", response_class=HTMLResponse)
+def api_list_html(alias: str):
+    """List view fragment for SSE swap. Mirrors api_board_html for list mode."""
+    from ..app import _get_project, _not_found_html
+    from ...lib.board import Board
+
+    project = _get_project(alias)
+    if not project:
+        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+    board = Board(Path(project["path"]), project["config"])
+    tickets = board.ls()
+    statuses = project["config"]["board"]["statuses"]
+    ctx = list_context(tickets, statuses, alias)
+    return HTMLResponse(render("partials/board/_list.html", **ctx))

@@ -1,0 +1,43 @@
+{% from "partials/board/_row.html" import list_row %}
+<div class="list-view" id="list-view">
+  <div class="list-head">
+    <div class="lr-cell lr-cell-select">
+      <input type="checkbox" class="lr-checkbox" data-ticket-select-all aria-label="Select all">
+    </div>
+    <div class="lr-cell lr-cell-prio"></div>
+    <div class="lr-cell lr-cell-id">ID</div>
+    <div class="lr-cell lr-cell-title">Title</div>
+    <div class="lr-cell lr-cell-status">Status</div>
+    <div class="lr-cell lr-cell-prio-pill">Priority</div>
+    <div class="lr-cell lr-cell-agents">Agents</div>
+    <div class="lr-cell lr-cell-sprint">Sprint</div>
+    <div class="lr-cell lr-cell-repo">Repo</div>
+    <div class="lr-cell lr-cell-deps">Deps</div>
+    <div class="lr-cell lr-cell-updated">Updated</div>
+    <div class="lr-cell lr-cell-menu"></div>
+  </div>
+  <div class="list-body" id="list-body">
+    {% for g in groups %}
+    <div class="list-group" data-bucket="{{ g.status }}">
+      <div class="list-group-header" data-status="{{ g.status }}" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle {{ g.status }} group">
+        <span class="lg-toggle" aria-hidden="true">▾</span>
+        <span class="lg-label">{{ g.status }}</span>
+        <span class="lg-count">{{ g.count }}</span>
+      </div>
+      <div class="list-group-rows">
+        {% if g.rows %}{% for c in g.rows %}{{ list_row(c) }}{% endfor %}{% else %}<div class="list-group-empty">No tickets in this group</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="list-bulk-bar" id="list-bulk-bar" hidden>
+    <span class="lbb-count" id="lbb-count">0 selected</span>
+    <div class="lbb-actions">
+      <button type="button" class="btn btn-sm" data-bulk-move data-status="doing">Move to doing</button>
+      <button type="button" class="btn btn-sm" data-bulk-move data-status="review">Move to review</button>
+      <button type="button" class="btn btn-sm" data-bulk-move data-status="done">Mark done</button>
+      <button type="button" class="btn btn-sm btn-danger" data-bulk-archive>Archive</button>
+    </div>
+    <button type="button" class="lbb-clear" data-bulk-clear aria-label="Clear selection">×</button>
+  </div>
+</div>

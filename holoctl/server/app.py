@@ -1810,24 +1810,6 @@ def api_board(alias: str):
     return {"meta": {}, "tickets": []}
 
 
-@app.get("/api/project/{alias}/list-html", response_class=HTMLResponse)
-def api_list_html(alias: str):
-    """Return just the `<div class="list-view">` fragment for SSE swap.
-
-    Same role as `/board-html`, but for the dense list view. The SSE client
-    picks which fragment to fetch based on the `data-current-view` attr on
-    the `#board-controls` panel.
-    """
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
-    board = Board(Path(project["path"]), project["config"])
-    tickets = board.ls()
-    return HTMLResponse(_list_html(
-        tickets, project["config"]["board"]["statuses"], alias,
-    ))
-
-
 @app.get("/api/project/{alias}/timeline-html", response_class=HTMLResponse)
 def api_timeline_html(alias: str, group: str = "sprint"):
     """Return just the `<div class="timeline-view">` fragment for SSE swap.
