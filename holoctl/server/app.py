@@ -48,6 +48,11 @@ def _e(value) -> str:
 app = FastAPI(title="holoctl dashboard", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
+# Modular routers. Each lives under server/routes/. New views land here as
+# they migrate from string-built helpers below to Jinja templates.
+from .routes.home import router as _home_router  # noqa: E402
+app.include_router(_home_router)
+
 # Cache for _get_projects() — git_info subprocess is slow with many repos.
 # TTL is short so the dashboard still feels live.
 _PROJECTS_CACHE: dict = {"data": None, "ts": 0.0}
@@ -203,42 +208,6 @@ def _not_found_html(msg: str = "Not found") -> str:
 
 
 # ── page generators ───────────────────────────────────────────────────────────
-
-def _home_page(projects: list[dict]) -> str:
-    if not projects:
-        return '<div class="empty-state"><h3>No projects yet</h3><p>Run <code>holoctl init</code> in a directory to get started.</p></div>'
-    cards = ""
-    for p in projects:
-        counts = p.get("counts", {})
-        doing = int(counts.get("doing", 0))
-        backlog = int(counts.get("backlog", 0))
-        done = int(counts.get("done", 0))
-        total = max(int(p.get("ticketCount", 0)), 1)
-        prefix = p.get("prefix", "")
-        targets = "".join(f'<span class="chip chip-target">{_e(t)}</span>' for t in p.get("targets", []))
-        progress = f"""<div class="progress-bar">
-  <div class="progress-segment done" style="width:{done/total*100:.0f}%"></div>
-  <div class="progress-segment doing" style="width:{doing/total*100:.0f}%"></div>
-  <div class="progress-segment backlog" style="width:{backlog/total*100:.0f}%"></div>
-</div>"""
-        cards += f"""<a href="/project/{_e(p['alias'])}/board" class="project-card">
-  <div class="project-card-header">
-    <div class="project-card-icon">{_e(prefix[:2])}</div>
-    <div>
-      <div class="project-card-name">{_e(p['name'])}</div>
-      <div class="project-card-sub">{_e(p['alias'])}</div>
-    </div>
-  </div>
-  {progress}
-  <div class="project-card-stats">
-    <span class="stat-mini"><span class="stat-dot backlog"></span>{backlog} backlog</span>
-    <span class="stat-mini"><span class="stat-dot doing"></span>{doing} doing</span>
-    <span class="stat-mini"><span class="stat-dot done"></span>{done} done</span>
-  </div>
-  <div class="project-card-meta">{targets}</div>
-</a>"""
-    return f'<div class="project-grid">{cards}</div>'
-
 
 def _ticket_preview(project_root: Path, ticket: dict, max_chars: int = 80) -> str:
     """First non-trivial prose line from a ticket .md, for the kanban card preview.
@@ -1596,13 +1565,6 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
-
-@app.get("/", response_class=HTMLResponse)
-def home():
-    projects = _get_projects()
-    return _render("Home", _home_page(projects), projects=projects,
-                   breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": "Home"}])
-
 
 @app.get("/project/{alias}/board", response_class=HTMLResponse)
 def project_board(alias: str, view: str = "kanban"):
