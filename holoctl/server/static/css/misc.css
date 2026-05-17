@@ -1,0 +1,16 @@
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+/* ── SVG icon helper ── */
+.icon-sm { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; display: inline; vertical-align: -2px; }
+
+/* ── Theme toggle icons ── */
+.theme-toggle { position: relative; }
+.theme-icon-dark, .theme-icon-light { display: flex; align-items: center; justify-content: center; }
+.theme-icon-dark svg, .theme-icon-light svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+[data-theme="dark"] .theme-icon-light { display: none !important; }
+[data-theme="light"] .theme-icon-dark { display: none !important; }
+

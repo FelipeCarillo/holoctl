@@ -315,15 +315,16 @@ class TestReadRoutes:
         # Fragment-level (just the kanban div).
         assert r.text.lstrip().startswith('<div class="kanban"')
 
-    def test_static_assets_served(self, client: TestClient):
-        css = client.get("/static/holoctl.css")
+    def test_static_assets_served(self, client: TestClient, dashboard_css: str):
+        css = client.get("/static/css/index.css")
         js = client.get("/static/holoctl-ui.js")
         assert css.status_code == 200
         assert js.status_code == 200
-        # Sanity: new tokens / classes shipped.
-        assert "html, body { height: 100vh; overflow: hidden; }" in css.text
-        assert ".kc-prio-dot" in css.text
-        assert ".kanban-col-add" in css.text
+        # Sanity: new tokens / classes shipped (checked against the resolved
+        # css bundle since index.css is just @imports).
+        assert "html, body { height: 100vh; overflow: hidden; }" in dashboard_css
+        assert ".kc-prio-dot" in dashboard_css
+        assert ".kanban-col-add" in dashboard_css
 
 
 # ── Routes: POST /tickets (create) ────────────────────────────────────────────
@@ -1128,34 +1129,31 @@ class TestAccessibility:
         # Icon-only ⋯ buttons need an accessible name.
         assert 'aria-label="Card actions"' in r.text
 
-    def test_focus_visible_styles_present(self, client: TestClient):
+    def test_focus_visible_styles_present(self, client: TestClient, dashboard_css: str):
         # Tag the rule by its keyword so CSS-format changes don't break us.
-        r = client.get("/static/holoctl.css")
+        r = client.get("/static/css/index.css")
         assert r.status_code == 200
-        assert ":focus-visible" in r.text
-        assert "prefers-reduced-motion" in r.text
+        assert ":focus-visible" in dashboard_css
+        assert "prefers-reduced-motion" in dashboard_css
 
 
 class TestCssCleanup:
-    def test_legacy_kanban_card_classes_removed(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_legacy_kanban_card_classes_removed(self, dashboard_css: str):
         # These were Phase-1-era aliases; nothing emits them anymore.
         for sel in (".kanban-card-top", ".kanban-card-id",
                     ".kanban-card-title", ".kanban-card-meta",
                     ".kanban-card-dates"):
-            assert sel + " " not in css, f"legacy selector {sel} should be removed"
+            assert sel + " " not in dashboard_css, f"legacy selector {sel} should be removed"
 
-    def test_legacy_status_badge_removed(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_legacy_status_badge_removed(self, dashboard_css: str):
         # `.status-badge` was used by the old detail page; gone since Phase 4.
-        assert ".status-badge" not in css
+        assert ".status-badge" not in dashboard_css
 
-    def test_legacy_p_badge_in_card_removed(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_legacy_p_badge_in_card_removed(self, dashboard_css: str):
         # `.p-badge` was the kanban card's old inline priority chip.
         # The new card uses `.kc-prio-dot` and the list view uses
         # `.lr-prio-pill`.
-        assert ".p-badge " not in css and ".p-badge\n" not in css and ".p-badge{" not in css
+        assert ".p-badge " not in dashboard_css and ".p-badge\n" not in dashboard_css and ".p-badge{" not in dashboard_css
 
 
 # ── Post-merge follow-up: horizontal scroll + repo + deps ─────────────────────
@@ -1170,10 +1168,9 @@ class TestKanbanHorizontalScroll:
     scroll — the viewport just clipped the rightmost columns.
     """
 
-    def test_min_width_fit_content_removed(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_min_width_fit_content_removed(self, dashboard_css: str):
         # Find the `.kanban {` block and assert the bad declaration is gone.
-        m = re.search(r"\.kanban\s*\{[^}]*\}", css)
+        m = re.search(r"\.kanban\s*\{[^}]*\}", dashboard_css)
         assert m, ".kanban block must exist in the served CSS"
         block = m.group(0)
         assert "min-width: fit-content" not in block, (
@@ -1181,9 +1178,8 @@ class TestKanbanHorizontalScroll:
             "the horizontal scroll between columns"
         )
 
-    def test_kanban_uses_zero_min_width(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
-        m = re.search(r"\.kanban\s*\{[^}]*\}", css)
+    def test_kanban_uses_zero_min_width(self, dashboard_css: str):
+        m = re.search(r"\.kanban\s*\{[^}]*\}", dashboard_css)
         block = m.group(0)
         # `min-width: 0` is the explicit override of flex's default
         # `min-width: auto` (content-sized) — without it, fixed-width
@@ -1339,14 +1335,13 @@ class TestDetailPageScrollContainment:
     and `.detail-rail` couldn't even start.
     """
 
-    def test_content_body_becomes_flex_column_for_detail(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_content_body_becomes_flex_column_for_detail(self, dashboard_css: str):
         # Find the rule and assert it carries both overflow:hidden and the
         # flex-column setup. Without flex column on the parent, the
         # detail-page's flex children don't get sized correctly.
         m = re.search(
             r"\.content-body:has\(> \[data-detail-page\]\)\s*\{[^}]*\}",
-            css,
+            dashboard_css,
         )
         assert m, "content-body :has(detail-page) rule must exist"
         block = m.group(0)
@@ -1354,15 +1349,14 @@ class TestDetailPageScrollContainment:
         assert "display: flex" in block
         assert "flex-direction: column" in block
 
-    def test_detail_main_and_rail_scroll_independently(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_detail_main_and_rail_scroll_independently(self, dashboard_css: str):
         # Sanity: each column still has its own overflow-y: auto so the
         # parent flex chain actually delivers usable scroll.
         m_main = re.search(
-            r"\[data-detail-page\]\s*\.detail-main\s*\{[^}]*\}", css,
+            r"\[data-detail-page\]\s*\.detail-main\s*\{[^}]*\}", dashboard_css,
         )
         assert m_main and "overflow-y: auto" in m_main.group(0)
-        m_rail = re.search(r"\.detail-rail\s*\{[^}]*\}", css)
+        m_rail = re.search(r"\.detail-rail\s*\{[^}]*\}", dashboard_css)
         assert m_rail and "overflow-y: auto" in m_rail.group(0)
 
 
@@ -1443,9 +1437,8 @@ class TestTimelineDayZoom:
         # the granularity, not just renamed an existing zoom).
         assert re.search(r"day:\s*\{[^}]*tickEveryDays:\s*1", block)
 
-    def test_day_zoom_label_styling_class(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_day_zoom_label_styling_class(self, dashboard_css: str):
         # Day labels stack a smaller day-of-week glyph above the date —
         # the supporting class must ship so the second line doesn't
         # render at full label size and crash the spacing.
-        assert ".tl-axis-tick-dow" in css
+        assert ".tl-axis-tick-dow" in dashboard_css

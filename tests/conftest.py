@@ -57,3 +57,18 @@ def make_marker():
         directory.mkdir(parents=True, exist_ok=True)
         (directory / marker).write_text("", encoding="utf-8")
     return _make
+
+
+@pytest.fixture
+def dashboard_css() -> str:
+    """Concatenated CSS the dashboard serves — modules in `static/css/` joined
+    in the same order `index.css` imports them. Tests assert against this
+    instead of the old monolithic `holoctl.css` (which was split per section)."""
+    import re
+    from holoctl.server import app as app_module
+    css_dir = Path(app_module.__file__).parent / "static" / "css"
+    index = (css_dir / "index.css").read_text("utf-8")
+    parts: list[str] = []
+    for m in re.finditer(r'@import\s+"\./([^"]+)"\s*;', index):
+        parts.append((css_dir / m.group(1)).read_text("utf-8"))
+    return "".join(parts)

@@ -1,0 +1,180 @@
+/* ── Project cards (home) ── */
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.project-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  cursor: pointer;
+  transition: all 0.25s var(--ease);
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+
+.project-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.project-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.project-card:hover::before { opacity: 1; }
+
+.project-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.project-card-icon {
+  width: 40px; height: 40px;
+  background: var(--accent-subtle);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.project-card-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.project-card-sub {
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  letter-spacing: -0.2px;
+}
+
+.project-card-path {
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+/* Progress bar for ticket distribution */
+.progress-bar {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bg-3);
+  margin-bottom: 14px;
+}
+
+.progress-segment {
+  height: 100%;
+  transition: width 0.4s var(--ease);
+}
+
+.progress-segment.done { background: var(--green); }
+.progress-segment.doing { background: var(--blue); }
+.progress-segment.review { background: var(--yellow); }
+.progress-segment.backlog { background: var(--text-3); }
+
+.project-card-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.stat-mini {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+.stat-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stat-dot.backlog { background: var(--text-3); }
+.stat-dot.doing { background: var(--blue); }
+.stat-dot.review { background: var(--yellow); }
+.stat-dot.done { background: var(--green); }
+
+.project-card-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 10px;
+  letter-spacing: -0.1px;
+}
+
+.chip-agent { background: var(--green-subtle); color: var(--green); }
+.chip-target { background: var(--purple-subtle); color: var(--purple); }
+.chip-sprint { background: var(--cyan-subtle); color: var(--cyan); }
+
+/* Avatar with initials — used by kanban cards, list rows, and detail page.
+   Stacked horizontally with negative margin to overlap. */
+.avatar-stack { display: inline-flex; align-items: center; }
+.avatar-stack > .avatar-initials + .avatar-initials { margin-left: -6px; }
+
+.avatar-initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-0);
+  background: var(--bg-3);
+  border: 1.5px solid var(--bg-card);
+  text-transform: uppercase;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* Deterministic palette: 6 hues cycled by simple hash of the agent name,
+   computed server-side via `data-hue="0..5"`. */
+.avatar-initials[data-hue="0"] { background: var(--blue-subtle); color: var(--blue); }
+.avatar-initials[data-hue="1"] { background: var(--green-subtle); color: var(--green); }
+.avatar-initials[data-hue="2"] { background: var(--purple-subtle); color: var(--purple); }
+.avatar-initials[data-hue="3"] { background: var(--orange-subtle); color: var(--orange); }
+.avatar-initials[data-hue="4"] { background: var(--cyan-subtle); color: var(--cyan); }
+.avatar-initials[data-hue="5"] { background: var(--accent-subtle); color: var(--accent); }
+

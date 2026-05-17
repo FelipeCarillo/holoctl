@@ -1,0 +1,376 @@
+/* ── List view ──────────────────────────────────────────────────────────────
+   Dense table-style alternative to the kanban. Same data-* contract on
+   .ticket-row.kanban-card so the existing filter/search/sort logic applies
+   without a branch. */
+
+.list-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Grid template shared by header and rows so columns line up perfectly.
+   `auto` columns size to content; `1fr` Title takes the rest. */
+.list-head,
+.ticket-row {
+  display: grid;
+  grid-template-columns:
+    32px       /* select */
+    20px       /* prio dot */
+    minmax(64px, auto)   /* id */
+    minmax(0, 1fr)       /* title (flexes) */
+    minmax(72px, auto)   /* status pill */
+    minmax(40px, auto)   /* priority pill */
+    minmax(60px, auto)   /* agents */
+    minmax(60px, auto)   /* sprint */
+    minmax(80px, auto)   /* repo */
+    minmax(80px, auto)   /* deps */
+    minmax(60px, auto)   /* updated */
+    32px;      /* menu */
+  align-items: center;
+  gap: 0;
+}
+
+.list-head {
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 8px 14px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-2);
+}
+
+.list-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Group containers + sticky group headers (status name + count). */
+.list-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.list-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-1);
+  cursor: pointer;
+  user-select: none;
+}
+.list-group:first-child .list-group-header { border-top: 0; }
+
+.list-group-header .lg-toggle {
+  font-size: 10px;
+  color: var(--text-2);
+  transition: transform 0.15s var(--ease);
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+}
+.list-group[data-collapsed="true"] .lg-toggle { transform: rotate(-90deg); }
+.list-group[data-collapsed="true"] .list-group-rows { display: none; }
+
+.list-group-header .lg-label { flex: 1; }
+
+.list-group-header .lg-count {
+  background: var(--bg-2);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.list-group[data-bucket="doing"]     .lg-label { color: var(--blue); }
+.list-group[data-bucket="doing"]     .lg-count { background: var(--blue-subtle); color: var(--blue); }
+.list-group[data-bucket="review"]    .lg-label { color: var(--yellow); }
+.list-group[data-bucket="review"]    .lg-count { background: var(--yellow-subtle); color: var(--yellow); }
+.list-group[data-bucket="done"]      .lg-label { color: var(--green); }
+.list-group[data-bucket="done"]      .lg-count { background: var(--green-subtle); color: var(--green); }
+.list-group[data-bucket="cancelled"] .lg-label { color: var(--red); }
+.list-group[data-bucket="cancelled"] .lg-count { background: var(--red-subtle); color: var(--red); }
+
+.list-group-empty {
+  padding: 14px 16px;
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* Rows. Override the .kanban-card visual completely — same class for
+   data-attr targeting only. */
+.ticket-row.kanban-card {
+  /* unset the card chrome inherited from .kanban-card */
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px 14px;
+  /* keep .display=grid from .ticket-row above */
+  cursor: default;
+  transform: none !important;
+  position: relative;
+}
+.ticket-row.kanban-card:last-child { border-bottom: 0; }
+.ticket-row.kanban-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  transform: none;
+  box-shadow: none;
+}
+.ticket-row.kanban-card[data-selected="true"] {
+  background: var(--accent-subtle);
+}
+
+.lr-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--text-1);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lr-cell-select { padding: 0; justify-content: center; }
+.lr-cell-prio { padding: 0; justify-content: center; }
+.lr-cell-menu { padding: 0; justify-content: center; }
+
+.lr-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.lr-cell-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: -0.2px;
+}
+.lr-id-link {
+  color: inherit;
+  text-decoration: none;
+}
+.lr-id-link:hover { color: var(--accent); }
+
+.lr-cell-title { font-size: 13px; color: var(--text-0); font-weight: 450; }
+.lr-title-link {
+  color: inherit;
+  text-decoration: none;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lr-title-link:hover { color: var(--accent); }
+
+.lr-empty { color: var(--text-3); }
+.lr-sprint { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
+
+/* Repo + Deps cells reuse the .kc-repo / .kc-deps chip styles emitted
+   server-side, but constrain the cell so a long repo name doesn't push
+   the next column. */
+.lr-cell-repo,
+.lr-cell-deps {
+  font-size: 11px;
+  min-width: 0;
+}
+.lr-cell-repo .kc-repo,
+.lr-cell-deps .kc-deps { max-width: 100%; }
+
+.lr-cell-updated {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-2);
+  letter-spacing: -0.2px;
+  justify-content: flex-end;
+}
+
+/* Inline-edit chip buttons (status, priority). Quiet by default; tinted
+   when the popover is open. Never trigger card navigation. */
+.lr-edit {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.lr-edit:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+.lr-edit[aria-expanded="true"] {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+/* Status pill colorways */
+.lr-status[data-status="backlog"]   { color: var(--text-2); }
+.lr-status[data-status="doing"]     { color: var(--blue);   background: var(--blue-subtle); }
+.lr-status[data-status="review"]    { color: var(--yellow); background: var(--yellow-subtle); }
+.lr-status[data-status="done"]      { color: var(--green);  background: var(--green-subtle); }
+.lr-status[data-status="cancelled"] { color: var(--red);    background: var(--red-subtle); }
+
+.lr-prio-pill[data-p="p0"] { color: var(--red);    background: var(--red-subtle); }
+.lr-prio-pill[data-p="p1"] { color: var(--yellow); background: var(--yellow-subtle); }
+.lr-prio-pill[data-p="p2"] { color: var(--blue);   background: var(--blue-subtle); }
+.lr-prio-pill[data-p="p3"] { color: var(--text-2); background: var(--bg-2); }
+
+/* Bulk-action bar — sticky at the bottom of the list-body so it floats
+   above the rows but never escapes the view container. */
+.list-bulk-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.list-bulk-bar[hidden] { display: none; }
+
+.lbb-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.lbb-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  color: var(--text-0);
+  cursor: pointer;
+  transition: all 0.12s var(--ease);
+  font-family: inherit;
+  font-weight: 500;
+}
+.btn-sm:hover { background: var(--bg-hover); border-color: var(--border-hover); }
+.btn-sm:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-danger {
+  background: var(--red-subtle);
+  color: var(--red);
+  border-color: transparent;
+}
+.btn-danger:hover { background: var(--red); color: white; border-color: var(--red); }
+
+.lbb-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.lbb-clear:hover { background: var(--bg-hover); color: var(--text-0); }
+
+/* Inline-edit popover (shared shape with kc-menu-popover). */
+.lr-edit-popover {
+  position: absolute;
+  z-index: 200;
+  min-width: 160px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lr-edit-popover[hidden] { display: none; }
+
+.lr-edit-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.lr-edit-option:hover { background: var(--bg-hover); }
+.lr-edit-option[aria-current="true"] {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.lr-edit-option-input {
+  padding: 6px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+}
+.lr-edit-option-input:focus { outline: none; border-color: var(--accent); }
+

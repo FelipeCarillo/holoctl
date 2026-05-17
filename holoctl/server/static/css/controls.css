@@ -1,0 +1,318 @@
+/* ── Board controls — view switcher, search, filter chips, sort, group ── */
+.board-controls {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  position: relative;
+}
+
+.bc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bc-row-secondary {
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* Segmented view switcher */
+.view-switcher {
+  display: inline-flex;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 2px;
+}
+
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  letter-spacing: -0.1px;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.view-tab:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-0); }
+.view-tab.active {
+  background: var(--bg-card);
+  color: var(--text-0);
+  box-shadow: var(--shadow-sm);
+}
+.view-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.view-tab-glyph { font-size: 13px; opacity: 0.85; }
+
+/* Inline search */
+.bc-search {
+  position: relative;
+  flex: 1;
+  max-width: 360px;
+  display: flex;
+  align-items: center;
+}
+
+.bc-search-glyph {
+  position: absolute;
+  left: 12px;
+  font-size: 12px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.bc-search input {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: -0.1px;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.bc-search input::placeholder { color: var(--text-3); }
+.bc-search input:hover { border-color: var(--border-hover); }
+.bc-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+
+/* Active filter chips */
+.bc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 26px;
+}
+
+.bc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+}
+
+.bc-chip-axis {
+  font-weight: 600;
+  text-transform: capitalize;
+  opacity: 0.75;
+}
+
+.bc-chip-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: -0.2px;
+}
+
+.bc-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s var(--ease), background 0.15s var(--ease);
+}
+.bc-chip-remove:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.10);
+}
+[data-theme="light"] .bc-chip-remove:hover { background: rgba(0, 0, 0, 0.06); }
+
+/* Add filter button */
+.bc-add-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 4px 8px;
+  background: transparent;
+  border: 1px dashed var(--border-hover);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+}
+.bc-add-filter:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  border-style: solid;
+}
+
+.bc-add-filter-glyph {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.bc-spacer { flex: 1; min-width: 0; }
+
+/* Inline label-select pairs for sort & group */
+.bc-inline-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
+  letter-spacing: -0.1px;
+}
+
+.bc-inline-select select {
+  padding: 5px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease);
+}
+.bc-inline-select select:hover { border-color: var(--border-hover); }
+.bc-inline-select select:focus { outline: none; border-color: var(--accent); }
+
+.bc-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s var(--ease);
+  padding: 0;
+}
+.bc-reset:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--text-0);
+}
+
+/* Add-filter popover */
+.bc-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  min-width: 280px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  padding: 10px;
+}
+.bc-popover[hidden] { display: none; }
+
+.bc-popover-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-2);
+  font-weight: 600;
+  padding: 4px 8px 8px;
+}
+
+.bc-popover-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+.bc-popover-back:hover { background: var(--bg-hover); color: var(--text-0); }
+
+.bc-popover-axes,
+.bc-popover-values {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bc-popover-axis,
+.bc-popover-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 7px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s var(--ease);
+}
+.bc-popover-axis:hover,
+.bc-popover-value:hover { background: var(--bg-hover); }
+
+.bc-popover-value-empty {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+  font-style: italic;
+}
+
+/* Hidden card via filter — uses class so it composes with other style state. */
+.kanban-card.bc-hidden { display: none !important; }
+
+/* When filter hides every card in a column, the empty placeholder reappears. */
+.kanban-cards:has(> .kanban-card:not(.bc-hidden)) > .kanban-empty { display: none; }
+
