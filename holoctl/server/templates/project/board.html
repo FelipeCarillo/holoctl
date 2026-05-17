@@ -8,6 +8,8 @@
 {% include "partials/board/_list.html" %}
 {% elif view == 'tree' %}
 {% include "partials/board/_tree.html" %}
+{% elif view == 'timeline' %}
+{% include "partials/board/_timeline.html" %}
 {% else %}
 {{ body_html | safe }}
 {% endif %}

@@ -1810,25 +1810,6 @@ def api_board(alias: str):
     return {"meta": {}, "tickets": []}
 
 
-@app.get("/api/project/{alias}/timeline-html", response_class=HTMLResponse)
-def api_timeline_html(alias: str, group: str = "sprint"):
-    """Return just the `<div class="timeline-view">` fragment for SSE swap.
-
-    `group` mirrors the `?group=` axis the JS uses when the user flips
-    between Sprint and Agent lanes — letting the client re-fetch without a
-    full page navigation.
-    """
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
-    board = Board(Path(project["path"]), project["config"])
-    tickets = board.ls()
-    return HTMLResponse(_timeline_html(
-        tickets, project["config"]["board"]["statuses"], alias,
-        group_by=group,
-    ))
-
-
 @app.post("/api/project/{alias}/tickets")
 def api_ticket_create(alias: str, payload: dict = Body(...)):
     """Create a ticket from a JSON payload.

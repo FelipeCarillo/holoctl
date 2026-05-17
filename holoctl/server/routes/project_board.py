@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from ..jinja import render
 from ..views.board import board_context
 from ..views.list import list_context
+from ..views.timeline import timeline_context
 from ..views.tree import tree_context
 
 router = APIRouter()
@@ -24,9 +25,8 @@ _PROJECT_TABS = [
 
 @router.get("/project/{alias}/board", response_class=HTMLResponse)
 def project_board(alias: str, view: str = "kanban"):
-    # Lazy import: timeline view still uses the legacy renderer in app.py.
-    # PR #5 will move it. Same for project lookup helpers (PR #10).
-    from ..app import _get_project, _not_found_html, _timeline_html
+    # Lazy import: project lookup helpers still live in app.py (PR #10).
+    from ..app import _get_project, _not_found_html
     from ...lib.board import Board
 
     project = _get_project(alias)
@@ -42,14 +42,13 @@ def project_board(alias: str, view: str = "kanban"):
     tickets = board.ls()
     statuses = project["config"]["board"]["statuses"]
 
-    body_html = ""
     ctx = board_context(project, tickets, project["config"], view=view)
     if view == "list":
         ctx.update(list_context(tickets, statuses, alias))
     elif view == "tree":
         ctx.update(tree_context(tickets, alias))
     elif view == "timeline":
-        body_html = _timeline_html(tickets, statuses, alias)
+        ctx.update(timeline_context(tickets, alias))
 
     return render(
         "project/board.html",
@@ -64,7 +63,6 @@ def project_board(alias: str, view: str = "kanban"):
         tabs=_PROJECT_TABS,
         tab_base=f"/project/{alias}",
         actions='<span class="live-indicator"><span class="pulse"></span>LIVE</span>',
-        body_html=body_html,
         **ctx,
     )
 
@@ -98,3 +96,19 @@ def api_list_html(alias: str):
     statuses = project["config"]["board"]["statuses"]
     ctx = list_context(tickets, statuses, alias)
     return HTMLResponse(render("partials/board/_list.html", **ctx))
+
+
+@router.get("/api/project/{alias}/timeline-html", response_class=HTMLResponse)
+def api_timeline_html(alias: str, group: str = "sprint"):
+    """Timeline view fragment for SSE swap. `group` mirrors the lane axis the
+    client toggles between Sprint and Agent."""
+    from ..app import _get_project, _not_found_html
+    from ...lib.board import Board
+
+    project = _get_project(alias)
+    if not project:
+        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+    board = Board(Path(project["path"]), project["config"])
+    tickets = board.ls()
+    ctx = timeline_context(tickets, alias, group_by=group)
+    return HTMLResponse(render("partials/board/_timeline.html", **ctx))
