@@ -2,7 +2,15 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.18.0] — 2026-05-18
+
+Target slimdown + first-class Codex support. Holoctl now ships four
+compile targets instead of seven: the long tail (cursor / windsurf /
+devin / generic) is retired, and `codex` is added on top of the
+existing claude / copilot / agents set. Workspaces still listing the
+retired targets in `config.json:targets[]` continue to compile cleanly
+— a silent migration filter strips the unknown names before the
+dispatcher sees them.
 
 ### Removed — supported targets reduced to claude / copilot / codex / agents (breaking)
 
