@@ -41,10 +41,12 @@ _DEFAULTS: dict = {
         # corporate AV; off-by-default makes the dashboard instant.
         "checkDirty": False,
     },
-    # `agents` is the cross-tool universal AGENTS.md emitter (20+ assistants
-    # respect it). Always included so any non-Claude assistant opening the
-    # repo also gets context. `claude` adds Claude Code-native files
-    # (CLAUDE.md, .claude/agents/, .claude/commands/, settings.json).
+    # `agents` is the cross-tool universal AGENTS.md emitter (Codex / Aider /
+    # Zed / Junie / Jules / goose / etc. respect it). Always included so any
+    # AGENTS.md-aware assistant opening the repo gets context. `claude` adds
+    # Claude Code-native files (CLAUDE.md, .claude/agents/, .claude/commands/,
+    # settings.json). The other supported targets (`copilot`, `codex`) are
+    # opt-in via `hctl compile --target X` or by editing this list.
     "targets": ["agents", "claude"],
     "server": {
         "port": 4242,
@@ -166,6 +168,20 @@ def find_project_root(start: Path | None = None) -> Path | None:
         current = parent
 
 
+# Targets that holoctl previously shipped but were retired. Filtered silently
+# from workspace configs on load so legacy workspaces (whose `targets` array
+# still lists them) don't blow up at compile time.
+_REMOVED_TARGETS = frozenset({"cursor", "windsurf", "devin", "generic"})
+
+
+def _filter_removed_targets(config: dict) -> dict:
+    targets = config.get("targets") or []
+    kept = [t for t in targets if t not in _REMOVED_TARGETS]
+    if kept != targets:
+        config["targets"] = kept
+    return config
+
+
 def load_config(project_root: Path) -> dict:
     # Migrate legacy `.projctl/` or `.projhub/` BEFORE reading so downstream
     # consumers (board, server) that hardcode `.holoctl/` don't get confused.
@@ -178,7 +194,9 @@ def load_config(project_root: Path) -> dict:
     config = _deep_merge(copy.deepcopy(_DEFAULTS), raw)
     # Apply provider defaults additively — workspaces from v0.16 don't have
     # `providers` set; v0.17 auto-fills the 6 well-known ones on load.
-    return _apply_provider_defaults(config)
+    config = _apply_provider_defaults(config)
+    # Filter targets removed in later versions (cursor/windsurf/devin/generic).
+    return _filter_removed_targets(config)
 
 
 def save_config(project_root: Path, config: dict) -> None:

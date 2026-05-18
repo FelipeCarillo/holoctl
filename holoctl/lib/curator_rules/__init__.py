@@ -13,7 +13,6 @@ from . import (
     repeated_glob_edits,
     repeated_prompt,
     unused_topic,
-    windsurf_memory_promote,
 )
 
 
@@ -23,5 +22,4 @@ def builtin_rules() -> list[Callable]:
         repeated_prompt.run,
         unused_topic.run,
         library_persona_match.run,
-        windsurf_memory_promote.run,
     ]

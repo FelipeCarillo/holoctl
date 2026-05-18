@@ -37,13 +37,6 @@ def test_emit_claude_preserves_user_mcp_servers(tmp_path: Path):
     assert merged["model"] == "opus"
 
 
-def test_emit_cursor_writes_dot_cursor_mcp_json(tmp_path: Path):
-    paths = mcp_emit.emit_cursor(tmp_path)
-    assert paths == [".cursor/mcp.json"]
-    data = json.loads((tmp_path / ".cursor/mcp.json").read_text(encoding="utf-8"))
-    assert data["mcpServers"]["holoctl"]["args"] == ["serve", "--mcp"]
-
-
 def test_emit_copilot_writes_vscode_mcp_json(tmp_path: Path):
     paths = mcp_emit.emit_copilot(tmp_path)
     assert paths == [".vscode/mcp.json"]
@@ -53,23 +46,39 @@ def test_emit_copilot_writes_vscode_mcp_json(tmp_path: Path):
     assert "holoctl" in data["servers"]
 
 
-def test_emit_windsurf_writes_dot_windsurf_mcp_json(tmp_path: Path):
-    paths = mcp_emit.emit_windsurf(tmp_path)
-    assert paths == [".windsurf/mcp.json"]
-    data = json.loads((tmp_path / ".windsurf/mcp.json").read_text(encoding="utf-8"))
-    assert data["mcpServers"]["holoctl"]["args"] == ["serve", "--mcp"]
+def test_emit_codex_writes_dot_codex_config_toml(tmp_path: Path):
+    paths = mcp_emit.emit_codex(tmp_path)
+    assert paths == [".codex/config.toml"]
+    text = (tmp_path / ".codex/config.toml").read_text(encoding="utf-8")
+    assert "[mcp_servers.holoctl]" in text
+    assert 'args = ["serve", "--mcp"]' in text
 
 
-def test_emit_devin_writes_dot_devin_mcp_json(tmp_path: Path):
-    paths = mcp_emit.emit_devin(tmp_path)
-    assert paths == [".devin/mcp.json"]
-    data = json.loads((tmp_path / ".devin/mcp.json").read_text(encoding="utf-8"))
-    assert data["mcpServers"]["holoctl"]["args"] == ["serve", "--mcp"]
+def test_emit_codex_preserves_other_tables(tmp_path: Path):
+    """User has other [mcp_servers.X] / config — merge must preserve them."""
+    cfg_path = tmp_path / ".codex/config.toml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        '[mcp_servers.filesystem]\n'
+        'command = "npx"\n'
+        'args = ["-y", "@modelcontextprotocol/server-filesystem"]\n'
+        '\n'
+        '[telemetry]\n'
+        'enabled = false\n',
+        encoding="utf-8",
+    )
+    mcp_emit.emit_codex(tmp_path)
+    text = cfg_path.read_text(encoding="utf-8")
+    assert "[mcp_servers.filesystem]" in text
+    assert "[mcp_servers.holoctl]" in text
+    assert "[telemetry]" in text
 
 
-def test_idempotent_does_not_duplicate(tmp_path: Path):
-    mcp_emit.emit_cursor(tmp_path)
-    mcp_emit.emit_cursor(tmp_path)
-    data = json.loads((tmp_path / ".cursor/mcp.json").read_text(encoding="utf-8"))
-    # Should still be exactly one holoctl entry (not duplicated).
-    assert list(data["mcpServers"].keys()).count("holoctl") == 1
+def test_emit_codex_idempotent(tmp_path: Path):
+    mcp_emit.emit_codex(tmp_path)
+    first = (tmp_path / ".codex/config.toml").read_text(encoding="utf-8")
+    mcp_emit.emit_codex(tmp_path)
+    second = (tmp_path / ".codex/config.toml").read_text(encoding="utf-8")
+    assert first == second
+    # Single block (no duplication).
+    assert second.count("[mcp_servers.holoctl]") == 1

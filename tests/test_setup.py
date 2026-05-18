@@ -51,19 +51,11 @@ def test_frontmatter_per_target_includes_required_fields():
     assert "name: holoctl" in claude_fm
     assert "allowed-tools" in claude_fm
 
-    cursor_fm = setup_mod._frontmatter("cursor")
-    assert "alwaysApply: false" in cursor_fm
-
-    windsurf_fm = setup_mod._frontmatter("windsurf")
-    assert "name: holoctl" in windsurf_fm
-
-    devin_fm = setup_mod._frontmatter("devin")
-    assert "triggers:" in devin_fm
-    assert "user" in devin_fm
-    assert "model" in devin_fm
+    copilot_fm = setup_mod._frontmatter("copilot")
+    assert 'mode: "agent"' in copilot_fm
 
 
-def test_targets_lists_five_assistants():
+def test_targets_lists_supported_assistants():
     targets = setup_mod._targets()
     keys = {t["key"] for t in targets}
-    assert keys == {"claude", "cursor", "windsurf", "copilot", "devin"}
+    assert keys == {"claude", "copilot"}

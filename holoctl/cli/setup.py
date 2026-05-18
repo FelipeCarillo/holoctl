@@ -49,28 +49,13 @@ def _appdata() -> Path | None:
 
 def _targets() -> list[dict]:
     home = _home()
-    appdata = _appdata()
-    items = [
+    return [
         {
             "name": "Claude Code",
             "key": "claude",
             "detect": [home / ".claude"],
             "skill_path": home / ".claude" / "commands" / "holoctl.md",
             "format": "claude",
-        },
-        {
-            "name": "Cursor",
-            "key": "cursor",
-            "detect": [home / ".cursor"],
-            "skill_path": home / ".cursor" / "rules" / "holoctl.mdc",
-            "format": "cursor",
-        },
-        {
-            "name": "Windsurf",
-            "key": "windsurf",
-            "detect": [home / ".codeium" / "windsurf"],
-            "skill_path": home / ".codeium" / "windsurf" / "skills" / "holoctl" / "SKILL.md",
-            "format": "windsurf",
         },
         {
             "name": "Copilot",
@@ -80,21 +65,6 @@ def _targets() -> list[dict]:
             "format": "copilot",
         },
     ]
-    # Devin: APPDATA on Windows, ~/.config/devin elsewhere.
-    if appdata is not None:
-        devin_skill = appdata / "devin" / "skills" / "holoctl" / "SKILL.md"
-        devin_detect = [appdata / "devin"]
-    else:
-        devin_skill = home / ".config" / "devin" / "skills" / "holoctl" / "SKILL.md"
-        devin_detect = [home / ".config" / "devin"]
-    items.append({
-        "name": "Devin CLI",
-        "key": "devin",
-        "detect": devin_detect,
-        "skill_path": devin_skill,
-        "format": "devin",
-    })
-    return items
 
 
 def _resolve_hctl_bin() -> str:
@@ -190,34 +160,11 @@ def _frontmatter(fmt: str) -> str:
             "allowed-tools: [Bash, Read]\n"
             "---\n\n"
         )
-    if fmt == "cursor":
-        return (
-            "---\n"
-            f'description: "{desc}"\n'
-            "alwaysApply: false\n"
-            "---\n\n"
-        )
-    if fmt == "windsurf":
-        return (
-            "---\n"
-            "name: holoctl\n"
-            f'description: "{desc}"\n'
-            "---\n\n"
-        )
     if fmt == "copilot":
         return (
             "---\n"
             f'description: "{desc}"\n'
             'mode: "agent"\n'
-            "---\n\n"
-        )
-    if fmt == "devin":
-        return (
-            "---\n"
-            "name: holoctl\n"
-            f'description: "{desc}"\n'
-            "allowed-tools:\n  - bash\n  - read\n"
-            "triggers:\n  - user\n  - model\n"
             "---\n\n"
         )
     return ""
@@ -227,7 +174,7 @@ def _frontmatter(fmt: str) -> str:
 def setup_cmd(
     only: Optional[list[str]] = typer.Option(
         None, "--only",
-        help="Restrict to specific assistants (claude, cursor, windsurf, copilot, devin). Repeatable.",
+        help="Restrict to specific assistants (claude, copilot). Repeatable.",
     ),
     force: bool = typer.Option(
         False, "--force",

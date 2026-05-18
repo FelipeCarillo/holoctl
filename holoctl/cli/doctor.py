@@ -14,10 +14,8 @@ app = typer.Typer()
 
 _TARGET_OUTPUTS = {
     "claude": ["CLAUDE.md", ".claude/commands"],
-    "cursor": [".cursor/rules/holoctl.md", ".cursor/commands"],
-    "windsurf": [".windsurfrules", ".windsurf/workflows"],
     "copilot": [".github/copilot-instructions.md", ".github/prompts"],
-    "devin": [".devin/skills"],
+    "codex": [".codex/AGENTS.override.md", ".codex/config.toml"],
     "agents": ["AGENTS.md"],
 }
 
@@ -34,7 +32,7 @@ def doctor_cmd(
     global_check: bool = typer.Option(
         False,
         "--global",
-        help="Check global router installation drift across tools (Claude/Copilot/Devin).",
+        help="Check global router installation drift across tools (Claude/Copilot).",
     ),
 ):
     """Check project health.
@@ -44,11 +42,11 @@ def doctor_cmd(
       - `holoctl: outdated`         → workspace below installed hctl version
       - `holoctl: ok`               → workspace healthy
 
-    Slash command routers (Claude `/holoctl`, Devin `holoctl` skill, Copilot
-    prompt) parse this line to choose init / upgrade / operate flow.
+    Slash command routers (Claude `/holoctl`, Copilot prompt) parse this line
+    to choose init / upgrade / operate flow.
 
-    Pass `--global` to check ~/.claude, ~/.copilot, ~/.config/devin install
-    drift instead of project-level health.
+    Pass `--global` to check ~/.claude and ~/.copilot install drift instead
+    of project-level health.
     """
     if global_check:
         _doctor_global()
@@ -208,18 +206,6 @@ def _doctor_global() -> None:
             issues += 1
         else:
             _check("Copilot", f"holoctl block present ({copilot_path})", True)
-
-    # Devin
-    devin_path = Path.home() / ".config" / "devin" / "skills" / "holoctl" / "SKILL.md"
-    template_d = load_bootstrap("holoctl-devin.md")
-    if not devin_path.exists():
-        _check("Devin", "skill missing — run `hctl setup-global --target devin`", False)
-        issues += 1
-    elif template_d and devin_path.read_text(encoding="utf-8") != template_d:
-        _check("Devin", "skill stale (drift) — run `hctl setup-global --target devin`", False)
-        issues += 1
-    else:
-        _check("Devin", f"skill up-to-date ({devin_path})", True)
 
     console.print("")
     if issues == 0:

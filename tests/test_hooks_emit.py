@@ -90,16 +90,3 @@ def test_emit_claude_includes_write_tool_permissions(tmp_path: Path):
         assert write_tool in ask
 
 
-def test_emit_cursor_creates_hooks_json(tmp_path: Path):
-    paths = hooks_emit.emit_cursor(tmp_path)
-    assert paths == [".cursor/hooks.json"]
-    data = json.loads((tmp_path / ".cursor/hooks.json").read_text(encoding="utf-8"))
-    assert "sessionStart" in data["hooks"]
-    assert "afterFileEdit" in data["hooks"]
-
-
-def test_emit_cursor_idempotent(tmp_path: Path):
-    hooks_emit.emit_cursor(tmp_path)
-    hooks_emit.emit_cursor(tmp_path)
-    data = json.loads((tmp_path / ".cursor/hooks.json").read_text(encoding="utf-8"))
-    assert len(data["hooks"]["sessionStart"]) == 1

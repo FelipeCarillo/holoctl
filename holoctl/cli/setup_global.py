@@ -5,13 +5,13 @@ so `/holoctl` (or equivalent) works in *any* directory, even before
 `hctl init` has been run.
 
 Targets:
-  - claude  → ~/.claude/commands/holoctl.md   (full router, replaces marker block)
+  - claude  → ~/.claude/commands/holoctl.md + ~/.claude/skills/holoctl-router/
   - copilot → ~/.copilot/AGENTS.md            (appends `<!-- holoctl:start ... end -->`)
-  - devin   → ~/.config/devin/skills/holoctl/SKILL.md   (Devin skill format)
-  - all     → all of the above
+  - all     → both of the above
 
-Cursor and Windsurf have no official user-level installation surface — they're
-covered by per-project compile (`hctl compile --target {cursor,windsurf}`).
+Codex and other AGENTS.md-aware assistants (Aider/Zed/Junie/Jules/Factory/goose)
+pick up the per-project `AGENTS.md` emitted by `hctl compile --target agents`.
+They have no documented user-level installation surface for slash routers.
 
 Idempotent: re-running produces no diff if templates haven't changed.
 """
@@ -32,7 +32,7 @@ app = typer.Typer()
 _MARK_START = "<!-- holoctl:start -->"
 _MARK_END = "<!-- holoctl:end -->"
 
-_VALID_TARGETS = ("claude", "copilot", "devin", "all")
+_VALID_TARGETS = ("claude", "copilot", "all")
 
 
 @app.command("setup-global")
@@ -41,7 +41,7 @@ def setup_global_cmd(
         "all",
         "--target",
         "-t",
-        help="Which tool to install for: claude, copilot, devin, or all.",
+        help="Which tool to install for: claude, copilot, or all.",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Print what would change without writing."
@@ -58,12 +58,11 @@ def setup_global_cmd(
         )
         raise typer.Exit(2)
 
-    targets = ("claude", "copilot", "devin") if target == "all" else (target,)
+    targets = ("claude", "copilot") if target == "all" else (target,)
 
     handlers = {
         "claude": _install_claude,
         "copilot": _install_copilot,
-        "devin": _install_devin,
     }
 
     any_change = False
@@ -180,18 +179,6 @@ def _install_copilot(*, dry_run: bool, force: bool) -> bool:
     )
 
 
-def _install_devin(*, dry_run: bool, force: bool) -> bool:
-    """Install Devin skill at ~/.config/devin/skills/holoctl/SKILL.md."""
-    target_path = (
-        Path.home() / ".config" / "devin" / "skills" / "holoctl" / "SKILL.md"
-    )
-    content = load_bootstrap("holoctl-devin.md")
-    if not content:
-        console.print("[red]devin:[/red] holoctl-devin.md template not found in package.")
-        return False
-    return _write_full_file(target_path, content, label="devin", dry_run=dry_run, force=force)
-
-
 # ---------------------------------------------------------------------------
 # File-writing helpers
 
@@ -293,7 +280,6 @@ Common lifecycle:
   and contains build/test/conventions specific to that repo.
 
 If you need the full router workflow (init with discovery, persona suggestion,
-context seeding), the `holoctl` skill in `.devin/skills/` or the per-project
-`.github/prompts/holoctl.prompt.md` cover it. If neither is present, suggest
-the user runs `hctl setup-global --target <this-tool>` once.
+context seeding), the per-project `.github/prompts/holoctl.prompt.md` covers
+it. If absent, suggest the user runs `hctl setup-global --target copilot` once.
 """

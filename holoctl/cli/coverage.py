@@ -1,13 +1,11 @@
 """`hctl coverage` — show what's in `.holoctl/` and where each piece lands per target.
 
 Useful for:
-  - Debugging "why isn't my hook firing in Cursor?" (maybe the cursor compiler
-    doesn't emit hooks).
   - Understanding what each compile target consumes from `.holoctl/`.
   - Auditing cross-tool gaps in coverage.
 
 Output is a matrix: rows = source items in `.holoctl/`, columns = compile
-targets (claude, cursor, windsurf, copilot, devin, agents).
+targets (agents, claude, copilot, codex).
 """
 from __future__ import annotations
 
@@ -30,82 +28,62 @@ _COVERAGE = {
     # Source path under .holoctl/  : { target: rel_path under repo root | None }
     "instructions.md": {
         "claude":  "CLAUDE.md",
-        "cursor":  ".cursor/rules/holoctl.md",
-        "windsurf": ".windsurfrules",
         "copilot": ".github/copilot-instructions.md",
-        "devin":   None,  # AGENTS.md handled by `agents` target now
+        "codex":   ".codex/AGENTS.md",
         "agents":  "AGENTS.md (Objective+Architecture sections)",
     },
     "agents/*.md": {
         "claude":  ".claude/agents/<name>.md",
-        "cursor":  None,
-        "windsurf": None,
         "copilot": None,
-        "devin":   ".devin/agents/<name>/AGENT.md",
+        "codex":   None,
         "agents":  None,
     },
     "commands/*.md": {
         "claude":  ".claude/commands/<name>.md",
-        "cursor":  ".cursor/commands/<name>.md",
-        "windsurf": ".windsurf/workflows/<name>.md",
         "copilot": ".github/prompts/<name>.prompt.md",
-        "devin":   ".devin/skills/<name>/SKILL.md",
+        "codex":   None,
         "agents":  None,
     },
     "context/*.md": {
         "claude":  None,  # consumed via instructions.md / memory references
-        "cursor":  None,
-        "windsurf": None,
         "copilot": None,
-        "devin":   None,
+        "codex":   None,
         "agents":  "AGENTS.md (Objective/Architecture/Conventions)",
     },
     "memory/topics/*.md": {
         "claude":  ".claude/skills/holoctl-memory-<topic>/SKILL.md",
-        "cursor":  ".cursor/rules/holoctl-memory-<topic>.mdc",
-        "windsurf": ".windsurf/rules/holoctl-memory-<topic>.md",
         "copilot": ".github/instructions/holoctl-memory-<topic>.instructions.md",
-        "devin":   ".devin/rules/holoctl-memory-<topic>.md",
+        "codex":   None,
         "agents":  None,
     },
     "hooks/*.json": {
         "claude":  ".claude/settings.json (merged)",
-        "cursor":  ".cursor/hooks.json (merged)",
-        "windsurf": ".windsurf/hooks.json (merged)",
         "copilot": ".copilot/config.json (merged)",
-        "devin":   ".devin/hooks.v1.json (merged)",
+        "codex":   None,
         "agents":  None,
     },
     "rules/*.md": {
         "claude":  ".claude/rules/<name>.md",
-        "cursor":  None,  # cursor has native rules — user writes there directly
-        "windsurf": None,
         "copilot": None,
-        "devin":   None,
+        "codex":   None,
         "agents":  None,
     },
     "skills/*/SKILL.md": {
         "claude":  ".claude/skills/<name>/ (with references/scripts/)",
-        "cursor":  None,
-        "windsurf": None,
         "copilot": None,
-        "devin":   None,
+        "codex":   None,
         "agents":  None,
     },
     "output_styles/*.md": {
         "claude":  ".claude/output_styles/<name>.md",
-        "cursor":  None,
-        "windsurf": None,
         "copilot": None,
-        "devin":   None,
+        "codex":   None,
         "agents":  None,
     },
     "(MCP servers, defined in CLI/server)": {
         "claude":  ".claude/settings.json:mcpServers",
-        "cursor":  ".cursor/mcp.json",
-        "windsurf": ".windsurf/mcp.json",
         "copilot": ".vscode/mcp.json",
-        "devin":   ".devin/mcp.json",
+        "codex":   "~/.codex/config.toml (user-level)",
         "agents":  None,
     },
 }

@@ -92,8 +92,8 @@ def _merge_lists_dedup(existing: list[Any], incoming: list[Any]) -> list[Any]:
 
 def _deep_merge_hooks(target: dict, incoming: dict) -> dict:
     """Merge `incoming` into `target` non-destructively for dict-of-list-of-dict
-    shapes used by both Claude (.claude/settings.json:hooks) and Cursor
-    (.cursor/hooks.json:hooks)."""
+    shapes used by Claude (.claude/settings.json:hooks) and Copilot
+    (.copilot/config.json)."""
     out = dict(target)
     for key, val in incoming.items():
         if key == "hooks" and isinstance(val, dict):
@@ -137,40 +137,6 @@ def emit_claude(project_root: Path, dry_run: bool = False) -> list[str]:
     return [".claude/settings.json"]
 
 
-def emit_cursor(project_root: Path, dry_run: bool = False) -> list[str]:
-    """Merge holoctl's hooks into `.cursor/hooks.json`."""
-    incoming = _load_template("cursor_hooks.json")
-    if incoming is None:
-        return []
-    path = project_root / ".cursor" / "hooks.json"
-    existing = _read_json(path)
-    merged = _deep_merge_hooks(existing, incoming)
-    if not dry_run:
-        _write_json(path, merged)
-    return [".cursor/hooks.json"]
-
-
-def emit_windsurf(project_root: Path, dry_run: bool = False) -> list[str]:
-    """Merge holoctl's hooks into `.windsurf/hooks.json`.
-
-    Windsurf's hook spec is similar to Cursor's. We reuse the cursor template
-    as the source of truth — both target the same lifecycle events. If a
-    Windsurf-specific template (`windsurf_hooks.json`) exists, prefer it.
-    """
-    incoming = _load_template("windsurf_hooks.json")
-    if incoming is None:
-        # Fallback: reuse cursor template since they share lifecycle semantics.
-        incoming = _load_template("cursor_hooks.json")
-    if incoming is None:
-        return []
-    path = project_root / ".windsurf" / "hooks.json"
-    existing = _read_json(path)
-    merged = _deep_merge_hooks(existing, incoming)
-    if not dry_run:
-        _write_json(path, merged)
-    return [".windsurf/hooks.json"]
-
-
 def emit_copilot(project_root: Path, dry_run: bool = False) -> list[str]:
     """Merge holoctl's hooks into `.copilot/config.json` (deny/allow lists).
 
@@ -189,19 +155,3 @@ def emit_copilot(project_root: Path, dry_run: bool = False) -> list[str]:
     return [".copilot/config.json"]
 
 
-def emit_devin(project_root: Path, dry_run: bool = False) -> list[str]:
-    """Merge holoctl's hooks into `.devin/hooks.v1.json`.
-
-    Devin's spec uses `version: 1` envelope with `hooks: [...]`. We translate
-    the cursor template (lifecycle: pre_tool, stop, etc.) into Devin's shape
-    if a Devin-specific template doesn't exist.
-    """
-    incoming = _load_template("devin_hooks.v1.json")
-    if incoming is None:
-        return []
-    path = project_root / ".devin" / "hooks.v1.json"
-    existing = _read_json(path)
-    merged = _deep_merge_hooks(existing, incoming)
-    if not dry_run:
-        _write_json(path, merged)
-    return [".devin/hooks.v1.json"]

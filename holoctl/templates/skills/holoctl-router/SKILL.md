@@ -41,6 +41,8 @@ Pick the right action from what the user said:
 | "any suggestions?"                                   | `hctl curate show`                                      |
 | "list personas"                                      | `hctl agent list`                                       |
 | "activate <persona>"                                 | `mcp__holoctl__agent_add({"name":"<name>"})`           |
+| "design a new persona" / "create persona X tailored to this repo" | `/agent-new <name>` (delegates to `agent-designer`)     |
+| "connect Linear/Jira/X" / "add custom board" / "list providers" | `hctl provider list/add/test` (URL → MCP fetch tool catalog) |
 | "search memory <q>"                                  | `mcp__holoctl__memory_search({"query":"<q>"})`         |
 | "overview" / "snapshot"                              | `hctl overview`                                          |
 
@@ -48,18 +50,20 @@ After any action, **react to its output**:
 - If `board_list` showed p0 pendings, propose the next action (move to doing, delegate to agent).
 - If `curate show` proposes a ticket, ask the user "approve? (move to done auto-executes the action)".
 
-## Tiebreak — spec-flow × work-item-router × ticket-discipline
+## Tiebreak — provider-mcp × spec-flow × work-item-router × ticket-discipline
 
-These three skills all fire on "user described work that needs tracking" and their descriptions overlap. Pick by **signal strength**, top-down — first row that matches wins:
+These skills all fire on "user described work that needs tracking" and their descriptions overlap. Pick by **signal strength**, top-down — first row that matches wins:
 
-| Signal in the user's turn                                                  | Skill to invoke         | Why                                                              |
-|----------------------------------------------------------------------------|-------------------------|-------------------------------------------------------------------|
-| URL pasted (Trello/Linear/Azure/Jira/GitHub Issue/Slack) **or** multi-paragraph brief **or** "vamos planejar / preciso definir como vai funcionar X" | `holoctl-spec-flow`     | External source or design-level scope → intake + decompose pipeline |
+| Signal in the user's turn                                                  | Skill(s) to invoke         | Why                                                              |
+|----------------------------------------------------------------------------|----------------------------|-------------------------------------------------------------------|
+| URL pasted (Linear/GitHub/Trello/Azure/Jira/Slack — or custom internal board registered via `hctl provider add`) | `holoctl-provider-mcp` **first**, then `holoctl-spec-flow` | provider-mcp matches URL against catalog → tries MCP fetch tool (or falls back to paste with `source_*` preserved); spec-flow then consumes the body |
+| Multi-paragraph brief **or** "vamos planejar / preciso definir como vai funcionar X" | `holoctl-spec-flow`        | Design-level scope without external URL → intake + decompose pipeline |
 | Single sentence with ambiguous kind ("história de…", "bug em…", "epic de…", "RFC pra…") | `holoctl-work-item-router` | Just need to pick `kind` before routing                          |
 | Short imperative ("vou refatorar X", "preciso adicionar Y") **and no ticket exists yet**, non-trivial scope                                | `holoctl-ticket-discipline` | Bare announce-then-do — wants a ticket created defensively       |
-| Trivial change (typo, formatting, one-liner)                              | none — just do it       | Don't ticket-spam                                                |
+| Trivial change (typo, formatting, one-liner)                              | none — just do it          | Don't ticket-spam                                                |
 
 **Rules of thumb when two could fire:**
+- `provider-mcp` runs **before** `spec-flow` whenever a URL was pasted — even if you "know" the MCP isn't connected, let provider-mcp probe and fall back honestly. It populates `source_*` either way.
 - `spec-flow` always beats `work-item-router` when an external URL was pasted or the user gave a multi-paragraph brief. Don't downgrade to `work-item-router` just because the kind looks obvious.
 - `work-item-router` beats `ticket-discipline` when the inferred kind is **not `task`** (story/spec/epic/rfc/bug/incident). Those kinds want the structured flow.
 - `ticket-discipline` only fires for `task`-shaped work that the user is about to start without a ticket — its job is to insert the ticket, not to design the work.
