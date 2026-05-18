@@ -77,3 +77,17 @@ def test_instructions_mentions_agent_library_workflow():
     assert "agent add" in instructions
     # Library is mentioned so the user knows it exists.
     assert "library" in instructions.lower()
+
+
+def test_instructions_mentions_v017_capabilities():
+    """instructions.md should surface the provider MCP catalog, the /agent-new
+    designer command, and the Spec-Driven entry point so the assistant can
+    route external-card and persona-design requests from the boot context."""
+    config = get_defaults()
+    out = get_templates(config)
+    instructions = out[".holoctl/instructions.md"]
+    assert "provider list" in instructions
+    assert "/agent-new" in instructions
+    assert "Spec-Driven" in instructions
+    # At least one signal of the MCP auto-fetch flow:
+    assert "holoctl-provider-mcp" in instructions or "MCP" in instructions

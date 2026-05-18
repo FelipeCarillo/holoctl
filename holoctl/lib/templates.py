@@ -641,13 +641,16 @@ def _instructions_md(config: dict) -> str:
 - Tickets: `/board`, `/status`, ou `mcp__holoctl__board_list`
 - Memória: @.holoctl/memory/MEMORY.md
 - Decisões/ADRs: `.holoctl/context/decisions/`
-- Personas: `{cli_bin} agent list` (ativas + library); `{cli_bin} agent add <name>` materializa da library
+- Personas: `{cli_bin} agent list` (ativas + library); `{cli_bin} agent add <name>` materializa da library; `/agent-new <nome>` desenha uma sob medida pro repo
+- Boards externos: `{cli_bin} provider list/add/test` — catálogo que mapeia URL → MCP fetch tool. Defaults shipados: Linear, GitHub, Trello, Azure DevOps, Jira, Slack. Adicione boards internos com `{cli_bin} provider add --mcp-fetch <tool> --url-pattern '<regex>'`.
 
 ## Comandos rápidos
 
-`/holoctl` `/status` `/ticket` `/spec` `/board` `/sprint` `/decision` `/close`
+`/holoctl` `/status` `/ticket` `/spec` `/board` `/sprint` `/decision` `/close` `/agent-new`
 
-`/spec` é o ponto de entrada do **Spec-Driven Development**: cola uma história / card de board externo (Trello, Linear, Azure DevOps, Jira, GitHub, Slack) ou descreve o trabalho, e o fluxo discute → cria spec → decompõe em tasks filhas → propõe execução.
+`/spec` é o ponto de entrada do **Spec-Driven Development**. Aceita um **URL ou ref** de card externo (Linear/GitHub/Trello/Azure DevOps/Jira/Slack — ou board interno registrado via `{cli_bin} provider add`) **ou** uma descrição livre. Quando o MCP do provider está conectado em `.mcp.json`, o conteúdo é **buscado automaticamente** via skill `holoctl-provider-mcp`; quando não, fallback pra paste com `source_*` preservados a partir do URL. Em seguida: discute scope/acceptance → cria spec via `board_create` → decompõe em tasks filhas via `board_batch` → propõe ativação da próxima persona.
+
+`/agent-new <nome>` invoca o `agent-designer`: lê o repo (README, package files, top-level dirs), propõe `description` / `tools` / `paths` / `model` sob medida, salva como `.draft.md` pra revisar e, com `y`, materializa via `mcp__holoctl__agent_create` + compile.
 
 ## Decisões fixadas
 
