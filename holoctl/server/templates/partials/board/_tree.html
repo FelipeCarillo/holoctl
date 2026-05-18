@@ -6,7 +6,7 @@
   <div class="tree-body">
     {% if tree_rows %}
     {% for c in tree_rows %}
-    <a class="tree-row" href="/project/{{ c.alias }}/board/{{ c.id }}" {{ card_data_attrs(c) }} data-depth="{{ c.depth }}">
+    <a class="tree-row kanban-card" href="/project/{{ c.alias }}/board/{{ c.id }}" {{ card_data_attrs(c) }} data-depth="{{ c.depth }}">
       <span class="tr-gutter">
         {%- for flag in c.pipe_flags -%}
         <span class="tr-glyph tr-glyph-{{ 'pipe' if flag else 'blank' }}"></span>

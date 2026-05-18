@@ -22,9 +22,6 @@
       <button class="view-tab {{ 'active' if view == 'list' else '' }}" data-view="list" role="tab" aria-selected="{{ 'true' if view == 'list' else 'false' }}">
         <span class="view-tab-glyph">☰</span> List
       </button>
-      <button class="view-tab {{ 'active' if view == 'timeline' else '' }}" data-view="timeline" role="tab" aria-selected="{{ 'true' if view == 'timeline' else 'false' }}">
-        <span class="view-tab-glyph">⤳</span> Timeline
-      </button>
       <button class="view-tab {{ 'active' if view == 'tree' else '' }}" data-view="tree" role="tab" aria-selected="{{ 'true' if view == 'tree' else 'false' }}">
         <span class="view-tab-glyph">⫶</span> Tree
       </button>
@@ -40,6 +37,7 @@
       <span class="bc-add-filter-glyph">+</span> Add filter
     </button>
     <div class="bc-spacer"></div>
+    {% if view in ('kanban', 'list') %}
     <label class="bc-inline-select">
       <span>Sort</span>
       <select id="bc-sort" data-sort>{% for v, label in SORT_OPTS %}<option value="{{ v }}">{{ label }}</option>{% endfor %}</select>
@@ -48,6 +46,7 @@
       <span>Group</span>
       <select id="bc-group" data-group>{% for v, label in GROUP_OPTS %}<option value="{{ v }}">{{ label }}</option>{% endfor %}</select>
     </label>
+    {% endif %}
     <button class="bc-reset" id="bc-reset" data-bc-reset title="Reset filters / sort / group">↺</button>
   </div>
   <div class="bc-popover" id="bc-popover" hidden role="dialog" aria-label="Add filter">

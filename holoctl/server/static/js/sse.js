@@ -1,13 +1,11 @@
 import { showToast } from './toast.js';
-import { initTimeline } from './timeline.js';
 
 // ── SSE Live Board Updates ──
 
 export function initSSE() {
-  // Any of the three view containers anchors SSE.
+  // Either view container anchors SSE.
   const anchor = document.getElementById('kanban')
-              || document.getElementById('list-view')
-              || document.getElementById('timeline-view');
+              || document.getElementById('list-view');
   if (!anchor) return;
 
   const path = window.location.pathname;
@@ -39,14 +37,10 @@ export function initSSE() {
       wrapper.innerHTML = html;
       const fresh = wrapper.firstElementChild;
       const current = document.getElementById('kanban')
-                   || document.getElementById('list-view')
-                   || document.getElementById('timeline-view');
+                   || document.getElementById('list-view');
       if (fresh && current) current.replaceWith(fresh);
       // Reapply filter / sort / group state to the freshly-swapped DOM.
       if (window.__reapplyBoardControls) window.__reapplyBoardControls();
-      // Timeline needs a render pass after every DOM swap (bars are
-      // positioned by JS, not server).
-      if (document.getElementById('timeline-view')) initTimeline();
       showToast('Board updated');
     } catch (_) {
       // Fall through; next event retries.

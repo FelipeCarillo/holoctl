@@ -2,6 +2,20 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Removed
+
+- **Timeline board view** — the roadmap-style horizontal view (sprint/agent lanes, day/week/month/quarter zoom) was retired. Sub-controls conflicted with the global controls strip and the value didn't justify the maintenance cost. Tickets still carry `created` / `completed` data attributes that any future view can reuse. URL `?view=timeline` now falls back to kanban.
+
+### Fixed
+
+- **Board controls in list + tree** — `group` now reorganizes list buckets by any axis (status / priority / sprint / agent / tag), not just status. `search` and `filter` now reach tree rows. Sort + Group selects are hidden in tree (where they don't apply).
+
+### Changed
+
+- **Timestamps in the dashboard** are now rendered in the browser-host's local timezone with seconds (`YYYY-MM-DD HH:MM:SS`). Storage and the API contract are unchanged — every timestamp on disk and on the wire stays UTC ISO 8601.
+
 ## [0.17.0] — 2026-05-16
 
 Two complementary capabilities built on top of v0.16: provider MCP discovery

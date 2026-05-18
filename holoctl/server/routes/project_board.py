@@ -7,12 +7,11 @@ from fastapi.responses import HTMLResponse
 from ..jinja import render
 from ..views.board import board_context
 from ..views.list import list_context
-from ..views.timeline import timeline_context
 from ..views.tree import tree_context
 
 router = APIRouter()
 
-_VALID_VIEWS = {"kanban", "list", "timeline", "tree"}
+_VALID_VIEWS = {"kanban", "list", "tree"}
 
 _PROJECT_TABS = [
     {"id": "board", "label": "Board"},
@@ -47,8 +46,6 @@ def project_board(alias: str, view: str = "kanban"):
         ctx.update(list_context(tickets, statuses, alias))
     elif view == "tree":
         ctx.update(tree_context(tickets, alias))
-    elif view == "timeline":
-        ctx.update(timeline_context(tickets, alias))
 
     return render(
         "project/board.html",
@@ -98,17 +95,3 @@ def api_list_html(alias: str):
     return HTMLResponse(render("partials/board/_list.html", **ctx))
 
 
-@router.get("/api/project/{alias}/timeline-html", response_class=HTMLResponse)
-def api_timeline_html(alias: str, group: str = "sprint"):
-    """Timeline view fragment for SSE swap. `group` mirrors the lane axis the
-    client toggles between Sprint and Agent."""
-    from ..app import _get_project, _not_found_html
-    from ...lib.board import Board
-
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
-    board = Board(Path(project["path"]), project["config"])
-    tickets = board.ls()
-    ctx = timeline_context(tickets, alias, group_by=group)
-    return HTMLResponse(render("partials/board/_timeline.html", **ctx))

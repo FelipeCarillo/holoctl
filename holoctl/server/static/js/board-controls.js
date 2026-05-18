@@ -123,9 +123,37 @@ function bcGetComparator(mode) {
   return () => 0;
 }
 
+// Axis name → data-* attribute used by the card markup.
+const BC_GROUP_ATTR = { priority: 'p', sprint: 'sprint', agent: 'agent', tag: 'tags' };
+// Axes where a comma-separated list means "ticket belongs to multiple buckets".
+const BC_GROUP_MULTI = new Set(['agent', 'tags']);
+
+function bcBucketKeys(card, axisAttr) {
+  const raw = card.getAttribute('data-' + axisAttr) || '';
+  if (BC_GROUP_MULTI.has(axisAttr)) {
+    const parts = raw.split(',').filter(Boolean);
+    return parts.length ? parts : ['(none)'];
+  }
+  return [raw || '(none)'];
+}
+
+function bcSortBucketKeys(keys) {
+  return [...keys].sort((a, b) => {
+    if (a === '(none)') return 1;
+    if (b === '(none)') return -1;
+    return a.localeCompare(b);
+  });
+}
+
 function bcApplyGroup(state) {
   const kanban = document.getElementById('kanban');
-  if (!kanban) return;
+  if (kanban) return bcApplyGroupKanban(state, kanban);
+  const listView = document.getElementById('list-view');
+  if (listView) return bcApplyGroupList(state, listView);
+  // tree: group select is hidden by the server template; nothing to do.
+}
+
+function bcApplyGroupKanban(state, kanban) {
   const allCards = [...kanban.querySelectorAll('.kanban-card')];
   if (state.group === 'status') {
     // Re-distribute cards back to their original status buckets.
@@ -153,24 +181,16 @@ function bcApplyGroup(state) {
     return;
   }
   // Custom group-by: rebuild columns from scratch.
-  const axisAttr = { priority: 'p', sprint: 'sprint', agent: 'agent', tag: 'tags' }[state.group];
+  const axisAttr = BC_GROUP_ATTR[state.group];
   if (!axisAttr) return;
   const buckets = new Map();
   allCards.forEach(card => {
-    const raw = card.getAttribute('data-' + axisAttr) || '';
-    const values = ['agent', 'tags'].includes(axisAttr)
-      ? (raw.split(',').filter(Boolean).length ? raw.split(',').filter(Boolean) : ['(none)'])
-      : [raw || '(none)'];
-    values.forEach(v => {
+    bcBucketKeys(card, axisAttr).forEach(v => {
       if (!buckets.has(v)) buckets.set(v, []);
       buckets.get(v).push(card);
     });
   });
-  const sortedKeys = [...buckets.keys()].sort((a, b) => {
-    if (a === '(none)') return 1;
-    if (b === '(none)') return -1;
-    return a.localeCompare(b);
-  });
+  const sortedKeys = bcSortBucketKeys(buckets.keys());
   kanban.innerHTML = sortedKeys.map(k => {
     const cards = buckets.get(k);
     return `<div class="kanban-col" data-bucket="${k.replace(/"/g, '&quot;')}">
@@ -186,6 +206,63 @@ function bcApplyGroup(state) {
     buckets.get(k).forEach(card => {
       col.appendChild(card.cloneNode(true));
     });
+  });
+}
+
+// List view: dissolve the server-rendered .list-group buckets (one per status)
+// and rebuild them by the chosen axis. `state.group === 'status'` puts things
+// back where they started — read from each row's data-status, not from the
+// existing group containers (those may already have been reorganized).
+function bcApplyGroupList(state, listView) {
+  const body = listView.querySelector('#list-body') || listView.querySelector('.list-body');
+  if (!body) return;
+  const allRows = [...listView.querySelectorAll('.ticket-row')];
+  let axis, axisAttr, sortKeys;
+  if (state.group === 'status') {
+    axis = 'status';
+    axisAttr = 'status';
+    // Keep the original status order from the server-rendered groups so
+    // backlog → doing → review → done → cancelled stays predictable.
+    const originalOrder = [...listView.querySelectorAll('.list-group')]
+      .map(g => g.getAttribute('data-bucket'));
+    sortKeys = (keys) => {
+      const set = new Set(keys);
+      const inOrder = originalOrder.filter(k => set.has(k));
+      const extras = [...keys].filter(k => !originalOrder.includes(k)).sort();
+      return [...inOrder, ...extras];
+    };
+  } else {
+    axisAttr = BC_GROUP_ATTR[state.group];
+    if (!axisAttr) return;
+    axis = state.group;
+    sortKeys = bcSortBucketKeys;
+  }
+  const buckets = new Map();
+  allRows.forEach(row => {
+    const keys = (axis === 'status')
+      ? [row.getAttribute('data-status') || '(none)']
+      : bcBucketKeys(row, axisAttr);
+    keys.forEach(v => {
+      if (!buckets.has(v)) buckets.set(v, []);
+      buckets.get(v).push(row);
+    });
+  });
+  const orderedKeys = sortKeys([...buckets.keys()]);
+  body.innerHTML = orderedKeys.map(k => {
+    const safe = String(k).replace(/"/g, '&quot;');
+    return `<div class="list-group" data-bucket="${safe}">
+      <div class="list-group-header" data-status="${safe}" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle ${safe} group">
+        <span class="lg-toggle" aria-hidden="true">▾</span>
+        <span class="lg-label">${k}</span>
+        <span class="lg-count">${buckets.get(k).length}</span>
+      </div>
+      <div class="list-group-rows"></div>
+    </div>`;
+  }).join('');
+  orderedKeys.forEach(k => {
+    const safe = String(k).replace(/"/g, '&quot;');
+    const rowsEl = body.querySelector(`.list-group[data-bucket="${safe}"] .list-group-rows`);
+    buckets.get(k).forEach(row => rowsEl.appendChild(row.cloneNode(true)));
   });
 }
 

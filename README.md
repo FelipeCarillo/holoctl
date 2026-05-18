@@ -532,7 +532,7 @@ hctl serve                               # http://127.0.0.1:4242
 hctl serve --host 0.0.0.0 --port 8000    # opt-in network exposure (warns: no auth)
 ```
 
-Tabs: **Board** (Kanban / List / Timeline views with SSE updates), **Repos**, **Agents**, **Commands**, **Context**.
+Tabs: **Board** (Kanban / List / Tree views with SSE updates), **Repos**, **Agents**, **Commands**, **Context**.
 
 ### MCP server
 

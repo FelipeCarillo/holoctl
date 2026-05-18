@@ -33,7 +33,6 @@ from holoctl.server.app import (
     _read_ticket_activity,
     _ticket_detail_page,
     _ticket_preview,
-    _timeline_html,
     app,
 )
 
@@ -529,9 +528,18 @@ class TestApiTicketPatch:
 
 class TestFormatRelativeDate:
     def test_iso(self):
-        disp, full = _format_relative_date("2026-05-09T12:00:00Z")
+        from datetime import timezone
+        disp, full = _format_relative_date("2026-05-09T12:00:00Z", tz=timezone.utc)
         assert disp == "May 9"
         assert full == "2026-05-09T12:00:00Z"
+
+    def test_iso_converts_to_target_tz(self):
+        # 00:30 UTC on May 9 → 21:30 May 8 in UTC-3 (Brasília).
+        from datetime import timezone, timedelta
+        disp, _ = _format_relative_date(
+            "2026-05-09T00:30:00Z", tz=timezone(timedelta(hours=-3))
+        )
+        assert disp == "May 8"
 
     def test_empty(self):
         disp, full = _format_relative_date("")
@@ -735,150 +743,27 @@ class TestApiListHtmlFragment:
         assert r.status_code == 404
 
 
-# ── _timeline_html: markup contract ───────────────────────────────────────────
-
-
-class TestTimelineHtml:
-    def test_renders_shell(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "T", "agent": "developer", "sprint": "s1"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        # Container, axis row, body, today line.
-        assert 'id="timeline-view"' in html
-        assert 'id="timeline"' in html
-        assert 'id="tl-axis"' in html
-        assert 'class="tl-axis-corner"' in html
-        assert 'id="tl-today-line"' in html
-
-    def test_renders_zoom_controls(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "T", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        for z in ("week", "month", "quarter"):
-            assert f'data-tl-zoom="{z}"' in html
-        # Month is the default active zoom.
-        assert 'class="tl-zoom-tab active" data-tl-zoom="month"' in html
-
-    def test_groups_by_sprint_default(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer", "sprint": "s1"})
-        b.add({"title": "B", "agent": "developer", "sprint": "s2"})
-        b.add({"title": "C", "agent": "developer"})  # no sprint
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        # Three lane buckets: s1, s2, and the empty-sprint sink.
-        assert 'data-bucket="s1"' in html
-        assert 'data-bucket="s2"' in html
-        assert 'data-bucket="(backlog)"' in html
-        # Empty/sink lane sorts last.
-        assert html.find('data-bucket="s1"') < html.find('data-bucket="(backlog)"')
-
-    def test_groups_by_agent(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer"})
-        b.add({"title": "B", "agent": "reviewer"})
-        b.add({"title": "C"})  # no agent
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test", group_by="agent")
-        assert 'data-bucket="developer"' in html
-        assert 'data-bucket="reviewer"' in html
-        assert 'data-bucket="(no agent)"' in html
-        # Group selector reflects the chosen axis.
-        assert '<option value="agent" selected>Agent</option>' in html
-
-    def test_invalid_group_falls_back_to_sprint(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer", "sprint": "s1"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test", group_by="bogus")
-        assert 'data-group="sprint"' in html
-
-    def test_emits_row_per_ticket_with_completed_data_attr(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer", "sprint": "s1"})
-        b.move(b.ls()[0]["id"], "done")  # sets completed
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        assert 'class="tl-row kanban-card"' in html
-        assert 'data-completed="' in html
-        # Created and status carry through too.
-        assert 'data-created="' in html
-        assert 'data-status="done"' in html
-
-    def test_row_emits_track_placeholder(self, workspace: Path, workspace_config: dict):
-        """Bars are positioned client-side; the server just emits the track div."""
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer", "sprint": "s1"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        assert 'class="tl-row-track" data-track' in html
-
-    def test_empty_state(self, workspace: Path, workspace_config: dict):
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html([], statuses, "test")
-        assert 'class="tl-empty"' in html
-        assert "No tickets to plot" in html
-
-    def test_carries_filter_data_attrs(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "priority": "p1", "agent": "developer", "sprint": "s1", "tags": "auth"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        # Same data-* contract as kanban / list, so global filter logic
-        # works on `.kanban-card` rows.
-        assert 'data-status="backlog"' in html
-        assert 'data-p="p1"' in html
-        assert 'data-agent="developer"' in html
-        assert 'data-sprint="s1"' in html
-        assert 'data-tags="auth"' in html
-
-
-# ── Route: ?view=timeline ─────────────────────────────────────────────────────
-
-
-class TestViewTimeline:
-    def test_view_timeline_renders(self, client: TestClient, alias: str):
-        r = client.get(f"/project/{alias}/board?view=timeline")
-        assert r.status_code == 200
-        assert 'id="timeline-view"' in r.text
-        assert 'id="kanban"' not in r.text
-        assert 'id="list-view"' not in r.text
-        assert 'data-current-view="timeline"' in r.text
-
-    def test_timeline_tab_is_active(self, client: TestClient, alias: str):
-        r = client.get(f"/project/{alias}/board?view=timeline")
-        assert 'data-view="timeline" role="tab" aria-selected="true"' in r.text
-
-
-class TestApiTimelineHtmlFragment:
-    def test_returns_timeline_fragment(self, client: TestClient, alias: str):
-        r = client.get(f"/api/project/{alias}/timeline-html")
-        assert r.status_code == 200
-        body = r.text.lstrip()
-        assert body.startswith('<div class="timeline-view"')
-        assert 'data-group="sprint"' in body
-
-    def test_group_param_changes_axis(self, client: TestClient, alias: str):
-        r = client.get(f"/api/project/{alias}/timeline-html?group=agent")
-        assert r.status_code == 200
-        assert 'data-group="agent"' in r.text
-
-    def test_unknown_project_404(self, client: TestClient):
-        r = client.get("/api/project/no-such/timeline-html")
-        assert r.status_code == 404
-
-
 # ── Helper: _format_iso_datetime ──────────────────────────────────────────────
 
 
 class TestFormatIsoDatetime:
     def test_iso_z(self):
-        assert _format_iso_datetime("2026-05-07T14:22:00Z") == "2026-05-07 14:22"
+        from datetime import timezone
+        assert _format_iso_datetime("2026-05-07T14:22:36Z", tz=timezone.utc) == "2026-05-07 14:22:36"
 
     def test_iso_no_tz(self):
-        assert _format_iso_datetime("2026-05-07T14:22:00") == "2026-05-07 14:22"
+        # Naive strings are displayed as-is — no conversion.
+        assert _format_iso_datetime("2026-05-07T14:22:36") == "2026-05-07 14:22:36"
+
+    def test_iso_no_seconds_pads(self):
+        # Naive string missing the seconds component is padded with `:00`.
+        assert _format_iso_datetime("2026-05-07T14:22") == "2026-05-07 14:22:00"
+
+    def test_iso_converts_to_target_tz(self):
+        from datetime import timezone, timedelta
+        assert _format_iso_datetime(
+            "2026-05-07T14:22:36Z", tz=timezone(timedelta(hours=-3))
+        ) == "2026-05-07 11:22:36"
 
     def test_invalid(self):
         # Returns the first 19 chars when it can't parse.
@@ -1113,16 +998,6 @@ class TestAccessibility:
         assert 'role="button"' in r.text
         assert 'tabindex="0"' in r.text
 
-    def test_timeline_lane_header_role_button(self, client: TestClient, alias: str):
-        client.post(f"/api/project/{alias}/tickets",
-                    json={"title": "T", "sprint": "s1", "agent": "developer"})
-        r = client.get(f"/project/{alias}/board?view=timeline")
-        # Lane headers ditto.
-        assert 'class="tl-lane-header"' in r.text
-        # Both list group + timeline lane headers carry the role; this
-        # snippet must appear in the timeline view too.
-        assert r.text.count('role="button"') >= 1
-
     def test_kc_menu_has_aria_label(self, client: TestClient, alias: str):
         client.post(f"/api/project/{alias}/tickets", json={"title": "T"})
         r = client.get(f"/project/{alias}/board")
@@ -1195,8 +1070,8 @@ class TestRepoChip:
 
     Tickets that touch a specific subproject can now declare it via
     `projects: [...]` and the dashboard shows it as a small mono pill on
-    the card top row, in the list view, in the timeline row name, and as
-    an editable property in the detail page Properties card.
+    the card top row, in the list view, and as an editable property in
+    the detail page Properties card.
     """
 
     def test_kanban_card_renders_repo_chip(self, workspace: Path, workspace_config: dict):
@@ -1238,16 +1113,6 @@ class TestRepoChip:
         assert "lr-cell-repo" in html
         assert ">Repo<" in html
         assert ">backend</span>" in html
-
-    def test_timeline_row_name_includes_repo(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "T", "agent": "developer", "sprint": "s1",
-               "projects": ["backend"]})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        # The repo chip lives inside the row's sticky-left .tl-row-name.
-        assert "tl-row-name" in html
-        assert "kc-repo" in html
 
     def test_detail_page_properties_card_has_repo_field(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
@@ -1315,7 +1180,7 @@ class TestDependsChip:
         a = b.add({"title": "A", "agent": "developer"})
         b.add({"title": "B", "agent": "developer", "depends": [a["id"]]})
         statuses = workspace_config["board"]["statuses"]
-        for renderer in (_kanban_html, _list_html, _timeline_html):
+        for renderer in (_kanban_html, _list_html):
             html = renderer(b.ls(), statuses, "test") if renderer is not _kanban_html \
                 else renderer(b.ls(), statuses, "test", project_root=workspace)
             assert f'data-depends="{a["id"]}"' in html, f"{renderer.__name__} missed data-depends"
@@ -1408,35 +1273,62 @@ class TestDetailPageStatusList:
         )
 
 
-class TestTimelineDayZoom:
-    """User asked for a Day-level zoom on the timeline (each day a tick)."""
+# ── Tree row carries kanban-card so global filter/search reach it ─────────────
 
-    def test_day_zoom_tab_present(self, client: TestClient, alias: str):
+
+class TestTreeRowHasKanbanCardClass:
+    def test_tree_view_route_emits_kanban_card_on_rows(self, client: TestClient, alias: str):
+        # Seed one ticket so the tree has something to render.
         client.post(f"/api/project/{alias}/tickets",
-                    json={"title": "T", "sprint": "s1", "agent": "developer"})
+                    json={"title": "Root", "agent": "developer"})
+        r = client.get(f"/project/{alias}/board?view=tree")
+        assert r.status_code == 200
+        # The shared kanban-card class is what bcApplyFilter / bcCollectOptions
+        # in static/js/board-controls.js look for — without it, search and
+        # filter chips silently no-op on the tree.
+        assert 'class="tree-row kanban-card"' in r.text
+
+
+# ── Sort + Group selects only render on views that support them ──────────────
+
+
+class TestControlsHiddenByView:
+    """Tree has no concept of sort/group (would break hierarchy), so those
+    selects must be omitted from the controls strip when view=tree.
+    Kanban and list keep both."""
+
+    def test_kanban_has_sort_and_group(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=kanban")
+        assert 'id="bc-sort"' in r.text
+        assert 'id="bc-group"' in r.text
+
+    def test_list_has_sort_and_group(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=list")
+        assert 'id="bc-sort"' in r.text
+        assert 'id="bc-group"' in r.text
+
+    def test_tree_hides_sort_and_group(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=tree")
+        assert 'id="bc-sort"' not in r.text
+        assert 'id="bc-group"' not in r.text
+
+
+# ── Timeline view is removed — `?view=timeline` falls back to kanban ─────────
+
+
+class TestTimelineRemoved:
+    def test_view_timeline_falls_back_to_kanban(self, client: TestClient, alias: str):
         r = client.get(f"/project/{alias}/board?view=timeline")
         assert r.status_code == 200
-        assert 'data-tl-zoom="day"' in r.text
-        # Order: Day → Week → Month (active by default) → Quarter.
-        i_day = r.text.find('data-tl-zoom="day"')
-        i_week = r.text.find('data-tl-zoom="week"')
-        i_month = r.text.find('data-tl-zoom="month"')
-        i_quarter = r.text.find('data-tl-zoom="quarter"')
-        assert -1 < i_day < i_week < i_month < i_quarter
+        # _VALID_VIEWS coerces unknown values to kanban.
+        assert 'id="kanban"' in r.text
+        assert 'id="timeline-view"' not in r.text
 
-    def test_day_zoom_config_present_in_js(self, dashboard_js: str):
-        # `day` config must be in TL_ZOOM with sensible per-day pixel value
-        # so each day reads as its own column.
-        m = re.search(r"const TL_ZOOM\s*=\s*\{[^}]*?\}", dashboard_js, re.S)
-        assert m
-        block = m.group(0)
-        assert "day:" in block
-        # tickEveryDays: 1 → one tick per day (sanity check that we wired
-        # the granularity, not just renamed an existing zoom).
-        assert re.search(r"day:\s*\{[^}]*tickEveryDays:\s*1", block)
+    def test_timeline_tab_no_longer_in_switcher(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board")
+        assert 'data-view="timeline"' not in r.text
 
-    def test_day_zoom_label_styling_class(self, dashboard_css: str):
-        # Day labels stack a smaller day-of-week glyph above the date —
-        # the supporting class must ship so the second line doesn't
-        # render at full label size and crash the spacing.
-        assert ".tl-axis-tick-dow" in dashboard_css
+    def test_timeline_html_fragment_route_gone(self, client: TestClient, alias: str):
+        r = client.get(f"/api/project/{alias}/timeline-html")
+        assert r.status_code == 404
+
