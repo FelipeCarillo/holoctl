@@ -18,7 +18,7 @@ app = typer.Typer()
 def init_cmd(
     name: Optional[str] = typer.Option(None, "--name", help="Project name"),
     prefix: Optional[str] = typer.Option(None, "--prefix", help="Ticket ID prefix (e.g. MP)"),
-    targets: Optional[str] = typer.Option(None, "--targets", help="Compile targets (claude,cursor,windsurf,copilot,devin)"),
+    targets: Optional[str] = typer.Option(None, "--targets", help="Compile targets (agents,claude,copilot,codex)"),
     skip_compile: bool = typer.Option(False, "--skip-compile", help="Skip auto-compile after init"),
     bare: bool = typer.Option(False, "--bare", help="Create only the directory skeleton; skip compile, hooks, MCP."),
 ):

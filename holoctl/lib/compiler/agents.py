@@ -1,11 +1,11 @@
 """Compile target: AGENTS.md (cross-tool universal).
 
-Emits a root-level `AGENTS.md` that 20+ AI assistants respect (Claude Code,
-OpenAI Codex, GitHub Copilot, Cursor, Devin, Zed, Aider, JetBrains Junie,
-Google Jules, Factory, goose, Windsurf, UiPath Autopilot, VS Code, ...).
+Emits a root-level `AGENTS.md` that AGENTS.md-aware assistants respect
+(OpenAI Codex, GitHub Copilot, Claude Code, Zed, Aider, JetBrains Junie,
+Google Jules, Factory, goose, VS Code, UiPath Autopilot, ...).
 
 Decoupled from any specific assistant: this is the *neutral interop file*.
-Tool-specific compilers (claude/cursor/devin/...) emit their own per-tool
+Tool-specific compilers (claude/copilot/codex/...) emit their own per-tool
 files; this one fills the gap that AGENTS.md is the only true cross-tool
 standard for instructions.
 
@@ -52,8 +52,8 @@ def compile_agents(project_root: Path, config: dict, dry_run: bool = False) -> d
     sections.append(
         "This file gives coding agents the context to work productively in "
         "this repo. It's the cross-tool standard ([agents.md](https://agents.md/)) "
-        "respected by Claude Code, OpenAI Codex, GitHub Copilot, Cursor, Devin, "
-        "Zed, Aider and 15+ other assistants.\n"
+        "respected by OpenAI Codex, GitHub Copilot, Claude Code, Zed, Aider, "
+        "Junie, Jules, goose and other AGENTS.md-aware assistants.\n"
     )
 
     if objective:

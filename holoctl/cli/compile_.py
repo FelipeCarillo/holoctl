@@ -13,7 +13,7 @@ app = typer.Typer()
 
 @app.command("compile")
 def compile_cmd(
-    target: Optional[str] = typer.Option(None, "--target", help="Target (claude, cursor, windsurf, copilot, devin, generic)"),
+    target: Optional[str] = typer.Option(None, "--target", help="Target (agents, claude, copilot, codex)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files"),
     force: bool = typer.Option(
         False, "--force", "-f",

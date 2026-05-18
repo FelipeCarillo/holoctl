@@ -3,21 +3,19 @@ from pathlib import Path
 
 from .agents import compile_agents
 from .claude import compile_claude
-from .cursor import compile_cursor
-from .windsurf import compile_windsurf
+from .codex import compile_codex
 from .copilot import compile_copilot
-from .devin import compile_devin
-from .generic import compile_generic
 
 _COMPILERS = {
-    # Cross-tool universal: AGENTS.md respected by 20+ assistants.
+    # Cross-tool universal: AGENTS.md respected by Aider / Zed / Junie /
+    # Jules / Factory / goose and other agents.md-aware assistants. Codex
+    # also reads AGENTS.md but has additional first-class surfaces
+    # (.codex/config.toml for MCP, .codex/AGENTS.override.md) so it gets a
+    # dedicated target on top of the cross-tool one.
     "agents": compile_agents,
     "claude": compile_claude,
-    "cursor": compile_cursor,
-    "windsurf": compile_windsurf,
     "copilot": compile_copilot,
-    "devin": compile_devin,
-    "generic": compile_generic,
+    "codex": compile_codex,
 }
 
 
