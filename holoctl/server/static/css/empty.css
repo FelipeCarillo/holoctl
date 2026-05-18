@@ -1,0 +1,17 @@
+/* ── Empty state ── */
+.empty-state {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--text-2);
+}
+
+.empty-state h3 {
+  font-size: 17px;
+  color: var(--text-1);
+  margin-bottom: 8px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.empty-state p { font-size: 13px; max-width: 380px; margin: 0 auto; line-height: 1.7; }
+

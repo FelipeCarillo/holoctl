@@ -1,0 +1,26 @@
+/* ── Staggered card animation ── */
+.project-card, .agent-card, .kanban-card, .context-item {
+  animation: fadeUp 0.35s var(--ease) both;
+}
+
+.project-grid > :nth-child(1) { animation-delay: 0s; }
+.project-grid > :nth-child(2) { animation-delay: 0.05s; }
+.project-grid > :nth-child(3) { animation-delay: 0.1s; }
+.project-grid > :nth-child(4) { animation-delay: 0.15s; }
+
+.agent-grid > :nth-child(1) { animation-delay: 0s; }
+.agent-grid > :nth-child(2) { animation-delay: 0.04s; }
+.agent-grid > :nth-child(3) { animation-delay: 0.08s; }
+.agent-grid > :nth-child(4) { animation-delay: 0.12s; }
+
+.kanban-cards > :nth-child(1) { animation-delay: 0s; }
+.kanban-cards > :nth-child(2) { animation-delay: 0.03s; }
+.kanban-cards > :nth-child(3) { animation-delay: 0.06s; }
+
+.context-list > :nth-child(1) { animation-delay: 0s; }
+.context-list > :nth-child(2) { animation-delay: 0.03s; }
+.context-list > :nth-child(3) { animation-delay: 0.06s; }
+.context-list > :nth-child(4) { animation-delay: 0.09s; }
+.context-list > :nth-child(5) { animation-delay: 0.12s; }
+.context-list > :nth-child(6) { animation-delay: 0.15s; }
+

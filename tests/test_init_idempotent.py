@@ -108,3 +108,35 @@ def test_init_creates_memory_seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     runner.invoke(init_app, ["--name", "X", "--prefix", "X", "--skip-compile"])
     assert (tmp_path / ".holoctl" / "memory" / "MEMORY.md").exists()
     assert (tmp_path / ".holoctl" / "memory" / ".gitignore").exists()
+
+
+def test_init_creates_workspace_gitignore_with_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`.holoctl/.gitignore` is seeded so persona-suggester cache (and any
+    other transient `.cache/` debris) never gets committed."""
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(init_app, ["--name", "X", "--prefix", "X", "--skip-compile"])
+    gi = tmp_path / ".holoctl" / ".gitignore"
+    assert gi.exists()
+    content = gi.read_text(encoding="utf-8")
+    assert ".cache/" in content
+
+
+def test_init_workspace_gitignore_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Re-running init must not clobber a user-edited `.holoctl/.gitignore`."""
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(init_app, ["--name", "X", "--prefix", "X", "--skip-compile"])
+    gi = tmp_path / ".holoctl" / ".gitignore"
+    gi.write_text(
+        gi.read_text(encoding="utf-8") + "\n# user added\nlocal-notes/\n",
+        encoding="utf-8",
+    )
+    runner.invoke(init_app, ["--skip-compile"])
+    after = gi.read_text(encoding="utf-8")
+    assert "# user added" in after
+    assert "local-notes/" in after

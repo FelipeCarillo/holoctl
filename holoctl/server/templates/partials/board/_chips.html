@@ -1,0 +1,51 @@
+{# Visual marker for the work-item kind. `task` is the default and renders
+   blank to keep typical cards uncluttered. #}
+{% set KIND_GLYPHS = {
+  'spec': '◆', 'epic': '◇', 'story': '◉', 'bug': '●',
+  'rfc': '✎', 'incident': '⚠'
+} %}
+{% set PROVIDER_GLYPHS = {
+  'linear': 'L', 'github': 'GH', 'trello': 'T',
+  'jira': 'J', 'azure': 'AZ', 'slack': 'S'
+} %}
+
+{% macro chip_kind(kind) -%}
+{% if kind and kind != 'task' -%}
+<span class="kc-kind" data-kind="{{ kind }}" title="kind: {{ kind }}"><span class="kc-kind-glyph" aria-hidden="true">{{ KIND_GLYPHS.get(kind, '◾') }}</span>{{ kind }}</span>
+{%- endif %}
+{%- endmacro %}
+
+{% macro chip_source(provider, url, ref, label) -%}
+{% if provider or url or ref or label -%}
+{% set glyph = PROVIDER_GLYPHS.get((provider or '') | lower, '↗') -%}
+{% set body = ref or label or provider or 'ext' -%}
+{% set tip_parts = [] -%}
+{% if label %}{% set _ = tip_parts.append(label) %}{% endif -%}
+{% if provider %}{% set _ = tip_parts.append(provider) %}{% endif -%}
+{% if ref %}{% set _ = tip_parts.append(ref) %}{% endif -%}
+{% if url %}{% set _ = tip_parts.append(url) %}{% endif -%}
+<span class="kc-source" data-provider="{{ (provider or '') | lower }}" title="from {{ tip_parts | join(' · ') }}"><span class="kc-source-glyph" aria-hidden="true">{{ glyph }}</span><span class="kc-source-ref">{{ body }}</span></span>
+{%- endif %}
+{%- endmacro %}
+
+{% macro chip_parent(parent_id) -%}
+{% if parent_id -%}
+<span class="kc-parent" title="parent: {{ parent_id }}"><span class="kc-parent-glyph" aria-hidden="true">↑</span>{{ parent_id }}</span>
+{%- endif %}
+{%- endmacro %}
+
+{% macro chip_repo(projects_list) -%}
+{% if projects_list -%}
+{% set head = projects_list[0] -%}
+{% set extra_count = projects_list | length - 1 -%}
+<span class="kc-repo" title="repo: {{ projects_list | join(', ') }}"><span class="kc-repo-glyph" aria-hidden="true">▸</span>{{ head }}{% if extra_count > 0 %} <span class="kc-repo-extra">+{{ extra_count }}</span>{% endif %}</span>
+{%- endif %}
+{%- endmacro %}
+
+{% macro chip_deps(depends_list, alias) -%}
+{% if depends_list -%}
+{% set head = depends_list[0] -%}
+{% set extra_count = depends_list | length - 1 -%}
+<span class="kc-deps" title="depends on: {{ depends_list | join(', ') }}"><span class="kc-deps-glyph" aria-hidden="true">↳</span>{{ head }}{% if extra_count > 0 %} <span class="kc-deps-extra">+{{ extra_count }}</span>{% endif %}</span>
+{%- endif %}
+{%- endmacro %}

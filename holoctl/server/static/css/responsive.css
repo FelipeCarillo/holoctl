@@ -1,0 +1,50 @@
+/* ── Responsive
+   Breakpoints (rules are max-width):
+   - 1280: minor density tweaks
+   - 768:  hide breadcrumb + board path, kanban columns scroll-snap,
+           detail page stacks to single column
+   - 480:  shrink topbar, drop search and view-tab labels, kanban
+           columns occupy near-full viewport width
+   ────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 1280px) {
+  :root { --col-w: 280px; }
+}
+
+@media (max-width: 768px) {
+  .topbar-breadcrumb { display: none; }
+  .topbar-brand .brand-name { display: none; }
+  .topbar { padding: 0 12px; }
+  .board-header { flex-wrap: wrap; gap: 8px; }
+  .board-header-text .board-path { display: none; }
+  /* Snap-scroll between status columns instead of cramming them all
+     into one narrow viewport. */
+  .kanban {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .kanban-col {
+    scroll-snap-align: start;
+    min-width: 80vw;
+    max-width: 80vw;
+  }
+  /* Detail page collapses to one column on phones — rail stacks under
+     the markdown body. */
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  /* Board controls wrap their two rows tighter so secondary controls
+     (search, sort, group) don't overflow. */
+  .bc-row { flex-wrap: wrap; gap: 6px; }
+}
+
+@media (max-width: 480px) {
+  :root { --header-h: 44px; }
+  .board-header { padding: 10px 12px; }
+  .board-title { font-size: 18px; }
+  .bc-search { display: none; }
+  /* Keep the glyph; drop the label so all four view tabs fit. */
+  .view-tab { padding: 6px 8px; }
+  .view-tab > *:not(.view-tab-glyph) { display: none; }
+  .kanban-col { min-width: 88vw; max-width: 88vw; }
+}

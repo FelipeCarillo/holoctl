@@ -1,0 +1,143 @@
+/* ── Card (Notion/Things-style) ── */
+.kanban-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
+  cursor: pointer;
+  display: block;
+  position: relative;
+}
+
+.kanban-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-hover);
+}
+
+.kanban-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.kc-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.kc-prio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  position: relative;
+}
+
+.kc-prio-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  opacity: 0.18;
+  background: currentColor;
+  pointer-events: none;
+}
+
+.kc-prio-dot[data-p="p0"] { background: var(--red);    color: var(--red);    }
+.kc-prio-dot[data-p="p1"] { background: var(--yellow); color: var(--yellow); }
+.kc-prio-dot[data-p="p2"] { background: var(--blue);   color: var(--blue);   }
+.kc-prio-dot[data-p="p3"] { background: var(--text-3); color: var(--text-3); }
+.kc-prio-dot[data-p="p3"]::after { opacity: 0; }
+
+.kc-id {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+
+.kc-title {
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.35;
+  color: var(--text-0);
+  /* Up to 2 lines of title before truncation. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.kc-preview {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin-top: 4px;
+  /* Single line of body preview; overflow ellipsises. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kc-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-2);
+  flex-wrap: wrap;
+}
+
+.kc-sprint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: -0.2px;
+}
+
+/* Repo / projects pill on the card top row. Sits between the ID and the
+   ⋯ menu, with a soft purple tint to differentiate from sprint (mono
+   gray) and from priority (the colored dot). */
+.kc-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  background: var(--purple-subtle);
+  color: var(--purple);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kc-repo-glyph { font-size: 9px; opacity: 0.75; }
+.kc-repo-extra { color: var(--text-2); font-weight: 500; }
+
+/* Deps annotation in the meta row — quieter than the sprint pill so it
+   reads as secondary info; reuses mono so dep IDs align with the card ID. */
+.kc-deps {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: -0.2px;
+}
+.kc-deps-glyph { font-size: 12px; opacity: 0.7; line-height: 1; }
+.kc-deps-extra { color: var(--text-3); font-weight: 500; }
+

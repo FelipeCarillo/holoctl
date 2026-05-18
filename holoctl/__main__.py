@@ -17,6 +17,7 @@ from .cli.agent import app as _agent_app
 from .cli.memory import app as _memory_app
 from .cli.journal import app as _journal_app
 from .cli.repo import app as _repo_app
+from .cli.provider import app as _provider_app
 from .cli.serve import app as _serve_app, serve_cmd
 from .cli.overview import app as _overview_app, overview_cmd
 from .cli.setup import setup_cmd
@@ -40,6 +41,7 @@ app.add_typer(_memory_app, name="memory", help="Manage workspace memory")
 app.add_typer(_journal_app, name="journal", help="Record and inspect workspace events")
 app.add_typer(_curate_app, name="curate", help="Run the curator + inspect/silence suggestions")
 app.add_typer(_repo_app, name="repo", help="Manage repos within a project")
+app.add_typer(_provider_app, name="provider", help="Manage external-board provider catalog")
 
 # Direct commands
 app.command("init")(init_cmd)

@@ -2,6 +2,14 @@
 .venv/
 venv/
 env/
+node_modules/
+
+# MCP scratch (Playwright captures, ad-hoc tooling)
+.playwright-mcp/
+
+# Ad-hoc drafts (linkedin posts, screenshots, etc.) — keep out of the repo.
+*-draft.jpg
+*-draft.png
 
 # Python build artifacts
 __pycache__/

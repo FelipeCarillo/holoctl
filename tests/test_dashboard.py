@@ -33,7 +33,6 @@ from holoctl.server.app import (
     _read_ticket_activity,
     _ticket_detail_page,
     _ticket_preview,
-    _timeline_html,
     app,
 )
 
@@ -315,15 +314,16 @@ class TestReadRoutes:
         # Fragment-level (just the kanban div).
         assert r.text.lstrip().startswith('<div class="kanban"')
 
-    def test_static_assets_served(self, client: TestClient):
-        css = client.get("/static/holoctl.css")
-        js = client.get("/static/holoctl-ui.js")
+    def test_static_assets_served(self, client: TestClient, dashboard_css: str):
+        css = client.get("/static/css/index.css")
+        js = client.get("/static/js/index.js")
         assert css.status_code == 200
         assert js.status_code == 200
-        # Sanity: new tokens / classes shipped.
-        assert "html, body { height: 100vh; overflow: hidden; }" in css.text
-        assert ".kc-prio-dot" in css.text
-        assert ".kanban-col-add" in css.text
+        # Sanity: new tokens / classes shipped (checked against the resolved
+        # css bundle since index.css is just @imports).
+        assert "html, body { height: 100vh; overflow: hidden; }" in dashboard_css
+        assert ".kc-prio-dot" in dashboard_css
+        assert ".kanban-col-add" in dashboard_css
 
 
 # ── Routes: POST /tickets (create) ────────────────────────────────────────────
@@ -528,9 +528,18 @@ class TestApiTicketPatch:
 
 class TestFormatRelativeDate:
     def test_iso(self):
-        disp, full = _format_relative_date("2026-05-09T12:00:00Z")
+        from datetime import timezone
+        disp, full = _format_relative_date("2026-05-09T12:00:00Z", tz=timezone.utc)
         assert disp == "May 9"
         assert full == "2026-05-09T12:00:00Z"
+
+    def test_iso_converts_to_target_tz(self):
+        # 00:30 UTC on May 9 → 21:30 May 8 in UTC-3 (Brasília).
+        from datetime import timezone, timedelta
+        disp, _ = _format_relative_date(
+            "2026-05-09T00:30:00Z", tz=timezone(timedelta(hours=-3))
+        )
+        assert disp == "May 8"
 
     def test_empty(self):
         disp, full = _format_relative_date("")
@@ -656,6 +665,70 @@ class TestViewSwitcher:
         assert 'data-view="list" role="tab" aria-selected="true"' in r.text
         assert '.view-tab active" data-view="kanban"' not in r.text
 
+    def test_view_tree_renders_tree_markup(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=tree")
+        assert r.status_code == 200
+        assert 'id="tree-view"' in r.text
+        assert 'data-current-view="tree"' in r.text
+        assert 'id="kanban"' not in r.text
+        # The Tree tab is in the switcher and marked active.
+        assert 'data-view="tree" role="tab" aria-selected="true"' in r.text
+
+
+class TestTreeHtml:
+    def test_renders_root_and_children_with_data_attrs(
+        self, workspace: Path, workspace_config: dict
+    ):
+        from holoctl.server.app import _tree_html
+        b = Board(workspace, workspace_config)
+        spec = b.add({"title": "Auth flow", "kind": "spec"})
+        c1 = b.add({"title": "Sign", "agent": "developer", "parent": spec["id"]})
+        c2 = b.add({"title": "Verify", "agent": "developer", "parent": spec["id"]})
+
+        tickets = b.ls()
+        html = _tree_html(tickets, workspace_config["board"]["statuses"], "x")
+        # Every ticket has its own row…
+        assert f'data-id="{spec["id"]}"' in html
+        assert f'data-id="{c1["id"]}"' in html
+        assert f'data-id="{c2["id"]}"' in html
+        # Children carry data-parent so DOM-side filters can still group.
+        assert f'data-parent="{spec["id"]}"' in html
+        # Depth signal — the spec is depth 0, children are depth 1.
+        assert 'data-depth="0"' in html
+        assert 'data-depth="1"' in html
+        # Connector glyphs appear for the children (CSS draws the actual lines).
+        assert "tr-glyph-mid" in html or "tr-glyph-last" in html
+
+    def test_orphan_with_missing_parent_promotes_to_root(
+        self, workspace: Path, workspace_config: dict
+    ):
+        """A ticket whose declared parent is absent from the board still renders —
+        as a root, not as a dangling row that disappears from the tree."""
+        from holoctl.server.app import _tree_html
+        b = Board(workspace, workspace_config)
+        # Build directly: an orphan whose parent ID was never created.
+        b.add({"title": "Orphan", "agent": "developer"})
+        # Inject a phantom parent reference via the index so we can simulate
+        # a dangling ref without going through add()'s validation.
+        import json
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        data["tickets"][0]["parent"] = "PHANTOM-999"
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        tickets = b.ls()
+        html = _tree_html(tickets, workspace_config["board"]["statuses"], "x")
+        # The orphan still appears at depth 0 (no glyph gutter).
+        assert 'data-depth="0"' in html
+        assert "Orphan" in html
+
+    def test_empty_workspace_shows_friendly_message(
+        self, workspace: Path, workspace_config: dict
+    ):
+        from holoctl.server.app import _tree_html
+        html = _tree_html([], workspace_config["board"]["statuses"], "x")
+        assert "tree-empty" in html or "No tickets" in html
+
 
 class TestApiListHtmlFragment:
     def test_returns_list_view_fragment(self, client: TestClient, alias: str):
@@ -670,150 +743,27 @@ class TestApiListHtmlFragment:
         assert r.status_code == 404
 
 
-# ── _timeline_html: markup contract ───────────────────────────────────────────
-
-
-class TestTimelineHtml:
-    def test_renders_shell(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "T", "agent": "developer", "sprint": "s1"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        # Container, axis row, body, today line.
-        assert 'id="timeline-view"' in html
-        assert 'id="timeline"' in html
-        assert 'id="tl-axis"' in html
-        assert 'class="tl-axis-corner"' in html
-        assert 'id="tl-today-line"' in html
-
-    def test_renders_zoom_controls(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "T", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        for z in ("week", "month", "quarter"):
-            assert f'data-tl-zoom="{z}"' in html
-        # Month is the default active zoom.
-        assert 'class="tl-zoom-tab active" data-tl-zoom="month"' in html
-
-    def test_groups_by_sprint_default(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer", "sprint": "s1"})
-        b.add({"title": "B", "agent": "developer", "sprint": "s2"})
-        b.add({"title": "C", "agent": "developer"})  # no sprint
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        # Three lane buckets: s1, s2, and the empty-sprint sink.
-        assert 'data-bucket="s1"' in html
-        assert 'data-bucket="s2"' in html
-        assert 'data-bucket="(backlog)"' in html
-        # Empty/sink lane sorts last.
-        assert html.find('data-bucket="s1"') < html.find('data-bucket="(backlog)"')
-
-    def test_groups_by_agent(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer"})
-        b.add({"title": "B", "agent": "reviewer"})
-        b.add({"title": "C"})  # no agent
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test", group_by="agent")
-        assert 'data-bucket="developer"' in html
-        assert 'data-bucket="reviewer"' in html
-        assert 'data-bucket="(no agent)"' in html
-        # Group selector reflects the chosen axis.
-        assert '<option value="agent" selected>Agent</option>' in html
-
-    def test_invalid_group_falls_back_to_sprint(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer", "sprint": "s1"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test", group_by="bogus")
-        assert 'data-group="sprint"' in html
-
-    def test_emits_row_per_ticket_with_completed_data_attr(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer", "sprint": "s1"})
-        b.move(b.ls()[0]["id"], "done")  # sets completed
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        assert 'class="tl-row kanban-card"' in html
-        assert 'data-completed="' in html
-        # Created and status carry through too.
-        assert 'data-created="' in html
-        assert 'data-status="done"' in html
-
-    def test_row_emits_track_placeholder(self, workspace: Path, workspace_config: dict):
-        """Bars are positioned client-side; the server just emits the track div."""
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "agent": "developer", "sprint": "s1"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        assert 'class="tl-row-track" data-track' in html
-
-    def test_empty_state(self, workspace: Path, workspace_config: dict):
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html([], statuses, "test")
-        assert 'class="tl-empty"' in html
-        assert "No tickets to plot" in html
-
-    def test_carries_filter_data_attrs(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "A", "priority": "p1", "agent": "developer", "sprint": "s1", "tags": "auth"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        # Same data-* contract as kanban / list, so global filter logic
-        # works on `.kanban-card` rows.
-        assert 'data-status="backlog"' in html
-        assert 'data-p="p1"' in html
-        assert 'data-agent="developer"' in html
-        assert 'data-sprint="s1"' in html
-        assert 'data-tags="auth"' in html
-
-
-# ── Route: ?view=timeline ─────────────────────────────────────────────────────
-
-
-class TestViewTimeline:
-    def test_view_timeline_renders(self, client: TestClient, alias: str):
-        r = client.get(f"/project/{alias}/board?view=timeline")
-        assert r.status_code == 200
-        assert 'id="timeline-view"' in r.text
-        assert 'id="kanban"' not in r.text
-        assert 'id="list-view"' not in r.text
-        assert 'data-current-view="timeline"' in r.text
-
-    def test_timeline_tab_is_active(self, client: TestClient, alias: str):
-        r = client.get(f"/project/{alias}/board?view=timeline")
-        assert 'data-view="timeline" role="tab" aria-selected="true"' in r.text
-
-
-class TestApiTimelineHtmlFragment:
-    def test_returns_timeline_fragment(self, client: TestClient, alias: str):
-        r = client.get(f"/api/project/{alias}/timeline-html")
-        assert r.status_code == 200
-        body = r.text.lstrip()
-        assert body.startswith('<div class="timeline-view"')
-        assert 'data-group="sprint"' in body
-
-    def test_group_param_changes_axis(self, client: TestClient, alias: str):
-        r = client.get(f"/api/project/{alias}/timeline-html?group=agent")
-        assert r.status_code == 200
-        assert 'data-group="agent"' in r.text
-
-    def test_unknown_project_404(self, client: TestClient):
-        r = client.get("/api/project/no-such/timeline-html")
-        assert r.status_code == 404
-
-
 # ── Helper: _format_iso_datetime ──────────────────────────────────────────────
 
 
 class TestFormatIsoDatetime:
     def test_iso_z(self):
-        assert _format_iso_datetime("2026-05-07T14:22:00Z") == "2026-05-07 14:22"
+        from datetime import timezone
+        assert _format_iso_datetime("2026-05-07T14:22:36Z", tz=timezone.utc) == "2026-05-07 14:22:36"
 
     def test_iso_no_tz(self):
-        assert _format_iso_datetime("2026-05-07T14:22:00") == "2026-05-07 14:22"
+        # Naive strings are displayed as-is — no conversion.
+        assert _format_iso_datetime("2026-05-07T14:22:36") == "2026-05-07 14:22:36"
+
+    def test_iso_no_seconds_pads(self):
+        # Naive string missing the seconds component is padded with `:00`.
+        assert _format_iso_datetime("2026-05-07T14:22") == "2026-05-07 14:22:00"
+
+    def test_iso_converts_to_target_tz(self):
+        from datetime import timezone, timedelta
+        assert _format_iso_datetime(
+            "2026-05-07T14:22:36Z", tz=timezone(timedelta(hours=-3))
+        ) == "2026-05-07 11:22:36"
 
     def test_invalid(self):
         # Returns the first 19 chars when it can't parse.
@@ -1048,50 +998,37 @@ class TestAccessibility:
         assert 'role="button"' in r.text
         assert 'tabindex="0"' in r.text
 
-    def test_timeline_lane_header_role_button(self, client: TestClient, alias: str):
-        client.post(f"/api/project/{alias}/tickets",
-                    json={"title": "T", "sprint": "s1", "agent": "developer"})
-        r = client.get(f"/project/{alias}/board?view=timeline")
-        # Lane headers ditto.
-        assert 'class="tl-lane-header"' in r.text
-        # Both list group + timeline lane headers carry the role; this
-        # snippet must appear in the timeline view too.
-        assert r.text.count('role="button"') >= 1
-
     def test_kc_menu_has_aria_label(self, client: TestClient, alias: str):
         client.post(f"/api/project/{alias}/tickets", json={"title": "T"})
         r = client.get(f"/project/{alias}/board")
         # Icon-only ⋯ buttons need an accessible name.
         assert 'aria-label="Card actions"' in r.text
 
-    def test_focus_visible_styles_present(self, client: TestClient):
+    def test_focus_visible_styles_present(self, client: TestClient, dashboard_css: str):
         # Tag the rule by its keyword so CSS-format changes don't break us.
-        r = client.get("/static/holoctl.css")
+        r = client.get("/static/css/index.css")
         assert r.status_code == 200
-        assert ":focus-visible" in r.text
-        assert "prefers-reduced-motion" in r.text
+        assert ":focus-visible" in dashboard_css
+        assert "prefers-reduced-motion" in dashboard_css
 
 
 class TestCssCleanup:
-    def test_legacy_kanban_card_classes_removed(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_legacy_kanban_card_classes_removed(self, dashboard_css: str):
         # These were Phase-1-era aliases; nothing emits them anymore.
         for sel in (".kanban-card-top", ".kanban-card-id",
                     ".kanban-card-title", ".kanban-card-meta",
                     ".kanban-card-dates"):
-            assert sel + " " not in css, f"legacy selector {sel} should be removed"
+            assert sel + " " not in dashboard_css, f"legacy selector {sel} should be removed"
 
-    def test_legacy_status_badge_removed(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_legacy_status_badge_removed(self, dashboard_css: str):
         # `.status-badge` was used by the old detail page; gone since Phase 4.
-        assert ".status-badge" not in css
+        assert ".status-badge" not in dashboard_css
 
-    def test_legacy_p_badge_in_card_removed(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_legacy_p_badge_in_card_removed(self, dashboard_css: str):
         # `.p-badge` was the kanban card's old inline priority chip.
         # The new card uses `.kc-prio-dot` and the list view uses
         # `.lr-prio-pill`.
-        assert ".p-badge " not in css and ".p-badge\n" not in css and ".p-badge{" not in css
+        assert ".p-badge " not in dashboard_css and ".p-badge\n" not in dashboard_css and ".p-badge{" not in dashboard_css
 
 
 # ── Post-merge follow-up: horizontal scroll + repo + deps ─────────────────────
@@ -1106,10 +1043,9 @@ class TestKanbanHorizontalScroll:
     scroll — the viewport just clipped the rightmost columns.
     """
 
-    def test_min_width_fit_content_removed(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_min_width_fit_content_removed(self, dashboard_css: str):
         # Find the `.kanban {` block and assert the bad declaration is gone.
-        m = re.search(r"\.kanban\s*\{[^}]*\}", css)
+        m = re.search(r"\.kanban\s*\{[^}]*\}", dashboard_css)
         assert m, ".kanban block must exist in the served CSS"
         block = m.group(0)
         assert "min-width: fit-content" not in block, (
@@ -1117,9 +1053,8 @@ class TestKanbanHorizontalScroll:
             "the horizontal scroll between columns"
         )
 
-    def test_kanban_uses_zero_min_width(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
-        m = re.search(r"\.kanban\s*\{[^}]*\}", css)
+    def test_kanban_uses_zero_min_width(self, dashboard_css: str):
+        m = re.search(r"\.kanban\s*\{[^}]*\}", dashboard_css)
         block = m.group(0)
         # `min-width: 0` is the explicit override of flex's default
         # `min-width: auto` (content-sized) — without it, fixed-width
@@ -1135,8 +1070,8 @@ class TestRepoChip:
 
     Tickets that touch a specific subproject can now declare it via
     `projects: [...]` and the dashboard shows it as a small mono pill on
-    the card top row, in the list view, in the timeline row name, and as
-    an editable property in the detail page Properties card.
+    the card top row, in the list view, and as an editable property in
+    the detail page Properties card.
     """
 
     def test_kanban_card_renders_repo_chip(self, workspace: Path, workspace_config: dict):
@@ -1178,16 +1113,6 @@ class TestRepoChip:
         assert "lr-cell-repo" in html
         assert ">Repo<" in html
         assert ">backend</span>" in html
-
-    def test_timeline_row_name_includes_repo(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        b.add({"title": "T", "agent": "developer", "sprint": "s1",
-               "projects": ["backend"]})
-        statuses = workspace_config["board"]["statuses"]
-        html = _timeline_html(b.ls(), statuses, "test")
-        # The repo chip lives inside the row's sticky-left .tl-row-name.
-        assert "tl-row-name" in html
-        assert "kc-repo" in html
 
     def test_detail_page_properties_card_has_repo_field(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
@@ -1255,7 +1180,7 @@ class TestDependsChip:
         a = b.add({"title": "A", "agent": "developer"})
         b.add({"title": "B", "agent": "developer", "depends": [a["id"]]})
         statuses = workspace_config["board"]["statuses"]
-        for renderer in (_kanban_html, _list_html, _timeline_html):
+        for renderer in (_kanban_html, _list_html):
             html = renderer(b.ls(), statuses, "test") if renderer is not _kanban_html \
                 else renderer(b.ls(), statuses, "test", project_root=workspace)
             assert f'data-depends="{a["id"]}"' in html, f"{renderer.__name__} missed data-depends"
@@ -1275,14 +1200,13 @@ class TestDetailPageScrollContainment:
     and `.detail-rail` couldn't even start.
     """
 
-    def test_content_body_becomes_flex_column_for_detail(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_content_body_becomes_flex_column_for_detail(self, dashboard_css: str):
         # Find the rule and assert it carries both overflow:hidden and the
         # flex-column setup. Without flex column on the parent, the
         # detail-page's flex children don't get sized correctly.
         m = re.search(
             r"\.content-body:has\(> \[data-detail-page\]\)\s*\{[^}]*\}",
-            css,
+            dashboard_css,
         )
         assert m, "content-body :has(detail-page) rule must exist"
         block = m.group(0)
@@ -1290,15 +1214,14 @@ class TestDetailPageScrollContainment:
         assert "display: flex" in block
         assert "flex-direction: column" in block
 
-    def test_detail_main_and_rail_scroll_independently(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
+    def test_detail_main_and_rail_scroll_independently(self, dashboard_css: str):
         # Sanity: each column still has its own overflow-y: auto so the
         # parent flex chain actually delivers usable scroll.
         m_main = re.search(
-            r"\[data-detail-page\]\s*\.detail-main\s*\{[^}]*\}", css,
+            r"\[data-detail-page\]\s*\.detail-main\s*\{[^}]*\}", dashboard_css,
         )
         assert m_main and "overflow-y: auto" in m_main.group(0)
-        m_rail = re.search(r"\.detail-rail\s*\{[^}]*\}", css)
+        m_rail = re.search(r"\.detail-rail\s*\{[^}]*\}", dashboard_css)
         assert m_rail and "overflow-y: auto" in m_rail.group(0)
 
 
@@ -1334,54 +1257,78 @@ class TestDetailPageStatusList:
         )
         assert f'data-statuses="{",".join(statuses)}"' in html
 
-    def test_status_list_js_prefers_data_statuses(self):
-        js = (Path(app_module.__file__).parent / "static" / "holoctl-ui.js").read_text("utf-8")
+    def test_status_list_js_prefers_data_statuses(self, dashboard_js: str):
         # Both lookups must ship — `[data-statuses]` is the new fallback
         # used outside the kanban view, the old kanban-col query stays
         # for views that mine the columns directly.
-        assert "[data-statuses]" in js
-        assert ".kanban-col[data-status]" in js
+        assert "[data-statuses]" in dashboard_js
+        assert ".kanban-col[data-status]" in dashboard_js
         # And `[data-statuses]` must appear *before* the column query in
         # the file so the new path takes precedence.
-        i_attr = js.find("[data-statuses]")
-        i_col = js.find(".kanban-col[data-status]")
+        i_attr = dashboard_js.find("[data-statuses]")
+        i_col = dashboard_js.find(".kanban-col[data-status]")
         assert 0 <= i_attr < i_col, (
             "data-statuses lookup must come before the .kanban-col fallback "
             "in statusList() so the detail page's wrapper attr wins"
         )
 
 
-class TestTimelineDayZoom:
-    """User asked for a Day-level zoom on the timeline (each day a tick)."""
+# ── Tree row carries kanban-card so global filter/search reach it ─────────────
 
-    def test_day_zoom_tab_present(self, client: TestClient, alias: str):
+
+class TestTreeRowHasKanbanCardClass:
+    def test_tree_view_route_emits_kanban_card_on_rows(self, client: TestClient, alias: str):
+        # Seed one ticket so the tree has something to render.
         client.post(f"/api/project/{alias}/tickets",
-                    json={"title": "T", "sprint": "s1", "agent": "developer"})
+                    json={"title": "Root", "agent": "developer"})
+        r = client.get(f"/project/{alias}/board?view=tree")
+        assert r.status_code == 200
+        # The shared kanban-card class is what bcApplyFilter / bcCollectOptions
+        # in static/js/board-controls.js look for — without it, search and
+        # filter chips silently no-op on the tree.
+        assert 'class="tree-row kanban-card"' in r.text
+
+
+# ── Sort + Group selects only render on views that support them ──────────────
+
+
+class TestControlsHiddenByView:
+    """Tree has no concept of sort/group (would break hierarchy), so those
+    selects must be omitted from the controls strip when view=tree.
+    Kanban and list keep both."""
+
+    def test_kanban_has_sort_and_group(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=kanban")
+        assert 'id="bc-sort"' in r.text
+        assert 'id="bc-group"' in r.text
+
+    def test_list_has_sort_and_group(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=list")
+        assert 'id="bc-sort"' in r.text
+        assert 'id="bc-group"' in r.text
+
+    def test_tree_hides_sort_and_group(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board?view=tree")
+        assert 'id="bc-sort"' not in r.text
+        assert 'id="bc-group"' not in r.text
+
+
+# ── Timeline view is removed — `?view=timeline` falls back to kanban ─────────
+
+
+class TestTimelineRemoved:
+    def test_view_timeline_falls_back_to_kanban(self, client: TestClient, alias: str):
         r = client.get(f"/project/{alias}/board?view=timeline")
         assert r.status_code == 200
-        assert 'data-tl-zoom="day"' in r.text
-        # Order: Day → Week → Month (active by default) → Quarter.
-        i_day = r.text.find('data-tl-zoom="day"')
-        i_week = r.text.find('data-tl-zoom="week"')
-        i_month = r.text.find('data-tl-zoom="month"')
-        i_quarter = r.text.find('data-tl-zoom="quarter"')
-        assert -1 < i_day < i_week < i_month < i_quarter
+        # _VALID_VIEWS coerces unknown values to kanban.
+        assert 'id="kanban"' in r.text
+        assert 'id="timeline-view"' not in r.text
 
-    def test_day_zoom_config_present_in_js(self):
-        js = (Path(app_module.__file__).parent / "static" / "holoctl-ui.js").read_text("utf-8")
-        # `day` config must be in TL_ZOOM with sensible per-day pixel value
-        # so each day reads as its own column.
-        m = re.search(r"const TL_ZOOM\s*=\s*\{[^}]*?\}", js, re.S)
-        assert m
-        block = m.group(0)
-        assert "day:" in block
-        # tickEveryDays: 1 → one tick per day (sanity check that we wired
-        # the granularity, not just renamed an existing zoom).
-        assert re.search(r"day:\s*\{[^}]*tickEveryDays:\s*1", block)
+    def test_timeline_tab_no_longer_in_switcher(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board")
+        assert 'data-view="timeline"' not in r.text
 
-    def test_day_zoom_label_styling_class(self):
-        css = (Path(app_module.__file__).parent / "static" / "holoctl.css").read_text("utf-8")
-        # Day labels stack a smaller day-of-week glyph above the date —
-        # the supporting class must ship so the second line doesn't
-        # render at full label size and crash the spacing.
-        assert ".tl-axis-tick-dow" in css
+    def test_timeline_html_fragment_route_gone(self, client: TestClient, alias: str):
+        r = client.get(f"/api/project/{alias}/timeline-html")
+        assert r.status_code == 404
+

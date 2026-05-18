@@ -1,0 +1,34 @@
+{% from "partials/board/_avatars.html" import avatar_stack %}
+{% from "partials/board/_chips.html" import chip_kind, chip_source, chip_parent, chip_repo, chip_deps %}
+{% from "partials/board/_card.html" import card_data_attrs %}
+
+{% macro list_row(c) %}
+<div class="ticket-row kanban-card" {{ card_data_attrs(c) }}>
+  <div class="lr-cell lr-cell-select">
+    <input type="checkbox" class="lr-checkbox" data-ticket-select aria-label="Select {{ c.id }}">
+  </div>
+  <div class="lr-cell lr-cell-prio">
+    <span class="kc-prio-dot" data-p="{{ c.priority }}" title="priority {{ c.priority }}"></span>
+  </div>
+  <div class="lr-cell lr-cell-id">
+    <a class="lr-id-link" href="/project/{{ c.alias }}/board/{{ c.id }}">{{ c.id }}</a>
+  </div>
+  <div class="lr-cell lr-cell-title">
+    {{ chip_kind(c.kind) }}{{ chip_parent(c.parent) }}<a class="lr-title-link" href="/project/{{ c.alias }}/board/{{ c.id }}">{{ c.title }}</a>
+  </div>
+  <div class="lr-cell lr-cell-status">
+    <button type="button" class="lr-edit lr-status" data-edit-field="status" data-status="{{ c.status }}" aria-haspopup="listbox" aria-expanded="false">{{ c.status }}</button>
+  </div>
+  <div class="lr-cell lr-cell-prio-pill">
+    <button type="button" class="lr-edit lr-prio-pill" data-edit-field="priority" data-p="{{ c.priority }}" aria-haspopup="listbox" aria-expanded="false">{{ c.priority }}</button>
+  </div>
+  <div class="lr-cell lr-cell-agents">{% if c.agents %}{{ avatar_stack(c.agents) }}{% else %}<span class="lr-empty">—</span>{% endif %}</div>
+  <div class="lr-cell lr-cell-sprint">{% if c.sprint %}<span class="lr-sprint">#{{ c.sprint }}</span>{% else %}<span class="lr-empty">—</span>{% endif %}</div>
+  <div class="lr-cell lr-cell-repo">{% if c.projects %}{{ chip_repo(c.projects) }}{% else %}<span class="lr-empty">—</span>{% endif %}</div>
+  <div class="lr-cell lr-cell-deps">{% if c.depends %}{{ chip_deps(c.depends, c.alias) }}{% else %}<span class="lr-empty">—</span>{% endif %}</div>
+  <div class="lr-cell lr-cell-updated" title="{{ c.upd_full }}">{{ c.upd_display }}</div>
+  <div class="lr-cell lr-cell-menu">
+    <button type="button" class="kc-menu" data-card-menu aria-label="Row actions" title="Actions">⋯</button>
+  </div>
+</div>
+{% endmacro %}

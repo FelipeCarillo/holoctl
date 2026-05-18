@@ -24,6 +24,8 @@ def get_templates(config: dict) -> dict[str, str]:
         ".holoctl/agents/boardmaster.md": boardmaster_body,
         ".holoctl/commands/status.md": _cmd_status_md(cli, p),
         ".holoctl/commands/ticket.md": _cmd_ticket_md(config),
+        ".holoctl/commands/spec.md": _cmd_spec_md(config),
+        ".holoctl/commands/agent-new.md": _cmd_agent_new_md(config),
         ".holoctl/commands/board.md": _cmd_board_md(cli, p),
         ".holoctl/commands/sprint.md": _cmd_sprint_md(cli),
         ".holoctl/commands/decision.md": _cmd_decision_md(),
@@ -36,308 +38,396 @@ def get_templates(config: dict) -> dict[str, str]:
 
 
 def _cmd_status_md(cli: str, p: dict) -> str:
+    cli_bin = cli.split()[0] if cli else "hctl"
     return f"""---
 name: status
-description: "Quick project status overview"
-arguments: ""
+description: "Quick project status — counts + doing + next priorities"
+allowed-tools: [Bash, mcp__holoctl__board_list]
 ---
 
-# /status — Project status overview
+# /status
 
-1. Run `{cli} stat` for ticket counts.
-2. Run `{cli} ls --status doing` for active work.
-3. Run `{cli} ls --status backlog p0` and `{cli} ls --status backlog p1` for next priorities.
-4. For tickets with dependencies, use `{cli} get <ID>` to check if deps are done.
+Call (prefer MCP, fall back to CLI):
 
-## Output format
+1. `mcp__holoctl__board_list({{}})` → all tickets. Group locally by status.
+2. From `doing`: list `id + title + agent`.
+3. From `backlog` with `priority` ∈ {{`p0`, `p1`}}: top 3 by priority.
+4. From `doing` with any `depends`: check each dep's status (use `mcp__holoctl__board_get` on each); flag if not `done`.
+
+CLI fallback if MCP unavailable: `{cli_bin} stat`, then `{cli} ls --status doing`, then `{cli} ls --status backlog p0` and `--status backlog p1`.
+
+## Output (≤ 10 lines, no prose)
 
 ```
-## {p['name']} — Status {{{{date}}}}
+## {p['name']} — sessão
 
-**Board:** X backlog · Y doing · Z review · W done
-**Doing now:** {{{{list of ID title (agent)}}}}
-**Next (p1):** {{{{top 3 backlog p1}}}}
-**Blocked:** {{{{tickets with undone deps, or "none"}}}}
+Board: X backlog · Y doing · Z review · W done
+Doing: PRJ-NNN title (agent)
+Next p0/p1: PRJ-NNN title, PRJ-NNN title
+Blocked: PRJ-NNN waits on PRJ-MMM
 ```
-
-Maximum 10 lines. No prose.
 """
 
 
 def _cmd_ticket_md(config: dict) -> str:
     p = config["project"]
-    cli = config["commands"]["boardCli"]
-    statuses = " | ".join(config["board"]["statuses"])
-    priorities = " | ".join(config["board"]["priorities"])
     return f"""---
 name: ticket
-description: "Create a new ticket on the board"
+description: "Create a new ticket — single or parallel batch, decided by the parallel-evaluator + boardmaster"
 arguments: "<title>"
+allowed-tools: [Bash, mcp__holoctl__board_list, mcp__holoctl__board_create, mcp__holoctl__board_batch]
 ---
 
-# /ticket — Create a ticket
+# /ticket
 
-The board CLI rejects malformed values. Pass exact strings from the lists below.
+1. **Evaluate parallelization first.** Trigger the `holoctl-parallel-evaluator` skill: can this work split into N disjoint pieces? Propose the partition (or single) before calling boardmaster.
 
-## Valid values
+2. **Collect inputs** if not already clear from the argument and context: `title`, `priority` (`p0..p3`), `agent`, `acceptance` (1-5 verifiable criteria). Ask the user **once** with all gaps in one batched question. Never guess.
 
-- **status**: `{statuses}` (default: `{config["board"]["statuses"][0]}` — omit unless the user explicitly asks)
-- **priority**: `{priorities}`
-- **agent**: must match a file under `.holoctl/agents/` (run `{cli.split()[0]} agent list` to see them)
+3. **Delegate to boardmaster**, passing the request + the parallel-evaluator's verdict (single OR candidate batch). The boardmaster calls `mcp__holoctl__board_create` or `mcp__holoctl__board_batch`.
 
-## Required fields the user must supply
+4. **Confirm in one line per ticket**: `{p['prefix']}-NNN created: <title> (agent=<name>, priority=<pN>)`.
 
-If any of the below is missing **and** you can't infer it from clear context, ASK the user **once** in a single batched question. Don't guess. Don't pick a default silently.
+The boardmaster owns the schema — see `.claude/agents/boardmaster.md` for what fields are auto vs user-set. You never type `id`, `created`, `updated`, `status` — those come from the CLI/MCP.
+"""
 
-- **title** (verb + object — derive from the slash command argument)
-- **priority** (`p0`-`p3`)
-- **agent** (one of the defined agents, single value preferred)
-- **Goal — Definition of Done** (at least one `- [ ]` item)
 
-## Optional, fill if you have it
+def _cmd_spec_md(config: dict) -> str:
+    p = config["project"]
+    return f"""---
+name: spec
+description: "Spec-Driven Development entry point — turn an external board item (or a fresh idea) into a spec + child tasks ready to execute"
+arguments: "[<external-board-url-or-ref>]"
+allowed-tools: [Bash, Read, Glob, mcp__holoctl__board_create, mcp__holoctl__board_batch, mcp__holoctl__board_show, mcp__holoctl__board_children, mcp__holoctl__board_list]
+---
 
-- **projects**: subdir names this ticket touches (run `{cli.split()[0]} repo list` to see them); leave empty if workspace-wide.
-- **Start**: state of the codebase before work begins, files that will be touched.
-- **Context**: why this exists, non-obvious info.
-- **Out of scope**: what NOT to do.
+# /spec
 
-If you don't have content for an optional section, **omit it entirely** — don't write `(...)` placeholders.
+Turn a request from an external board (Trello/Linear/Azure DevOps/Jira/GitHub/Slack — or just a pasted user story) into a structured **spec** in `.holoctl/`, then decompose it into parallel-safe child tasks ready for execution.
 
-## Procedure — single CLI call, no follow-up edit
+## Step 1 — Source intake
 
-The CLI accepts body content directly in the JSON. **Do not** create a bare ticket and then edit the .md file — that's two passes and slow. Pass the body in the same `add` call:
+**Always try MCP first.** Invoke the `holoctl-provider-mcp` skill before asking for paste:
 
-```bash
-{cli} add '{{
-  "title": "Add JWT auth flow",
-  "agent": "developer",
-  "priority": "p1",
-  "projects": ["backend"],
-  "files": ["src/auth/jwt.py", "tests/test_jwt.py"],
-  "goal": [
-    "JWT signing implemented with HS256",
-    "Tests cover happy path + invalid token",
-    "lint and build pass"
-  ],
-  "context": "Sessions are cookie-based today; OAuth landing requires bearer tokens.",
-  "outOfScope": "Refresh tokens (separate ticket)."
-}}'
+1. Pass the user's input (URL or ref) to the provider-mcp skill.
+2. The skill consults `mcp__holoctl__config_show()` for the provider catalog, matches the URL against each provider's `url_pattern`, and probes the configured `mcp_fetch_tool`.
+3. If the MCP tool is connected → use the returned body directly, with `source_*` pre-filled.
+4. If the MCP tool isn't connected → fall back to "paste the content here" with `source_*` still set from the URL match (so traceability is preserved even without MCP).
+
+If no argument is given: assume the user is pasting a story / request in the conversation. Set `source_provider="manual"`.
+
+## Step 2 — Discuss to refine
+
+Reach agreement on (one batched question, never piecewise):
+
+- **Scope** — what's in, what's out
+- **Acceptance criteria** — 3-7 verifiable items
+- **Files / modules** — paths the work will touch (use `Glob` to confirm they exist)
+- **Edge cases** worth surfacing
+- **Risks / unknowns** worth flagging
+
+Don't ask if you can already infer from the source content. Default to executing, ask only when ambiguity is real.
+
+## Step 3 — Materialize the spec
+
+```
+mcp__holoctl__board_create({{
+  "title": "<spec title>",
+  "kind": "spec",
+  "agent": "architect",
+  "priority": "<pN>",
+  "acceptance": ["<refined criterion 1>", "<refined criterion 2>", ...],
+  "context": "<consolidated discussion + scope + edge cases>",
+  "out_of_scope": "<what NOT to do>",
+  "files": ["<file 1>", "<file 2>"],
+  "source_provider": "<provider or 'manual'>",
+  "source_ref": "<ref or null>",
+  "source_url": "<url or null>",
+  "source_label": "<label or null>"
+}})
 ```
 
-Recognized body fields (all optional except `title`):
-- `goal: [str, ...]` — each item becomes a `- [ ]` line under `# Goal — Definition of Done`.
-- `start: str` — current state / files that will be touched.
-- `context: str` — why this exists, non-obvious info.
-- `outOfScope: str` — what NOT to do.
-- `executionNotes: str` — kept blank at creation; agents fill it during work.
-- `body: str` — full markdown override; if set, all the above are ignored.
+Capture the returned `SPEC_ID` ({p['prefix']}-NNN).
 
-Frontmatter scope field (used by parallel batch validation):
-- `files: [str, ...]` — explicit list of file paths this ticket will touch. Optional for single `add`; **required** for `{cli} batch` (the validator uses it to prove non-overlap between sibling tickets). Even on single tickets, populating `files` helps downstream agents (developer, reviewer) confirm `Start` matches the codebase.
+## Step 4 — Hand off to boardmaster for decomposition
 
-If you genuinely don't have content for an optional section, **omit the field**. The dashboard already hides empty/placeholder sections.
+Trigger the `holoctl-parallel-evaluator` skill. Then delegate to boardmaster with the spec as parent:
 
-To edit the body afterward without touching the .md file by hand:
-```bash
-echo '# Goal — Definition of Done
-- [ ] new criterion
-- [x] previously done' | {cli} body {p['prefix']}-001
+```
+mcp__holoctl__board_batch({{
+  "shared": {{
+    "parent": "<SPEC_ID>",
+    "kind": "task",
+    "source_provider": "<inherited>",
+    "source_ref": "<inherited>",
+    "tags": ["spec:<SPEC_ID>"]
+  }},
+  "tickets": [
+    {{"title": "...", "agent": "developer", "priority": "p1",
+      "files": ["..."], "acceptance": ["..."]}},
+    ...
+  ]
+}})
 ```
 
-Confirm: "Ticket {p['prefix']}-NNN created: {{title}}. Agent: {{name}}. Priority: {{pN}}."
+Children inherit `parent` + `source_*` from `shared` — no need to repeat per-ticket.
+
+## Step 5 — Confirm and propose execution
+
+Report in one block:
+
+```
+Spec: {p['prefix']}-NNN <title> (source: <provider>:<ref>)
+Children: <N> tasks created
+  {p['prefix']}-NNN+1: <title> (agent=developer, files=...)
+  {p['prefix']}-NNN+2: <title> (agent=developer, files=...)
+  ...
+
+Next: activate <developer> on {p['prefix']}-NNN+1? (or `hctl agent add` first)
+```
+
+End with the actionable proposal. The execution itself happens via subagent (Task tool) — not your job here.
+"""
+
+
+def _cmd_agent_new_md(config: dict) -> str:
+    cli_bin = (config["commands"]["boardCli"].split()[0]
+               if config.get("commands", {}).get("boardCli") else "hctl")
+    return f"""---
+name: agent-new
+description: "Design a brand-new specialized persona tailored to this project's stack. Delegates to the agent-designer persona, which reads the repo and drafts a schema-correct .md."
+arguments: "<name> [<one-line-description>]"
+allowed-tools: [Bash, Read, Glob, Grep, Write, mcp__holoctl__agent_list_available, mcp__holoctl__agent_add, mcp__holoctl__agent_create]
+---
+
+# /agent-new
+
+Creates a new specialized persona that doesn't exist in the library — tailored to this specific project.
+
+## Step 1 — Collect inputs (one batched question if missing)
+
+- **`name`** (from argument): kebab-case, no spaces.
+- **`description`** (one line): what this persona does and when it should fire.
+- **`signals`** (optional): paths/dirs the persona will own (else agent-designer discovers).
+
+## Step 2 — Library check
+
+`mcp__holoctl__agent_list_available()`. If `name` is already in the library, **don't draft a new one** — offer to activate it:
+
+> "`<name>` already exists in the library. Activate via `{cli_bin} agent add <name>` (or `mcp__holoctl__agent_add`)?"
+
+Otherwise proceed.
+
+## Step 3 — Activate `agent-designer` if needed
+
+Check the response of `agent_list_available`:
+- If `agent-designer` is in `library` but not `active`: activate first via `mcp__holoctl__agent_add({{"name": "agent-designer"}})`.
+- If already active: continue.
+
+## Step 4 — Delegate the draft
+
+Invoke `agent-designer` (via Claude Code's subagent / Task tool) with this brief:
+
+```
+Design a persona named "<name>".
+Description: "<one-line description>".
+Signals (if provided): <paths>.
+
+Discover the repo first (README, package files, top-level dirs).
+Cross-check against active personas (via mcp__holoctl__agent_list_available).
+Produce the full .md body — frontmatter + sections — per the schema in your own prompt.
+Return ONLY the body, no preamble.
+```
+
+The agent-designer returns the persona body.
+
+## Step 5 — Save as draft, preview, confirm
+
+Write the returned body to `.holoctl/agents/<name>.draft.md` (note the `.draft` suffix — not active yet).
+
+Show the user a preview:
+- Frontmatter summary: `model`, `tools`, `paths` (3-5 globs).
+- Identity paragraph + Scope bullets.
+
+Ask: **"Apply this persona? (y / edit / cancel)"**
+
+## Step 6 — Activate
+
+On `y`:
+1. Read the `.draft.md`.
+2. Call `mcp__holoctl__agent_create({{"name": "<name>", "body": <full content>}})`. This validates frontmatter and writes `.holoctl/agents/<name>.md` (without the `.draft.`).
+3. Delete the `.draft.md`.
+4. Run `{cli_bin} compile --target claude` to emit `.claude/agents/<name>.md`.
+5. Report: `Activated <name> (model=<model>, paths=<N globs>).`
+
+On `edit`: offer to open the `.draft.md` for hand-editing; user can run `/agent-new <name>` again to finalize.
+
+On `cancel`: delete the `.draft.md`. Report nothing changed.
 """
 
 
 def _cmd_board_md(cli: str, p: dict) -> str:
     return f"""---
 name: board
-description: "View and manage the project board — kanban view, filters, ticket inspect, move"
+description: "View board (kanban) or inspect/move a ticket. Always via MCP/CLI — never read ticket .md files directly."
 arguments: "[<ID> | @agent | #tag | sprint:<name> | p0..p3 | move <ID> <status> | new <title>]"
+allowed-tools: [Bash, mcp__holoctl__board_list, mcp__holoctl__board_show, mcp__holoctl__board_move]
 ---
 
-# /board — Project board
+# /board
 
 ## No argument → kanban view
 
-1. Run `{cli} stat` for counts by status.
-2. Run `{cli} ls --status backlog`, `--status doing`, `--status review`, `--status done` to group by column.
-3. Format as compact table:
-   ```
-   Backlog (N)          | Doing (N)             | Review (N)       | Done (N)
-   {p['prefix']}-019 p1 title   | {p['prefix']}-018 title       |                  | {p['prefix']}-016 title
-   {p['prefix']}-020 p1 fix     |                       |                  | (+ N more)
-   ```
-4. Any ticket in `doing` with `updated` >5 days ago → prefix with `⚠ stalled`.
+`mcp__holoctl__board_list({{}})`. Group locally by status; output compact:
 
-## /board `<ID>` → inspect ticket
+```
+Backlog (N)         | Doing (N)          | Review (N)       | Done (N)
+{p['prefix']}-019 p1 title  | {p['prefix']}-018 title    |                  | {p['prefix']}-016 title
+```
 
-1. Run `{cli} get <ID>` for metadata (status, priority, agent, sprint, deps).
-2. Read the ticket file `.holoctl/board/tickets/<ID>-*.md` for full body.
-3. Show all sections: Start, Goal (Definition of Done), Context, Out of scope, Execution notes.
+Any `doing` with `updated` >5d ago → prefix `⚠ stalled`.
 
-## Filters: `@agent` | `#tag` | `sprint:<name>` | `p0`–`p3`
+## `<ID>` → inspect
 
-- `@developer` → `{cli} ls --agent developer`
-- `#tag` → `{cli} ls --tag tag`
-- `sprint:s1` → `{cli} ls --sprint s1`
-- `p0`–`p3` → `{cli} ls <pN>`
+`mcp__holoctl__board_show({{"id":"<ID>"}})`. Show frontmatter + body as-is. **Never** open `.holoctl/board/tickets/*.md` directly.
 
-## /board move `<ID>` `<status>` → move ticket
+## Filters
 
-Run `{cli} move <ID> <status>`.
-Confirm: "<ID>: from → to"
+- `@<agent>` → `board_list({{"agent":"<agent>"}})`
+- `#<tag>` → `board_list({{"tag":"<tag>"}})`
+- `sprint:<name>` → `board_list({{"sprint":"<name>"}})`
+- `p0..p3` → `board_list({{"priority":"<pN>"}})`
 
-## /board new `<title>` → create ticket
+## `move <ID> <status>`
 
-Follow the same flow as `/ticket`. See /ticket for full spec.
+`mcp__holoctl__board_move({{"id":"<ID>","status":"<status>"}})`. Confirm in 1 line.
+
+## `new <title>` → delegate to `/ticket`
 """
 
 
 def _cmd_sprint_md(cli: str) -> str:
     return f"""---
 name: sprint
-description: "Plan or review a sprint"
+description: "Plan or review a sprint via the board MCP/CLI"
 arguments: "[plan|review]"
+allowed-tools: [Bash, mcp__holoctl__board_list, mcp__holoctl__board_set]
 ---
 
-# /sprint — Sprint management
+# /sprint
 
-## No argument (current sprint)
+## No argument (status of current sprint)
 
-1. Run `{cli} ls --status doing` and `{cli} ls --status review` for active tickets.
-2. For each sprint found, run `{cli} ls --sprint <name>`.
-3. Show progress: X/Y completed (Z%).
-4. Highlight blocked tickets.
+`board_list({{"status":"doing"}})` + `board_list({{"status":"review"}})`. Group by `sprint`. Per sprint: `X/Y completed (Z%)`. Flag tickets with undone `depends`.
 
-## Plan
+## `plan`
 
-1. Run `{cli} ls --status backlog` to list the backlog.
-2. Prioritize by: dependencies (done first), priority (p0 > p1 > p2 > p3), capacity.
-3. Suggest selection with justification and sprint name.
-4. After approval: `{cli} set <ID> sprint <sprint-name>` for each ticket.
+1. `board_list({{"status":"backlog"}})`.
+2. Suggest selection by: dependencies done first, p0 > p1 > p2 > p3, capacity.
+3. After user approval: `board_set({{"id":"<ID>","field":"sprint","value":"<name>"}})` per ticket.
 
-## Review
+## `review`
 
-1. Run `{cli} ls --sprint <current>` to list all sprint tickets.
-2. Report: completed (with dates), left behind (with reasons), velocity.
-3. Suggest adjustments for next sprint.
+1. `board_list({{"sprint":"<current>"}})`.
+2. Report: completed (with dates), carried over (with reasons), velocity.
+3. Suggest next-sprint adjustments.
 """
 
 
 def _cmd_decision_md() -> str:
     return """---
 name: decision
-description: "Record a hard-locked decision"
-arguments: "<description>"
+description: "Record a hard-locked ADR in .holoctl/context/decisions/"
+arguments: "<one-line summary>"
+allowed-tools: [Bash, Read, Write, Glob]
 ---
 
-# /decision — Record a decision
+# /decision
 
-1. Read `.holoctl/context/decisions/` to check for duplicates.
-2. Create a new file `.holoctl/context/decisions/YYYY-MM-DD-<slug>.md` with:
+ADRs are **immutable**. To reverse, create a new ADR that supersedes the original.
+
+## Steps
+
+1. List existing decisions: `Glob .holoctl/context/decisions/*.md`. Skim titles for duplicates — refuse if the same decision exists.
+2. Slugify the title (lowercase, dashes, ≤ 40 chars).
+3. Create `.holoctl/context/decisions/YYYY-MM-DD-<slug>.md`:
 
 ```markdown
 ---
 date: YYYY-MM-DD
-title: One-line summary
+title: <one-line summary>
 status: accepted
 ---
 
 ## Context
 
-Why this decision was needed.
+<why this decision was needed — surrounding constraint, what triggered it>
 
 ## Decision
 
-What was decided.
+<what was decided, concretely>
 
 ## Implications
 
-What changes in practice.
+<what changes in practice; rules that follow from this>
 ```
 
-3. Confirm: "Decision recorded: {title}."
-
-Decisions are **immutable** by default. To reverse, create a new decision that supersedes the original.
+4. Confirm in one line: `Decision recorded: YYYY-MM-DD-<slug>`.
 """
 
 
 def _cmd_close_md(cli: str, p: dict) -> str:
+    cli_bin = cli.split()[0] if cli else "hctl"
     return f"""---
 name: close
-description: "End-of-session persistence — verify all work done, update tickets, record decisions, ready for context clear"
+description: "End-of-session persistence — verify open tickets reflect actual work via git diff + board MCP, then ready for /clear"
 arguments: ""
+allowed-tools: [Bash, mcp__holoctl__board_list, mcp__holoctl__board_show, mcp__holoctl__board_ack, mcp__holoctl__board_note, mcp__holoctl__board_move]
 ---
 
-# /close — Session close
+# /close
 
-Run this command before clearing the context. It ensures nothing is lost.
+## Step 1 — Snapshot actual work
 
-## Step 1 — Verify actual work via git
+`git status` + `git diff --name-only HEAD`. If git unavailable: rely on conversation memory.
 
-Run `git status` and `git diff HEAD` to list files actually changed this session.
+## Step 2 — Cross-reference open tickets
 
-If git is unavailable: skip this step and proceed from conversation memory only.
+`mcp__holoctl__board_list({{"status":"doing"}})` + `mcp__holoctl__board_list({{"status":"review"}})`.
 
-## Step 2 — Cross-reference with open tickets
+For each open ticket: `board_show({{"id":"<ID>"}})`. Compare `files:` in frontmatter with the git diff to identify which tickets had real work this session.
 
-Run `{cli} ls --status doing` and `{cli} ls --status review`.
+## Step 3 — Update tickets via MCP/CLI only
 
-For each open ticket, check whether the files listed in its **Start** section appear in the git diff (and that they belong to one of the ticket's `projects`).
+For each ticket with verified work:
 
-## Step 3 — Update tickets
+1. `mcp__holoctl__board_ack({{"id":"<ID>","idx":<n>}})` for each acceptance item now verifiably done.
+2. `mcp__holoctl__board_note({{"id":"<ID>","text":"<one-line summary of what was done>"}})` to append a session checkpoint.
+3. If all acceptance items checked: `mcp__holoctl__board_move({{"id":"<ID>","status":"done"}})`. Otherwise leave in `doing`.
 
-For each ticket where the work is verifiably done (DoD items met OR files changed match the ticket's projects/Start section):
+**Never edit the ticket `.md` directly.** The deny-list blocks it.
 
-1. Open the ticket file `.holoctl/board/tickets/<ID>-*.md`.
-2. Mark completed DoD items: `[ ]` → `[x]`.
-3. Append to **Execution notes**: a bullet summarizing what was done and any key decisions made.
-4. Move status:
-   - All DoD `[x]` → `{cli} move <ID> done`
-   - Partially done → keep in `doing`, note what remains
+For substantial work without a ticket: create one retroactively (delegate to boardmaster). Trivial work (typo, config): skip.
 
-For work done without a ticket (files changed, no ticket covers them):
-- If substantial (feature, fix, refactor): `{cli} add '{{"title":"...","status":"done","agent":"..."}}'`
-- If trivial (typo, config): skip
+## Step 4 — ADRs
 
-## Step 4 — Record decisions
-
-For each non-obvious decision made this session (architecture, trade-off, direction change):
-
-Create `.holoctl/context/decisions/YYYY-MM-DD-<slug>.md`:
-
-```markdown
----
-date: YYYY-MM-DD
-title: One-line summary
-status: accepted
----
-
-## Context
-Why this decision was needed.
-
-## Decision
-What was decided.
-
-## Implications
-What changes in practice.
-```
+For non-obvious decisions made this session, invoke `/decision <summary>` per decision. The slash command creates the ADR; don't write the file by hand here.
 
 ## Step 5 — Final report
 
 ```
-## {p['name']} — Session close YYYY-MM-DD
+## {p['name']} — close YYYY-MM-DD
 
-Tickets closed:    {p['prefix']}-001, {p['prefix']}-002  (or "none")
-Tickets updated:   {p['prefix']}-003 (execution notes)  (or "none")
-New tickets:       {p['prefix']}-004 (untracked work)    (or "none")
-Decisions:         YYYY-MM-DD-foo.md                  (or "none")
-Uncovered files:   (files changed with no ticket)      (or "none")
+Closed:    {p['prefix']}-001, {p['prefix']}-002       (or "none")
+Updated:   {p['prefix']}-003 (acked 2, noted)         (or "none")
+New:       {p['prefix']}-004 (untracked work)         (or "none")
+ADRs:      YYYY-MM-DD-foo                          (or "none")
+Uncovered: <files changed with no ticket>          (or "none")
 
 Ready for /clear.
 ```
 
-If the session had no substantial work: output "Session trivial — nothing to save. Ready for /clear."
+If nothing of substance happened: "Session trivial — nothing to save. Ready for /clear."
 """
 
 
@@ -499,113 +589,67 @@ When the agent reports back:
 
 def _ticket_template_md(config: dict) -> str:
     p = config["project"]
-    statuses = " | ".join(config["board"]["statuses"])
-    priorities = " | ".join(config["board"]["priorities"])
-    agents_dir = "./agents/*.md"
     return f"""---
+# Auto — managed by hctl, never edit by hand
 id: {p['prefix']}-XXX
-title: <verb + object>
-agent: <one of {agents_dir}>
-projects: null
-files: <comma-separated paths this ticket touches, or null; required for `hctl board batch`>
-status: <{statuses}>
-priority: <{priorities}>
-sprint: null
-created: <ISO 8601 UTC, e.g. 2026-05-06T13:42:18Z>
-updated: <ISO 8601 UTC>
-completed: null
-depends: null
-tags: null
+status: backlog
+created:
+updated:
+completed:
+
+# User — set on creation (via mcp__holoctl__board_create / hctl board add)
+title:
+agent:
+priority: p2
+files:
+projects:
+depends:
+tags:
 ---
 
-<!--
-Replace each section below with real content, OR delete the entire section
-(header + body) if it doesn't apply to this ticket. Don't leave HTML comments
-or `(placeholder)` text — the dashboard hides empty/placeholder sections, but
-the ticket .md should be clean for git diffs.
+# Acceptance — Definition of Done
 
-Goal — Definition of Done is REQUIRED. Everything else is optional.
--->
-
-# Goal — Definition of Done
-
-- [ ] <objective criterion>
-
-# Start
-
-<!-- Files that will be touched, current state, dependencies on other tickets. -->
+- [ ]
 
 # Context
 
-<!-- Why this ticket exists. Non-obvious info the agent needs. -->
-
 # Out of scope
 
-<!-- What NOT to do in this task. -->
-
-# Execution notes
-
-<!-- Agent fills during work: blockers, decisions made, pending questions. -->
+# Notes
 """
 
 
 def _instructions_md(config: dict) -> str:
     p = config["project"]
-    cli = config["commands"]["boardCli"]
-    cli_bin = cli.split()[0] if cli else "hctl"
+    cli_bin = (config["commands"]["boardCli"].split()[0]
+               if config.get("commands", {}).get("boardCli") else "hctl")
     desc = p.get("description") or f"{p['name']} is a software project."
 
-    return f"""# {p['name']} — Project Context
-
-This file is the source of truth for AI assistant instructions. It compiles to tool-specific formats via `holoctl compile`.
-
-## Identity
+    return f"""# {p['name']}
 
 {desc}
 
-## Board — mandatory CLI access
+## Invariantes (não negociáveis)
 
-**NEVER read `.holoctl/board/index.json` directly.** All board interaction goes through the CLI:
+- O board é gerenciado **somente** pela CLI/MCP. Nunca edite `.holoctl/board/index.json` nem os `.md` em `.holoctl/board/tickets/` — o `permissions.deny` bloqueia, e seu edit não persiste.
+- Tickets têm `acceptance` (Definition of Done) explícito. Trabalho sem ticket = trabalho não rastreado.
+- Decisões duráveis viram ADRs em `.holoctl/context/decisions/` (use `/decision`). Imutáveis.
+- Memória durável vai pra `.holoctl/memory/` via `{cli_bin} memory add` ou `mcp__holoctl__memory_add`. Não duplique no `CLAUDE.md`.
 
-```bash
-{cli} stat                              # counts by status
-{cli} get {p['prefix']}-001               # single ticket (JSON)
-{cli} ls [--sprint X] [--status X]      # list with filters
-          [--agent X] [--tag X] [pN]
-{cli} move {p['prefix']}-001 doing        # move + dual-write
-{cli} set {p['prefix']}-001 sprint s1     # update field
-{cli} add '<json>'                      # create ticket (auto-ID)
-{cli} next-id                           # next available ID
-```
+## Onde está o quê
 
-## Available agents
+- Tickets: `/board`, `/status`, ou `mcp__holoctl__board_list`
+- Memória: @.holoctl/memory/MEMORY.md
+- Decisões/ADRs: `.holoctl/context/decisions/`
+- Personas: `{cli_bin} agent list` (ativas + library); `{cli_bin} agent add <name>` materializa da library
 
-Active personas live in `.holoctl/agents/`. By default only `boardmaster` is materialized at `init` — additional personas are activated on demand from the latent library.
+## Comandos rápidos
 
-To see what's available and what's active:
+`/holoctl` `/status` `/ticket` `/spec` `/board` `/sprint` `/decision` `/close`
 
-```bash
-{cli_bin} agent list                    # shows library + activated
-{cli_bin} agent add <name>              # materialize a persona
-{cli_bin} agent remove <name>           # remove an active persona
-```
+`/spec` é o ponto de entrada do **Spec-Driven Development**: cola uma história / card de board externo (Trello, Linear, Azure DevOps, Jira, GitHub, Slack) ou descreve o trabalho, e o fluxo discute → cria spec → decompõe em tasks filhas → propõe execução.
 
-The latent library currently ships: `developer`, `reviewer`, `architect`, `researcher`. More personas will be added in future releases (open-ended catalog under `holoctl/templates/agents/`).
+## Decisões fixadas
 
-## Available commands
-
-- `/status` — Quick project overview
-- `/ticket <title>` — Create a new ticket
-- `/board [ID|filter|move|new]` — View and manage the board (kanban, inspect, filter, move)
-- `/sprint [plan|review]` — Sprint management
-- `/decision <description>` — Record a hard-locked decision
-- `/close` — End-of-session persistence: verify work, update tickets, ready for /clear
-
-## Decisions
-
-(Add hard-locked decisions here as the project evolves)
-
-## Folder map
-
-(Customize this to describe your project structure)
+(esta seção é populada à medida que ADRs são criados em `.holoctl/context/decisions/`)
 """

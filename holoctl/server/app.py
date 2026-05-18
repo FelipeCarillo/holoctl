@@ -13,6 +13,9 @@ from ..lib.config import find_project_root, load_config
 from ..lib.board import Board
 from ..lib.discover import discover_repos
 from ..lib.markdown import parse_frontmatter
+from .jinja import render as _jinja_render
+from .views.avatars import initials as _initials, avatar_hue as _avatar_hue
+from .views.dates import format_relative_date as _format_relative_date
 
 
 def _list_workspace_compat() -> list[dict]:
@@ -44,6 +47,19 @@ def _e(value) -> str:
 
 app = FastAPI(title="holoctl dashboard", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+# Modular routers. Each lives under server/routes/. New views land here as
+# they migrate from string-built helpers below to Jinja templates.
+from .routes.home import router as _home_router  # noqa: E402
+from .routes.project_board import router as _project_board_router  # noqa: E402
+from .routes.project_detail import router as _project_detail_router  # noqa: E402
+from .routes.project_doc import router as _project_doc_router  # noqa: E402
+from .routes.project_meta import router as _project_meta_router  # noqa: E402
+app.include_router(_home_router)
+app.include_router(_project_board_router)
+app.include_router(_project_detail_router)
+app.include_router(_project_doc_router)
+app.include_router(_project_meta_router)
 
 # Cache for _get_projects() — git_info subprocess is slow with many repos.
 # TTL is short so the dashboard still feels live.
@@ -161,99 +177,11 @@ def _read_context_docs(project_path: Path) -> list[dict]:
 
 
 # ── layout ───────────────────────────────────────────────────────────────────
-
-def _layout(title: str, body: str, *, sidebar: str = "", topbar: str = "") -> str:
-    # Inline script in <head> applies theme + sidebar state BEFORE first paint to
-    # avoid the dark→light flash on navigation.
-    boot_script = (
-        "<script>(function(){try{"
-        "var t=localStorage.getItem('holoctl-theme')||'dark';"
-        "document.documentElement.setAttribute('data-theme',t);"
-        "if(localStorage.getItem('holoctl-sidebar')==='collapsed'){"
-        "document.documentElement.setAttribute('data-sidebar','collapsed');"
-        "}"
-        "}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>"
-    )
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{_e(title)} — holoctl</title>
-  {boot_script}
-  <link rel="stylesheet" href="/static/holoctl.css">
-</head>
-<body>
-  <div class="app" id="app">
-    <aside class="sidebar" id="sidebar">{sidebar}</aside>
-    <div class="main">
-      <div class="topbar">{topbar}</div>
-      <div class="content-wrap">{body}</div>
-    </div>
-  </div>
-  <script src="/static/holoctl-ui.js"></script>
-</body>
-</html>"""
-
-
-def _sidebar(projects: list[dict], current_alias: str = "") -> str:
-    links = ""
-    for p in projects:
-        active = "active" if p["alias"] == current_alias else ""
-        doing = p.get("counts", {}).get("doing", 0)
-        badge = f'<span class="badge">{int(doing)}</span>' if doing > 0 else ""
-        initial = (p.get("prefix") or p["name"][:2] or "?")[:2].upper()
-        links += (
-            f'<a href="/project/{_e(p["alias"])}/board" class="nav-item {active}" title="{_e(p["name"])}">'
-            f'<span class="nav-icon">{_e(initial)}</span>'
-            f'<span class="nav-item-text">{_e(p["name"])}</span>'
-            f'{badge}</a>'
-        )
-
-    theme_btn = f"""<button class="icon-btn" onclick="__toggleTheme()" title="Toggle theme">
-      <span class="theme-icon-dark">{_ICON_MOON}</span>
-      <span class="theme-icon-light">{_ICON_SUN}</span>
-    </button>"""
-    collapse_btn = f'<button class="icon-btn" onclick="__toggleSidebar()" title="Toggle sidebar">{_ICON_MENU}</button>'
-
-    empty_nav = '<div class="nav-item" style="opacity:.5"><span class="nav-icon">?</span><span class="nav-item-text">No projects</span></div>'
-    return f"""
-<div class="sidebar-header">
-  <a href="/" class="sidebar-brand" title="holoctl home">
-    <span class="logo">P</span>
-    <span class="sidebar-brand-name">holoctl</span>
-  </a>
-  <div class="sidebar-header-actions">{theme_btn}{collapse_btn}</div>
-</div>
-<nav class="sidebar-nav">
-  <div class="nav-group">
-    <div class="nav-group-label">Projects</div>
-    {links if links else empty_nav}
-  </div>
-</nav>
-<div class="sidebar-footer">
-  <a href="/agents" class="nav-item" title="Agents"><span class="nav-icon">★</span><span class="nav-item-text">Agents</span></a>
-</div>"""
-
-
-def _topbar(title: str, breadcrumbs: list[dict] = None, actions: str = "") -> str:
-    crumbs = ""
-    for b in (breadcrumbs or []):
-        if b.get("href"):
-            crumbs += f'<a href="{_e(b["href"])}">{_e(b["label"])}</a><span class="sep">/</span>'
-        else:
-            crumbs += f'<span>{_e(b["label"])}</span>'
-    return f'<div class="topbar-breadcrumb">{crumbs}</div><div class="topbar-actions">{actions}</div>'
-
-
-def _tabs(tabs: list[dict], current: str, base: str) -> str:
-    out = '<div class="tabs">'
-    for t in tabs:
-        active = "active" if t["id"] == current else ""
-        out += f'<a href="{_e(base)}/{_e(t["id"])}" class="tab {active}">{_e(t["label"])}</a>'
-    out += "</div>"
-    return out
-
+#
+# The shell (doctype, sidebar, topbar, tabs, content wrapper) lives in Jinja2
+# templates under `server/templates/`. Python here only wires data into them.
+# Page bodies are still string-built by `_xxx_html()` helpers and passed as
+# `content=` for now; each view migrates to its own template in later PRs.
 
 _PROJECT_TABS = [
     {"id": "board", "label": "Board"},
@@ -269,84 +197,25 @@ def _render(title: str, content: str, *, projects: list[dict] | None = None,
             breadcrumbs: list[dict] | None = None,
             tabs: list[dict] | None = None, tab_base: str = "",
             actions: str = "") -> str:
-    all_projects = projects if projects is not None else _get_projects()
-    sidebar = _sidebar(all_projects, current_alias)
-    topbar = _topbar(title, breadcrumbs or [], actions)
-    tabs_html = _tabs(tabs, current_tab, tab_base) if tabs else ""
-    # Inner `.content-body` is the scroll container. CSS picks the right
-    # behavior per page: vertical-scroll for grids/lists, flex-column with
-    # internal kanban scroll on the board.
-    return _layout(
-        title,
-        tabs_html + f'<div class="content"><div class="content-body">{content}</div></div>',
-        sidebar=sidebar, topbar=topbar,
+    return _jinja_render(
+        "base.html",
+        title=title,
+        content=content,
+        projects=projects if projects is not None else _get_projects(),
+        current_alias=current_alias,
+        current_tab=current_tab,
+        breadcrumbs=breadcrumbs or [],
+        tabs=tabs,
+        tab_base=tab_base,
+        actions=actions,
     )
 
 
 def _not_found_html(msg: str = "Not found") -> str:
-    return f'<div class="empty-state"><h3>{_e(msg)}</h3></div>'
+    return _jinja_render("partials/_empty_state.html", msg=msg)
 
 
 # ── page generators ───────────────────────────────────────────────────────────
-
-def _home_page(projects: list[dict]) -> str:
-    if not projects:
-        return '<div class="empty-state"><h3>No projects yet</h3><p>Run <code>holoctl init</code> in a directory to get started.</p></div>'
-    cards = ""
-    for p in projects:
-        counts = p.get("counts", {})
-        doing = int(counts.get("doing", 0))
-        backlog = int(counts.get("backlog", 0))
-        done = int(counts.get("done", 0))
-        total = max(int(p.get("ticketCount", 0)), 1)
-        prefix = p.get("prefix", "")
-        targets = "".join(f'<span class="chip chip-target">{_e(t)}</span>' for t in p.get("targets", []))
-        progress = f"""<div class="progress-bar">
-  <div class="progress-segment done" style="width:{done/total*100:.0f}%"></div>
-  <div class="progress-segment doing" style="width:{doing/total*100:.0f}%"></div>
-  <div class="progress-segment backlog" style="width:{backlog/total*100:.0f}%"></div>
-</div>"""
-        cards += f"""<a href="/project/{_e(p['alias'])}/board" class="project-card">
-  <div class="project-card-header">
-    <div class="project-card-icon">{_e(prefix[:2])}</div>
-    <div>
-      <div class="project-card-name">{_e(p['name'])}</div>
-      <div class="project-card-sub">{_e(p['alias'])}</div>
-    </div>
-  </div>
-  {progress}
-  <div class="project-card-stats">
-    <span class="stat-mini"><span class="stat-dot backlog"></span>{backlog} backlog</span>
-    <span class="stat-mini"><span class="stat-dot doing"></span>{doing} doing</span>
-    <span class="stat-mini"><span class="stat-dot done"></span>{done} done</span>
-  </div>
-  <div class="project-card-meta">{targets}</div>
-</a>"""
-    return f'<div class="project-grid">{cards}</div>'
-
-
-_AVATAR_HUE_COUNT = 6
-
-
-def _initials(name: str) -> str:
-    """Two-character uppercase glyph for an avatar circle."""
-    if not name:
-        return "?"
-    parts = re.split(r"[\s\-_./]+", name.strip())
-    parts = [p for p in parts if p]
-    if not parts:
-        return name.strip()[:2].upper()
-    if len(parts) == 1:
-        return parts[0][:2].upper()
-    return (parts[0][:1] + parts[1][:1]).upper()
-
-
-def _avatar_hue(name: str) -> int:
-    """Deterministic 0..5 hue index — same name always lands the same color."""
-    if not name:
-        return 0
-    return sum(ord(c) for c in name) % _AVATAR_HUE_COUNT
-
 
 def _ticket_preview(project_root: Path, ticket: dict, max_chars: int = 80) -> str:
     """First non-trivial prose line from a ticket .md, for the kanban card preview.
@@ -466,6 +335,85 @@ def _deps_chip_html(depends_list: list[str], alias: str) -> str:
             f'{_e(head)}{extra}</span>')
 
 
+# v0.16 introduced `kind` (task|story|bug|spec|epic|rfc|incident|custom) as a
+# first-class field on every ticket. The CLI surfaces it; the board UI used to
+# treat every card the same. The chip below puts the kind back on the card so
+# specs/epics/bugs stand out visually, while plain `task` (the default for the
+# majority of tickets) stays glyph-less to keep the card uncluttered.
+_KIND_GLYPHS = {
+    "spec":     "◆",
+    "epic":     "◇",
+    "story":    "◉",
+    "bug":      "●",
+    "rfc":      "✎",
+    "incident": "⚠",
+}
+
+
+def _kind_chip_html(kind: str) -> str:
+    """Small chip on the card top row identifying the work-item kind.
+
+    `task` is the default and renders blank (no chip) so the typical card
+    is unchanged. Specs/epics/bugs/rfc/incident get a colored glyph + name
+    (the CSS uses `[data-kind="…"]` selectors to pick the hue). An unknown
+    kind (config-defined custom string) falls back to a neutral square.
+    """
+    if not kind or kind == "task":
+        return ""
+    glyph = _KIND_GLYPHS.get(kind, "◾")
+    return (f'<span class="kc-kind" data-kind="{_e(kind)}" '
+            f'title="kind: {_e(kind)}">'
+            f'<span class="kc-kind-glyph" aria-hidden="true">{glyph}</span>'
+            f'{_e(kind)}</span>')
+
+
+# Maps a provider id (config catalog: linear, github, trello, jira, azure,
+# slack, plus any internal board the user registers via `hctl provider add`)
+# to a short visual marker on the card. Falls back to ↗ when unknown so a
+# custom provider still shows up as "external origin".
+_PROVIDER_GLYPHS = {
+    "linear": "L",
+    "github": "GH",
+    "trello": "T",
+    "jira":   "J",
+    "azure":  "AZ",
+    "slack":  "S",
+}
+
+
+def _source_chip_html(provider: str | None, url: str | None,
+                      ref: str | None, label: str | None) -> str:
+    """Card chip pointing at the external board this ticket came from.
+
+    Renders e.g. `L · ENG-42` for a Linear ticket, `GH · 1234` for a
+    GitHub issue. Always a `<span>` (never `<a>`) inside the kanban-card
+    link wrapper — the clickable external URL lives on the detail page
+    Properties panel to keep card navigation unambiguous. Empty when the
+    ticket has no `source_*` metadata.
+    """
+    if not (provider or url or ref or label):
+        return ""
+    glyph = _PROVIDER_GLYPHS.get((provider or "").lower(), "↗")
+    body = _e(ref or label or provider or "ext")
+    tip = " · ".join(b for b in (label, provider, ref, url) if b)
+    return (f'<span class="kc-source" data-provider="{_e((provider or "").lower())}" '
+            f'title="from {_e(tip)}">'
+            f'<span class="kc-source-glyph" aria-hidden="true">{_e(glyph)}</span>'
+            f'<span class="kc-source-ref">{body}</span></span>')
+
+
+def _parent_chip_html(parent_id: str | None) -> str:
+    """Subtle '↑ PRJ-099' indicator in the card meta row when this ticket
+    belongs to a parent spec/epic. Visual cousin of the deps chip — same
+    weight, opposite arrow direction (parents are above; deps block).
+    """
+    if not parent_id:
+        return ""
+    return (f'<span class="kc-parent" title="parent: {_e(parent_id)}">'
+            f'<span class="kc-parent-glyph" aria-hidden="true">↑</span>'
+            f'{_e(parent_id)}</span>')
+
+
 def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
                  project_root: Path | None = None) -> str:
     """Build the `<div class="kanban">` block. Used by both the full board page
@@ -490,6 +438,12 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
             projects_csv = ",".join(projects_list)
             depends_list = [d for d in (t.get("depends") or []) if d]
             depends_csv = ",".join(depends_list)
+            kind = t.get("kind") or "task"
+            parent = t.get("parent") or ""
+            src_provider = t.get("source_provider") or ""
+            src_ref = t.get("source_ref") or ""
+            src_url = t.get("source_url") or ""
+            src_label = t.get("source_label") or ""
             preview = _ticket_preview(project_root, t) if project_root else ""
             due = _format_due(t.get("due") or "")
             data_attrs = (
@@ -501,6 +455,9 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
                 f' data-tags="{_e(tags_csv)}"'
                 f' data-projects="{_e(projects_csv)}"'
                 f' data-depends="{_e(depends_csv)}"'
+                f' data-kind="{_e(kind)}"'
+                f' data-parent="{_e(parent)}"'
+                f' data-source="{_e(src_provider)}"'
                 f' data-title="{_e(t.get("title", ""))}"'
                 f' data-created="{_e(t.get("created", ""))}"'
                 f' data-updated="{_e(t.get("updated", ""))}"'
@@ -517,14 +474,19 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
             due_html = f'<span class="kc-due">⏱ {_e(due)}</span>' if due else ""
             repo_html = _repo_chip_html(projects_list)
             deps_html = _deps_chip_html(depends_list, alias)
+            kind_html = _kind_chip_html(kind)
+            source_html = _source_chip_html(src_provider, src_url, src_ref, src_label)
+            parent_html = _parent_chip_html(parent)
             preview_html = f'<div class="kc-preview">{_e(preview)}</div>' if preview else ""
-            meta_inner = avatars_html + sprint_html + deps_html + due_html
+            meta_inner = avatars_html + sprint_html + parent_html + deps_html + due_html
             meta_html = f'<div class="kc-meta">{meta_inner}</div>' if meta_inner else ""
             cards += f"""<a href="/project/{_e(alias)}/board/{_e(t['id'])}" class="kanban-card" {data_attrs}>
   <div class="kc-top">
     <span class="kc-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
+    {kind_html}
     <span class="kc-id">{_e(t['id'])}</span>
     {repo_html}
+    {source_html}
     <button type="button" class="kc-menu" data-card-menu aria-label="Card actions" title="Actions">⋯</button>
   </div>
   <div class="kc-title">{_e(t['title'])}</div>
@@ -555,29 +517,7 @@ def _kanban_html(tickets: list[dict], statuses: list[str], alias: str,
     return f'<div class="kanban" id="kanban">{cols}</div>'
 
 
-_VALID_VIEWS = {"kanban", "list", "timeline"}
-
-
-def _format_relative_date(iso: str) -> tuple[str, str]:
-    """Return (display, full) — display is short, full is the original ISO.
-
-    Used in the dense list view so the Updated column reads "May 7" / "2h ago"
-    instead of dragging the full ISO string. We don't reach for full
-    locale-aware relative time here; dashboards are short-lived sessions
-    and the agent typically wants "today / yesterday / older".
-    """
-    if not iso:
-        return ("—", "")
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(iso))
-    if not m:
-        return (str(iso)[:10], str(iso))
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    try:
-        mo = int(m.group(2)); day = int(m.group(3))
-        return (f"{months[mo - 1]} {day}", str(iso))
-    except (ValueError, IndexError):
-        return (str(iso)[:10], str(iso))
+_VALID_VIEWS = {"kanban", "list", "tree"}
 
 
 def _list_row_html(t: dict, alias: str) -> str:
@@ -597,6 +537,9 @@ def _list_row_html(t: dict, alias: str) -> str:
     projects_csv = ",".join(projects_list)
     depends_list = [d for d in (t.get("depends") or []) if d]
     depends_csv = ",".join(depends_list)
+    kind = t.get("kind") or "task"
+    parent = t.get("parent") or ""
+    src_provider = t.get("source_provider") or ""
     upd_disp, upd_full = _format_relative_date(t.get("updated", ""))
     avatars_html = ""
     if agents_list:
@@ -609,6 +552,16 @@ def _list_row_html(t: dict, alias: str) -> str:
     sprint_html = f'<span class="lr-sprint">#{_e(sprint)}</span>' if sprint else '<span class="lr-empty">—</span>'
     repo_html = _repo_chip_html(projects_list) or '<span class="lr-empty">—</span>'
     deps_html = _deps_chip_html(depends_list, alias) or '<span class="lr-empty">—</span>'
+    # Kind + parent ride inline with the title cell — same row as the title
+    # link so the eye picks them up without adding new columns. Plain `task`
+    # stays glyph-less; specs/epics/bugs/etc. get a colored marker.
+    kind_html = _kind_chip_html(kind)
+    parent_html = _parent_chip_html(parent)
+    title_prefix = ""
+    if kind_html:
+        title_prefix += kind_html
+    if parent_html:
+        title_prefix += parent_html
     data_attrs = (
         f'data-id="{_e(t["id"])}"'
         f' data-status="{_e(status)}"'
@@ -618,6 +571,9 @@ def _list_row_html(t: dict, alias: str) -> str:
         f' data-tags="{_e(tags_csv)}"'
         f' data-projects="{_e(projects_csv)}"'
         f' data-depends="{_e(depends_csv)}"'
+        f' data-kind="{_e(kind)}"'
+        f' data-parent="{_e(parent)}"'
+        f' data-source="{_e(src_provider)}"'
         f' data-title="{_e(t.get("title", ""))}"'
         f' data-created="{_e(t.get("created", ""))}"'
         f' data-updated="{_e(t.get("updated", ""))}"'
@@ -633,7 +589,7 @@ def _list_row_html(t: dict, alias: str) -> str:
     <a class="lr-id-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t['id'])}</a>
   </div>
   <div class="lr-cell lr-cell-title">
-    <a class="lr-title-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t.get('title', ''))}</a>
+    {title_prefix}<a class="lr-title-link" href="/project/{_e(alias)}/board/{_e(t['id'])}">{_e(t.get('title', ''))}</a>
   </div>
   <div class="lr-cell lr-cell-status">
     <button type="button" class="lr-edit lr-status" data-edit-field="status" data-status="{_e(status)}" aria-haspopup="listbox" aria-expanded="false">{_e(status)}</button>
@@ -724,151 +680,107 @@ def _list_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
 </div>"""
 
 
-def _timeline_lane_key(ticket: dict, group_by: str) -> tuple[str, str]:
-    """(bucket-id, display-label) for a ticket given the current group axis."""
-    if group_by == "agent":
-        agents = [a for a in (ticket.get("agent") or []) if a]
-        if not agents:
-            return ("(no agent)", "(no agent)")
-        return (agents[0], agents[0])
-    sprint = ticket.get("sprint") or ""
-    if not sprint:
-        return ("(backlog)", "(no sprint)")
-    return (sprint, sprint)
+def _tree_html(tickets: list[dict], statuses: list[str], alias: str) -> str:
+    """Hierarchical view: tickets nested by parent/child with ├─ / └─ glyphs.
 
-
-def _timeline_html(tickets: list[dict], statuses: list[str], alias: str,
-                   group_by: str = "sprint") -> str:
-    """Roadmap-style timeline view.
-
-    Server emits the static shell — lane groups, ticket rows with empty
-    track cells, and the controls (zoom + group). The bars themselves are
-    positioned client-side from `data-created` / `data-completed` /
-    `data-status` so zoom changes don't need a re-fetch.
-
-    Layout strategy: a single horizontal+vertical scroll container holds
-    a sticky-top axis row and N lane rows. Each row's left "name" cell
-    is sticky-left (cross-sticky), so lane labels stay visible while
-    horizontal-scrolling and the time axis stays visible while
-    vertical-scrolling.
-
-    `group_by` selects the lane axis; the JS lets you flip it without a
-    reload, but the initial render uses the value passed in (default
-    "sprint", per spec).
+    Specs/epics anchor their children directly underneath. Tickets that don't
+    name a parent appear as top-level rows. The same `data-*` attributes
+    kanban cards carry are mirrored here so filter/search/sort logic still
+    applies — the tree view just changes how rows are laid out, not what
+    rows exist.
     """
-    if group_by not in ("sprint", "agent"):
-        group_by = "sprint"
-
-    # Group tickets into ordered lanes. Sprint groups follow alpha order
-    # for predictable display; "(no sprint/agent)" sinks to the bottom.
-    lanes: dict[str, list[dict]] = {}
-    labels: dict[str, str] = {}
+    by_id: dict[str, dict] = {t["id"]: t for t in tickets}
+    kids: dict[str | None, list[str]] = {}
     for t in tickets:
-        bucket, label = _timeline_lane_key(t, group_by)
-        lanes.setdefault(bucket, []).append(t)
-        labels[bucket] = label
+        p = t.get("parent") or None
+        # Dangling parent reference → treat as root, so the row still renders.
+        if p is not None and p not in by_id:
+            p = None
+        kids.setdefault(p, []).append(t["id"])
+    for v in kids.values():
+        v.sort()
 
-    def _lane_sort_key(b: str) -> tuple[int, str]:
-        # Empty / "(no ...)" buckets last.
-        return (1 if b.startswith("(") else 0, b.lower())
+    roots = kids.get(None, [])
 
-    lane_keys = sorted(lanes.keys(), key=_lane_sort_key)
-
-    rows_html = []
-    for bucket in lane_keys:
-        lane_tickets = lanes[bucket]
-        # Sort tickets inside lane by created date so the timeline
-        # reads top-to-bottom in chronological order.
-        lane_tickets.sort(key=lambda t: t.get("created", ""))
-        rows_html.append(f"""<div class="tl-lane" data-bucket="{_e(bucket)}">
-  <div class="tl-lane-header" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle {_e(labels[bucket])} lane">
-    <span class="tl-lane-toggle" aria-hidden="true">▾</span>
-    <span class="tl-lane-label">{_e(labels[bucket])}</span>
-    <span class="tl-lane-count">{len(lane_tickets)}</span>
-  </div>
-  <div class="tl-lane-rows">""")
-        for t in lane_tickets:
-            agents_list = [a for a in (t.get("agent") or []) if a]
-            agents_csv = ",".join(agents_list)
-            prio = t.get("priority", "p2")
-            status = t.get("status", "backlog")
-            sprint = t.get("sprint") or ""
-            tags_csv = ",".join(t.get("tags") or [])
-            projects_list = [p for p in (t.get("projects") or []) if p]
-            projects_csv = ",".join(projects_list)
-            depends_list = [d for d in (t.get("depends") or []) if d]
-            depends_csv = ",".join(depends_list)
-            data_attrs = (
-                f'data-id="{_e(t["id"])}"'
-                f' data-status="{_e(status)}"'
-                f' data-p="{_e(prio)}"'
-                f' data-agent="{_e(agents_csv)}"'
-                f' data-sprint="{_e(sprint)}"'
-                f' data-tags="{_e(tags_csv)}"'
-                f' data-projects="{_e(projects_csv)}"'
-                f' data-depends="{_e(depends_csv)}"'
-                f' data-title="{_e(t.get("title", ""))}"'
-                f' data-created="{_e(t.get("created", ""))}"'
-                f' data-updated="{_e(t.get("updated", ""))}"'
-                f' data-completed="{_e(t.get("completed", "") or "")}"'
+    def _row(t: dict, depth: int, pipe_flags: list[bool], is_last: bool) -> str:
+        prio = t.get("priority", "p2")
+        kind = t.get("kind") or "task"
+        sprint = t.get("sprint") or ""
+        agents_list = [a for a in (t.get("agent") or []) if a]
+        agents_csv = ",".join(agents_list)
+        tags_csv = ",".join(t.get("tags") or [])
+        projects_list = [p for p in (t.get("projects") or []) if p]
+        projects_csv = ",".join(projects_list)
+        depends_csv = ",".join(t.get("depends") or [])
+        parent = t.get("parent") or ""
+        src_provider = t.get("source_provider") or ""
+        # Build the glyph column: one span per pipe flag + the final connector.
+        glyph_cells = "".join(
+            f'<span class="tr-glyph tr-glyph-{"pipe" if flag else "blank"}"></span>'
+            for flag in pipe_flags
+        )
+        if depth > 0:
+            connector_cls = "tr-glyph-last" if is_last else "tr-glyph-mid"
+            glyph_cells += f'<span class="tr-glyph {connector_cls}"></span>'
+        kind_html = _kind_chip_html(kind)
+        agents_html = ""
+        if agents_list:
+            avs = "".join(
+                f'<span class="avatar-initials" data-hue="{_avatar_hue(a)}" '
+                f'title="{_e(a)}">{_e(_initials(a))}</span>'
+                for a in agents_list
             )
-            repo_html = _repo_chip_html(projects_list)
-            deps_html = _deps_chip_html(depends_list, alias)
-            rows_html.append(f"""<div class="tl-row kanban-card" {data_attrs}>
-  <a class="tl-row-name" href="/project/{_e(alias)}/board/{_e(t['id'])}">
-    <span class="kc-prio-dot" data-p="{_e(prio)}"></span>
-    <span class="tl-row-id">{_e(t['id'])}</span>
-    <span class="tl-row-title">{_e(t.get('title', ''))}</span>
-    {repo_html}
-    {deps_html}
-  </a>
-  <div class="tl-row-track" data-track></div>
-</div>""")
-        rows_html.append("</div></div>")
+            agents_html = f'<span class="avatar-stack">{avs}</span>'
+        sprint_html = f'<span class="tr-sprint">#{_e(sprint)}</span>' if sprint else ""
+        data_attrs = (
+            f'data-id="{_e(t["id"])}"'
+            f' data-status="{_e(t.get("status", ""))}"'
+            f' data-p="{_e(prio)}"'
+            f' data-agent="{_e(agents_csv)}"'
+            f' data-sprint="{_e(sprint)}"'
+            f' data-tags="{_e(tags_csv)}"'
+            f' data-projects="{_e(projects_csv)}"'
+            f' data-depends="{_e(depends_csv)}"'
+            f' data-kind="{_e(kind)}"'
+            f' data-parent="{_e(parent)}"'
+            f' data-source="{_e(src_provider)}"'
+            f' data-title="{_e(t.get("title", ""))}"'
+            f' data-depth="{depth}"'
+        )
+        return f"""<a class="tree-row" href="/project/{_e(alias)}/board/{_e(t['id'])}" {data_attrs}>
+  <span class="tr-gutter">{glyph_cells}</span>
+  <span class="tr-prio-dot" data-p="{_e(prio)}" title="priority {_e(prio)}"></span>
+  {kind_html}
+  <span class="tr-id">{_e(t['id'])}</span>
+  <span class="tr-status" data-status="{_e(t.get("status", ""))}">{_e(t.get("status", ""))}</span>
+  <span class="tr-title">{_e(t.get("title", ""))}</span>
+  {agents_html}
+  {sprint_html}
+</a>"""
 
-    # Zoom + group controls live above the scroll container so they
-    # never get clipped by sticky overlays.
-    controls = f"""<div class="tl-controls">
-  <div class="tl-control-group">
-    <span class="tl-control-label">Zoom</span>
-    <div class="tl-zoom-switcher" role="tablist" aria-label="Timeline zoom">
-      <button type="button" class="tl-zoom-tab" data-tl-zoom="day">Day</button>
-      <button type="button" class="tl-zoom-tab" data-tl-zoom="week">Week</button>
-      <button type="button" class="tl-zoom-tab active" data-tl-zoom="month" aria-selected="true">Month</button>
-      <button type="button" class="tl-zoom-tab" data-tl-zoom="quarter">Quarter</button>
-    </div>
-  </div>
-  <div class="tl-control-group">
-    <span class="tl-control-label">Group</span>
-    <select class="tl-group-select" data-tl-group>
-      <option value="sprint"{' selected' if group_by == 'sprint' else ''}>Sprint</option>
-      <option value="agent"{' selected' if group_by == 'agent' else ''}>Agent</option>
-    </select>
-  </div>
-  <div class="tl-control-spacer"></div>
-  <button type="button" class="btn-sm" data-tl-today>Jump to today</button>
-</div>"""
+    rows_html: list[str] = []
 
-    empty = (not tickets)
-    body = "".join(rows_html) if not empty else (
-        '<div class="tl-empty">'
-        '<div class="tl-empty-glyph">⤳</div>'
-        '<div class="tl-empty-msg">No tickets to plot — create some first.</div>'
-        '</div>'
-    )
+    def _emit(tid: str, depth: int, pipe_flags: list[bool], is_last: bool) -> None:
+        t = by_id[tid]
+        rows_html.append(_row(t, depth, pipe_flags, is_last))
+        child_ids = kids.get(tid, [])
+        if depth == 0:
+            next_flags = pipe_flags
+        else:
+            next_flags = pipe_flags + [not is_last]
+        for i, cid in enumerate(child_ids):
+            _emit(cid, depth + 1, next_flags, i == len(child_ids) - 1)
 
-    return f"""<div class="timeline-view" id="timeline-view" data-group="{_e(group_by)}">
-  {controls}
-  <div class="timeline" id="timeline">
-    <div class="tl-axis-row">
-      <div class="tl-axis-corner"></div>
-      <div class="tl-axis" id="tl-axis"></div>
-    </div>
-    <div class="tl-body">
-      {body}
-    </div>
-    <div class="tl-today-line" id="tl-today-line" hidden></div>
-  </div>
+    for i, rid in enumerate(roots):
+        _emit(rid, 0, [], i == len(roots) - 1)
+
+    if not rows_html:
+        body = '<div class="tree-empty">No tickets to render.</div>'
+    else:
+        body = "".join(rows_html)
+
+    return f"""<div class="tree-view" id="tree-view">
+  <div class="tree-body">{body}</div>
 </div>"""
 
 
@@ -894,8 +806,8 @@ def _board_page(project: dict, tickets: list[dict], config: dict, view: str = "k
     statuses = config["board"]["statuses"]
     if view == "list":
         body = _list_html(tickets, statuses, alias)
-    elif view == "timeline":
-        body = _timeline_html(tickets, statuses, alias)
+    elif view == "tree":
+        body = _tree_html(tickets, statuses, alias)
     else:
         body = _kanban_html(tickets, statuses, alias, project_root=project_root)
     return header + _board_controls_html(view=view) + body
@@ -927,13 +839,13 @@ def _board_controls_html(view: str = "kanban") -> str:
     sort_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in sort_opts)
     group_options_html = "".join(f'<option value="{_e(v)}">{_e(label)}</option>' for v, label in group_opts)
     is_list = view == "list"
-    is_timeline = view == "timeline"
-    is_kanban = not (is_list or is_timeline)
+    is_tree = view == "tree"
+    is_kanban = not (is_list or is_tree)
     def _tab(active: bool) -> tuple[str, str]:
         return ("active" if active else "", "true" if active else "false")
     k_cls, k_sel = _tab(is_kanban)
     l_cls, l_sel = _tab(is_list)
-    t_cls, t_sel = _tab(is_timeline)
+    tr_cls, tr_sel = _tab(is_tree)
     return f"""<div class="board-controls" id="board-controls" data-current-view="{_e(view)}">
   <div class="bc-row bc-row-primary">
     <div class="view-switcher" role="tablist" aria-label="Board view">
@@ -943,8 +855,8 @@ def _board_controls_html(view: str = "kanban") -> str:
       <button class="view-tab {l_cls}" data-view="list" role="tab" aria-selected="{l_sel}">
         <span class="view-tab-glyph">☰</span> List
       </button>
-      <button class="view-tab {t_cls}" data-view="timeline" role="tab" aria-selected="{t_sel}">
-        <span class="view-tab-glyph">⤳</span> Timeline
+      <button class="view-tab {tr_cls}" data-view="tree" role="tab" aria-selected="{tr_sel}">
+        <span class="view-tab-glyph">⫶</span> Tree
       </button>
     </div>
     <div class="bc-search">
@@ -989,100 +901,6 @@ def _board_controls_html(view: str = "kanban") -> str:
     </div>
   </div>
 </div>"""
-
-
-def _agents_page(agents: list[dict], alias: str = "") -> str:
-    if not agents:
-        return '<div class="empty-state"><p>No agents defined.</p></div>'
-    cards = ""
-    for a in agents:
-        name = a.get("name", a.get("file", "?").replace(".md", ""))
-        model = a.get("model", "standard")
-        trigger = a.get("trigger", "ticket")
-        desc = a.get("description", "")
-        tools = a.get("tools", [])
-        if isinstance(tools, str):
-            tools = [t.strip() for t in tools.split(",")]
-        tool_chips = "".join(f'<span class="tool-chip">{_e(t)}</span>' for t in tools)
-        link = f"/project/{_e(alias)}/agents/{_e(a.get('file','').replace('.md',''))}" if alias else "#"
-        cards += f"""<a href="{link}" class="agent-card">
-  <div class="agent-card-header">
-    <span class="agent-card-name">{_e(name)}</span>
-    <span class="trigger-badge">{_e(trigger)}</span>
-    <span class="model-badge {_e(model)}">{_e(model)}</span>
-  </div>
-  <div class="agent-card-desc">{_e(desc)}</div>
-  <div class="agent-card-meta">{tool_chips}</div>
-</a>"""
-    return f'<div class="agent-grid">{cards}</div>'
-
-
-def _commands_page(commands: list[dict], alias: str) -> str:
-    if not commands:
-        return '<div class="empty-state"><p>No commands defined.</p></div>'
-    items = ""
-    for c in commands:
-        name = c.get("name", c.get("file", "?").replace(".md", ""))
-        desc = c.get("description", "")
-        link = f"/project/{_e(alias)}/commands/{_e(c.get('file','').replace('.md',''))}"
-        items += f"""<a href="{link}" class="context-item">
-  <div class="context-item-icon command">{_ICON_CMD}</div>
-  <div>
-    <div class="context-item-name">/{_e(name)}</div>
-    <div class="context-item-desc">{_e(desc)}</div>
-  </div>
-</a>"""
-    return f'<div class="context-list">{items}</div>'
-
-
-def _context_page(docs: list[dict], alias: str) -> str:
-    if not docs:
-        return '<div class="empty-state"><p>No context documents.</p></div>'
-    _icon_map = {
-        "objective": "objective", "architecture": "architecture",
-        "conventions": "conventions", "decisions": "folder",
-        "documents": "folder",
-    }
-    items = ""
-    for d in docs:
-        stem = d["name"].replace(".md", "").lower()
-        if d["isDir"]:
-            icon_cls = _icon_map.get(stem, "folder")
-            icon_svg = _ICON_FOLDER
-        else:
-            icon_cls = _icon_map.get(stem, "doc")
-            icon_svg = _ICON_DOC
-        link = f"/project/{_e(alias)}/context/{_e(d['name'])}" if not d["isDir"] else "#"
-        items += f"""<a href="{link}" class="context-item">
-  <div class="context-item-icon {icon_cls}">{icon_svg}</div>
-  <div>
-    <div class="context-item-name">{_e(d['name'])}</div>
-    <div class="context-item-desc">{_e(d['description'])}</div>
-  </div>
-</a>"""
-    return f'<div class="context-list">{items}</div>'
-
-
-def _repos_page(repos: list[dict], alias: str) -> str:
-    if not repos:
-        return '<div class="empty-state"><p>No repos registered. Run <code>holoctl repo add &lt;path&gt;</code>.</p></div>'
-    items = ""
-    for r in repos:
-        git = r.get("git", {})
-        branch = git.get("branch", "—") if git.get("isGit") else "no git"
-        dirty = " *" if git.get("dirty") else ""
-        items += f"""<div class="context-item">
-  <div class="context-item-icon doc">{_ICON_REPO}</div>
-  <div style="flex:1">
-    <div class="context-item-name">{_e(r['name'])}</div>
-    <div class="context-item-desc">{_e(r.get('path',''))}</div>
-  </div>
-  <div style="display:flex;gap:6px;align-items:center">
-    <span class="chip chip-agent">{_e(branch)}{dirty}</span>
-    <span class="chip chip-sprint">{int(r.get('ticketCount',0))} tickets</span>
-  </div>
-</div>"""
-    return f'<div class="context-list">{items}</div>'
 
 
 _PLACEHOLDER_PATTERNS = (
@@ -1188,18 +1006,7 @@ def _render_markdown(body: str) -> str:
     return "\n".join(out)
 
 
-def _format_iso_datetime(iso: str) -> str:
-    """Pretty-print an ISO timestamp as `YYYY-MM-DD HH:MM` (UTC, no seconds).
-
-    Used in the detail page's Activity / Properties cards where the full
-    ISO + microsecond is too noisy.
-    """
-    if not iso:
-        return ""
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})", str(iso))
-    if not m:
-        return str(iso)[:19]
-    return f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}:{m.group(5)}"
+from .views.dates import format_iso_datetime as _format_iso_datetime  # noqa: E402
 
 
 def _read_ticket_activity(project_root: Path, ticket_id: str) -> list[dict]:
@@ -1255,6 +1062,18 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
     tags_list = [t for t in (ticket.get("tags") or []) if t]
     projects_list = [p for p in (ticket.get("projects") or []) if p]
     depends_list = [d for d in (ticket.get("depends") or []) if d]
+    # v0.16 hierarchy + external-board origin. Surfaced in Properties + Linked
+    # below so the visual board doesn't lag behind the schema/CLI surface.
+    kind = ticket.get("kind") or "task"
+    parent_id = ticket.get("parent") or ""
+    src_provider = ticket.get("source_provider") or ""
+    src_ref = ticket.get("source_ref") or ""
+    src_url = ticket.get("source_url") or ""
+    src_label = ticket.get("source_label") or ""
+    children_list: list[dict] = []
+    if all_tickets is not None:
+        ours = ticket.get("id")
+        children_list = [t for t in all_tickets if t.get("parent") == ours and t.get("id") != ours]
     blocks_list: list[str] = []
     if all_tickets is not None:
         ours = ticket.get("id")
@@ -1313,6 +1132,25 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
     created_disp = _format_iso_datetime(created) or "—"
     updated_disp = _format_iso_datetime(updated) or "—"
 
+    # Kind / Parent / Source rows. Kind always shows (so the user sees the
+    # default "task" and knows the field exists); Parent + Source render an
+    # empty-dash when unset so they're discoverable on every ticket.
+    kind_display = _kind_chip_html(kind) if kind != "task" else f'<span class="dr-prop-text">{_e(kind)}</span>'
+    if parent_id:
+        parent_display = (f'<a class="dr-prop-link mono" '
+                          f'href="/project/{_e(alias)}/board/{_e(parent_id)}">{_e(parent_id)}</a>')
+    else:
+        parent_display = '<span class="dr-prop-empty">—</span>'
+    if src_provider or src_url or src_ref or src_label:
+        chip = _source_chip_html(src_provider, src_url, src_ref, src_label)
+        if src_url:
+            source_display = (f'{chip} <a class="dr-prop-link mono" '
+                              f'href="{_e(src_url)}" target="_blank" rel="noopener">↗ open</a>')
+        else:
+            source_display = chip
+    else:
+        source_display = '<span class="dr-prop-empty">—</span>'
+
     properties = f"""<div class="dr-card" data-detail-row data-id="{_e(ticket['id'])}">
   <div class="dr-card-title">Properties</div>
   <div class="dr-prop">
@@ -1322,6 +1160,14 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
   <div class="dr-prop">
     <span class="dr-prop-label">Priority</span>
     <button type="button" class="dr-prop-edit lr-edit lr-prio-pill" data-edit-field="priority" data-p="{_e(prio)}">{_e(prio)}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Kind</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="kind" data-current="{_e(kind)}">{kind_display}</button>
+  </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Parent</span>
+    <button type="button" class="dr-prop-edit-text" data-edit-text-field="parent" data-current="{_e(parent_id)}">{parent_display}</button>
   </div>
   <div class="dr-prop">
     <span class="dr-prop-label">Agents</span>
@@ -1339,6 +1185,10 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
     <span class="dr-prop-label">Repo</span>
     <button type="button" class="dr-prop-edit-text" data-edit-text-field="projects" data-current="{_e(','.join(projects_list))}">{projects_display}</button>
   </div>
+  <div class="dr-prop">
+    <span class="dr-prop-label">Source</span>
+    <span class="dr-prop-value">{source_display}</span>
+  </div>
   <hr class="dr-divider">
   <div class="dr-prop dr-prop-readonly">
     <span class="dr-prop-label">Created</span>
@@ -1351,7 +1201,23 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
 </div>"""
 
     # ── Right rail: Linked card ────────────────────────────────────────
-    if depends_list or blocks_list:
+    # Order: parent first (the spec this lives under), then children
+    # (work this ticket spawns), then depends (blockers above this one),
+    # then blocks (downstream of this one). Reads top-down like a tree.
+    if depends_list or blocks_list or parent_id or children_list:
+        parent_item = ""
+        if parent_id:
+            parent_item = (
+                f'<a class="dr-linked-item" href="/project/{_e(alias)}/board/{_e(parent_id)}">'
+                f'<span class="dr-linked-arrow">↑</span> parent {_e(parent_id)}</a>'
+            )
+        child_items = "".join(
+            f'<a class="dr-linked-item" href="/project/{_e(alias)}/board/{_e(c.get("id",""))}">'
+            f'<span class="dr-linked-arrow">↓</span> child {_e(c.get("id",""))} '
+            f'<span class="dr-linked-meta">· {_e((c.get("kind") or "task"))} · '
+            f'{_e(c.get("status",""))}</span></a>'
+            for c in children_list
+        )
         dep_items = "".join(
             f'<a class="dr-linked-item" href="/project/{_e(alias)}/board/{_e(d)}">'
             f'<span class="dr-linked-arrow">↳</span> depends on {_e(d)}</a>'
@@ -1362,7 +1228,7 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
             f'<span class="dr-linked-arrow">↳</span> blocks {_e(b)}</a>'
             for b in blocks_list
         )
-        linked_body = dep_items + blk_items
+        linked_body = parent_item + child_items + dep_items + blk_items
     else:
         linked_body = '<div class="dr-empty">No linked tickets</div>'
 
@@ -1448,256 +1314,10 @@ def _ticket_detail_page(ticket: dict, body: str, alias: str,
 
 # ── routes ───────────────────────────────────────────────────────────────────
 
-@app.get("/", response_class=HTMLResponse)
-def home():
-    projects = _get_projects()
-    return _render("Home", _home_page(projects), projects=projects,
-                   breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": "Home"}])
-
-
-@app.get("/project/{alias}/board", response_class=HTMLResponse)
-def project_board(alias: str, view: str = "kanban"):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    if view not in _VALID_VIEWS:
-        view = "kanban"
-    board = Board(Path(project["path"]), project["config"])
-    tickets = board.ls()
-    # LIVE indicator now lives in the topbar — frees the board header for
-    # the project title + path + primary CTA.
-    live_action = '<span class="live-indicator"><span class="pulse"></span>LIVE</span>'
-    return _render(
-        project["name"], _board_page(project, tickets, project["config"], view=view),
-        current_alias=alias, current_tab="board",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-        actions=live_action,
-    )
-
-
-@app.get("/project/{alias}/agents", response_class=HTMLResponse)
-def project_agents(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    agents = _read_agents(Path(project["path"]))
-    return _render(
-        project["name"], _agents_page(agents, alias),
-        current_alias=alias, current_tab="agents",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Agents"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/commands", response_class=HTMLResponse)
-def project_commands(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    commands = _read_commands(Path(project["path"]))
-    return _render(
-        project["name"], _commands_page(commands, alias),
-        current_alias=alias, current_tab="commands",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Commands"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/context", response_class=HTMLResponse)
-def project_context(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    docs = _read_context_docs(Path(project["path"]))
-    return _render(
-        project["name"], _context_page(docs, alias),
-        current_alias=alias, current_tab="context",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Context"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/board/{ticket_id}", response_class=HTMLResponse)
-def project_ticket(alias: str, ticket_id: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    project_root = Path(project["path"])
-    board = Board(project_root, project["config"])
-    ticket = board.get(ticket_id)
-    if not ticket:
-        return HTMLResponse(_render("Not Found", _not_found_html("Ticket not found")), status_code=404)
-    ticket_file = project_root / ".holoctl" / "board" / ticket["file"]
-    _, body = parse_frontmatter(ticket_file.read_text(encoding="utf-8")) if ticket_file.exists() else ({}, "")
-    # Pull the rest of the tickets so the detail page can compute the
-    # `blocks` reverse links without a second pass at click time.
-    all_tickets = board.ls()
-    return _render(
-        f"{ticket_id} — {project['name']}",
-        _ticket_detail_page(ticket, body, alias,
-                            all_tickets=all_tickets, project_root=project_root,
-                            statuses=project["config"]["board"]["statuses"]),
-        current_alias=alias, current_tab="board",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Board", "href": f"/project/{alias}/board"}, {"label": ticket_id}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-def _doc_detail_page(title: str, body: str, alias: str, kind: str, meta: dict | None = None) -> str:
-    back = f'<a class="back-link" href="/project/{_e(alias)}/{_e(kind)}"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Back to {_e(kind.capitalize())}</a>'
-    body_html = _render_markdown(_strip_empty_sections(body))
-    sidebar_html = ""
-    if meta:
-        rows = "".join(
-            f'<div><div class="detail-field-label">{_e(k)}</div><div class="detail-field-value mono">{_e(v)}</div></div>'
-            for k, v in meta.items() if v is not None and v != ""
-        )
-        if rows:
-            sidebar_html = f'<div class="detail-sidebar">{rows}</div>'
-
-    if sidebar_html:
-        grid = f'<div class="detail-grid"><div class="detail-main"><div class="detail-section"><div class="detail-section-body">{body_html}</div></div></div>{sidebar_html}</div>'
-    else:
-        grid = f'<div class="detail-main"><div class="detail-section"><div class="detail-section-body">{body_html}</div></div></div>'
-
-    return f"""{back}
-<div class="detail-page">
-  <div class="detail-header">
-    <div class="detail-title">{_e(title)}</div>
-  </div>
-  {grid}
-</div>"""
-
-
-@app.get("/project/{alias}/agents/{slug}", response_class=HTMLResponse)
-def project_agent_detail(alias: str, slug: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    agents_root = (Path(project["path"]) / ".holoctl" / "agents").resolve()
-    f = (agents_root / f"{slug}.md").resolve()
-    try:
-        f.relative_to(agents_root)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    if not f.exists():
-        return HTMLResponse(_render("Not Found", _not_found_html("Agent not found")), status_code=404)
-    fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
-    title = fm.get("name", slug)
-    meta = {
-        "Model": fm.get("model"),
-        "Trigger": fm.get("trigger"),
-        "Tools": ", ".join(fm.get("tools", [])) if isinstance(fm.get("tools"), list) else fm.get("tools"),
-        "Description": fm.get("description"),
-    }
-    return _render(
-        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "agents", meta),
-        current_alias=alias, current_tab="agents",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Agents", "href": f"/project/{alias}/agents"}, {"label": title}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/commands/{slug}", response_class=HTMLResponse)
-def project_command_detail(alias: str, slug: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    commands_root = (Path(project["path"]) / ".holoctl" / "commands").resolve()
-    f = (commands_root / f"{slug}.md").resolve()
-    try:
-        f.relative_to(commands_root)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    if not f.exists():
-        return HTMLResponse(_render("Not Found", _not_found_html("Command not found")), status_code=404)
-    fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
-    title = f"/{fm.get('name', slug)}"
-    meta = {
-        "Description": fm.get("description"),
-        "Arguments": fm.get("arguments"),
-    }
-    return _render(
-        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "commands", meta),
-        current_alias=alias, current_tab="commands",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Commands", "href": f"/project/{alias}/commands"}, {"label": title}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/context/{filename}", response_class=HTMLResponse)
-def project_context_detail(alias: str, filename: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    context_root = (Path(project["path"]) / ".holoctl" / "context").resolve()
-    f = (context_root / filename).resolve()
-    try:
-        f.relative_to(context_root)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    if not f.exists() or not f.is_file():
-        return HTMLResponse(_render("Not Found", _not_found_html("Context document not found")), status_code=404)
-    raw = f.read_text(encoding="utf-8")
-    if f.suffix == ".md":
-        fm, body = parse_frontmatter(raw)
-    else:
-        fm, body = {}, raw
-    title = fm.get("title", f.name)
-    meta = {k.capitalize(): v for k, v in fm.items() if k not in ("title",) and v is not None}
-    return _render(
-        f"{title} — {project['name']}", _doc_detail_page(title, body, alias, "context", meta),
-        current_alias=alias, current_tab="context",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Context", "href": f"/project/{alias}/context"}, {"label": title}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
-@app.get("/project/{alias}/repos", response_class=HTMLResponse)
-def project_repos(alias: str):
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_render("Not Found", _not_found_html()), status_code=404)
-    # Dirty-flag fetching is opt-in via config.git.checkDirty (default false).
-    # When off, this route still works — it just won't show the dirty asterisk.
-    # When on, each subrepo costs one `git status --porcelain` subprocess.
-    check_dirty = project["config"].get("git", {}).get("checkDirty", False)
-    repos = discover_repos(
-        Path(project["path"]),
-        include_manual=project["config"]["project"].get("repos", []),
-        with_dirty=check_dirty,
-    )
-    board = Board(Path(project["path"]), project["config"])
-    all_tickets = board.ls()
-    for r in repos:
-        r["ticketCount"] = sum(1 for t in all_tickets if r["name"] in (t.get("projects") or []))
-    return _render(
-        project["name"], _repos_page(repos, alias),
-        current_alias=alias, current_tab="repos",
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": project["name"], "href": f"/project/{alias}/board"}, {"label": "Repos"}],
-        tabs=_PROJECT_TABS, tab_base=f"/project/{alias}",
-    )
-
-
 @app.get("/project/{alias}")
 def project_redirect(alias: str):
     from fastapi.responses import RedirectResponse
     return RedirectResponse(f"/project/{alias}/board")
-
-
-@app.get("/agents", response_class=HTMLResponse)
-def global_agents():
-    projects = _get_projects()
-    all_agents = []
-    for p in projects:
-        for a in _read_agents(Path(p["path"])):
-            all_agents.append({**a, "project": p["alias"]})
-    return _render(
-        "Agent Registry", _agents_page(all_agents),
-        projects=projects,
-        breadcrumbs=[{"label": "holoctl", "href": "/"}, {"label": "Agent Registry"}],
-    )
 
 
 # ── API ───────────────────────────────────────────────────────────────────────
@@ -1716,63 +1336,6 @@ def api_board(alias: str):
     if index_path.exists():
         return json.loads(index_path.read_text(encoding="utf-8"))
     return {"meta": {}, "tickets": []}
-
-
-@app.get("/api/project/{alias}/board-html", response_class=HTMLResponse)
-def api_board_html(alias: str):
-    """Return just the `<div class="kanban">` fragment.
-
-    The dashboard's SSE client swaps this into the page on every
-    `board-update` event, so tickets appear/move/disappear without a
-    full reload.
-    """
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
-    project_root = Path(project["path"])
-    board = Board(project_root, project["config"])
-    tickets = board.ls()
-    return HTMLResponse(_kanban_html(
-        tickets, project["config"]["board"]["statuses"], alias,
-        project_root=project_root,
-    ))
-
-
-@app.get("/api/project/{alias}/list-html", response_class=HTMLResponse)
-def api_list_html(alias: str):
-    """Return just the `<div class="list-view">` fragment for SSE swap.
-
-    Same role as `/board-html`, but for the dense list view. The SSE client
-    picks which fragment to fetch based on the `data-current-view` attr on
-    the `#board-controls` panel.
-    """
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
-    board = Board(Path(project["path"]), project["config"])
-    tickets = board.ls()
-    return HTMLResponse(_list_html(
-        tickets, project["config"]["board"]["statuses"], alias,
-    ))
-
-
-@app.get("/api/project/{alias}/timeline-html", response_class=HTMLResponse)
-def api_timeline_html(alias: str, group: str = "sprint"):
-    """Return just the `<div class="timeline-view">` fragment for SSE swap.
-
-    `group` mirrors the `?group=` axis the JS uses when the user flips
-    between Sprint and Agent lanes — letting the client re-fetch without a
-    full page navigation.
-    """
-    project = _get_project(alias)
-    if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
-    board = Board(Path(project["path"]), project["config"])
-    tickets = board.ls()
-    return HTMLResponse(_timeline_html(
-        tickets, project["config"]["board"]["statuses"], alias,
-        group_by=group,
-    ))
 
 
 @app.post("/api/project/{alias}/tickets")

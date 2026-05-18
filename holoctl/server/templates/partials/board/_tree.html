@@ -1,0 +1,31 @@
+{% from "partials/board/_avatars.html" import avatar_stack %}
+{% from "partials/board/_chips.html" import chip_kind %}
+{% from "partials/board/_card.html" import card_data_attrs %}
+
+<div class="tree-view" id="tree-view">
+  <div class="tree-body">
+    {% if tree_rows %}
+    {% for c in tree_rows %}
+    <a class="tree-row kanban-card" href="/project/{{ c.alias }}/board/{{ c.id }}" {{ card_data_attrs(c) }} data-depth="{{ c.depth }}">
+      <span class="tr-gutter">
+        {%- for flag in c.pipe_flags -%}
+        <span class="tr-glyph tr-glyph-{{ 'pipe' if flag else 'blank' }}"></span>
+        {%- endfor -%}
+        {%- if c.depth > 0 -%}
+        <span class="tr-glyph tr-glyph-{{ 'last' if c.is_last else 'mid' }}"></span>
+        {%- endif -%}
+      </span>
+      <span class="tr-prio-dot" data-p="{{ c.priority }}" title="priority {{ c.priority }}"></span>
+      {{ chip_kind(c.kind) }}
+      <span class="tr-id">{{ c.id }}</span>
+      <span class="tr-status" data-status="{{ c.status }}">{{ c.status }}</span>
+      <span class="tr-title">{{ c.title }}</span>
+      {% if c.agents %}{{ avatar_stack(c.agents) }}{% endif %}
+      {% if c.sprint %}<span class="tr-sprint">#{{ c.sprint }}</span>{% endif %}
+    </a>
+    {% endfor %}
+    {% else %}
+    <div class="tree-empty">No tickets to render.</div>
+    {% endif %}
+  </div>
+</div>

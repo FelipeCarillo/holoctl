@@ -1,0 +1,23 @@
+/* ── Scope filter (board page) ── */
+.scope-filter {
+  display: flex;
+  gap: 6px;
+  padding: 0 var(--content-px) 12px;
+  flex-wrap: wrap;
+}
+
+.scope-btn {
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+}
+
+.scope-btn:hover { border-color: var(--accent); color: var(--text-1); }
+.scope-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+

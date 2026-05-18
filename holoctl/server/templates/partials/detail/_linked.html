@@ -1,0 +1,21 @@
+<div class="dr-card">
+  <div class="dr-card-title">Linked</div>
+  <div class="dr-linked">
+    {% if parent_id or children or depends or blocks %}
+      {% if parent_id %}
+      <a class="dr-linked-item" href="/project/{{ alias }}/board/{{ parent_id }}"><span class="dr-linked-arrow">↑</span> parent {{ parent_id }}</a>
+      {% endif %}
+      {% for c in children %}
+      <a class="dr-linked-item" href="/project/{{ alias }}/board/{{ c.id }}"><span class="dr-linked-arrow">↓</span> child {{ c.id }} <span class="dr-linked-meta">· {{ c.kind or 'task' }} · {{ c.status }}</span></a>
+      {% endfor %}
+      {% for d in depends %}
+      <a class="dr-linked-item" href="/project/{{ alias }}/board/{{ d }}"><span class="dr-linked-arrow">↳</span> depends on {{ d }}</a>
+      {% endfor %}
+      {% for b in blocks %}
+      <a class="dr-linked-item" href="/project/{{ alias }}/board/{{ b }}"><span class="dr-linked-arrow">↳</span> blocks {{ b }}</a>
+      {% endfor %}
+    {% else %}
+    <div class="dr-empty">No linked tickets</div>
+    {% endif %}
+  </div>
+</div>

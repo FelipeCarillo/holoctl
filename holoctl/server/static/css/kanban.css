@@ -1,0 +1,191 @@
+/* ── Kanban Board ── */
+.board-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.board-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.board-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-0);
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+
+.board-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Live indicator — moved to the topbar (.topbar-actions). The styles still
+   apply on the board page but the chip now sits next to the breadcrumb tabs
+   instead of taking a slot in the project header. */
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--green);
+  padding: 4px 10px;
+  background: var(--green-subtle);
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.live-indicator .pulse {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  position: relative;
+}
+
+.live-indicator .pulse::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--green);
+  animation: ripple 2s var(--ease) infinite;
+}
+
+@keyframes ripple {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+.board-path {
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-count {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-left: auto;
+  font-weight: 500;
+}
+
+/* Disabled CTA placeholder — Phase 1 ships visual only; "+ New ticket" gets
+   wired to a real POST endpoint in the Mutations API phase. */
+.btn-disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+.btn-disabled:hover,
+.btn[aria-disabled="true"]:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+  transform: none;
+}
+
+.kanban {
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+  /* Take all the height of .content-body so the horizontal scrollbar (when
+     the kanban is wider than viewport) lands at the visible bottom edge,
+     not below the tallest column. `min-width: 0` is required: the default
+     `min-width: auto` on a flex item is content-sized, which together with
+     the columns' fixed widths would let the kanban grow past its parent
+     and silently kill horizontal scroll (the columns never overflow the
+     container, so `overflow-x: auto` had nothing to scroll). */
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.kanban-col {
+  width: var(--col-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Each column is a flex column whose ticket-list scrolls internally. */
+  max-height: 100%;
+  min-height: 0;
+}
+
+/* Sticky header at the top of each column — stays visible while the cards
+   below scroll. Uses bg-0 (page bg) so it cleanly covers cards passing
+   underneath as they scroll. */
+.kanban-col-header {
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-1);
+  background: var(--bg-0);
+}
+
+.kanban-col-header .col-label { flex: 1; }
+
+/* Status accent on the count chip only — keeps the column header itself
+   neutral so the cards do the talking. */
+.kanban-col-header .count {
+  background: var(--bg-2);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.kanban-col[data-status="backlog"]   .col-label,
+.kanban-col[data-status="backlog"]   .count { color: var(--text-2); }
+.kanban-col[data-status="doing"]     .col-label { color: var(--blue); }
+.kanban-col[data-status="doing"]     .count { background: var(--blue-subtle); color: var(--blue); }
+.kanban-col[data-status="review"]    .col-label { color: var(--yellow); }
+.kanban-col[data-status="review"]    .count { background: var(--yellow-subtle); color: var(--yellow); }
+.kanban-col[data-status="done"]      .col-label { color: var(--green); }
+.kanban-col[data-status="done"]      .count { background: var(--green-subtle); color: var(--green); }
+.kanban-col[data-status="cancelled"] .col-label { color: var(--red); }
+.kanban-col[data-status="cancelled"] .count { background: var(--red-subtle); color: var(--red); }
+
+.kanban-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Per-column vertical scroll. With `flex: 1; min-height: 0` the cards
+     area takes whatever room is left after the column header and scrolls
+     internally instead of pushing the column past its parent. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+

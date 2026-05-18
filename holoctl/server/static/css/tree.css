@@ -1,0 +1,136 @@
+/* ---------------------------------------------------------------------
+   Tree view — hierarchical layout by parent/child. One row per ticket;
+   indentation comes from a gutter of monospaced glyph cells so the visual
+   relationship between specs and their children is unmistakable.
+--------------------------------------------------------------------- */
+.tree-view {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.tree-body {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  text-decoration: none;
+  color: var(--text-0);
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  font-size: 13px;
+}
+.tree-row:last-child { border-bottom: none; }
+.tree-row:hover {
+  background: var(--bg-hover, var(--bg-2));
+}
+.tr-gutter {
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  user-select: none;
+}
+.tr-glyph {
+  width: 18px;
+  height: 22px;
+  display: inline-block;
+  position: relative;
+}
+.tr-glyph-pipe::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.tr-glyph-mid::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.tr-glyph-mid::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--border);
+}
+.tr-glyph-last::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  height: 50%;
+  width: 1px;
+  background: var(--border);
+}
+.tr-glyph-last::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--border);
+}
+.tr-prio-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.tr-prio-dot[data-p="p0"] { background: var(--prio-p0, #ef4444); }
+.tr-prio-dot[data-p="p1"] { background: var(--prio-p1, #f59e0b); }
+.tr-prio-dot[data-p="p2"] { background: var(--prio-p2, #6b7280); }
+.tr-prio-dot[data-p="p3"] { background: var(--prio-p3, #9ca3af); }
+.tr-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.tr-status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-3);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.tr-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.tr-sprint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.tree-empty {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.tree-row.bc-hidden { display: none !important; }

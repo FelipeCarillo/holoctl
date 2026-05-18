@@ -1,0 +1,29 @@
+{% from "partials/board/_avatars.html" import avatar_stack %}
+{% from "partials/board/_chips.html" import chip_kind, chip_source, chip_parent, chip_repo, chip_deps %}
+
+{# All data-* attrs the client filter/sort/group logic reads. Same set across
+   kanban card, list row, tree row, timeline row so the JS doesn't branch. #}
+{% macro card_data_attrs(c) -%}
+data-id="{{ c.id }}" data-status="{{ c.status }}" data-p="{{ c.priority }}" data-agent="{{ c.agents_csv }}" data-sprint="{{ c.sprint }}" data-tags="{{ c.tags_csv }}" data-projects="{{ c.projects_csv }}" data-depends="{{ c.depends_csv }}" data-kind="{{ c.kind }}" data-parent="{{ c.parent }}" data-source="{{ c.source_provider }}" data-title="{{ c.title }}" data-created="{{ c.created }}" data-updated="{{ c.updated }}"
+{%- endmacro %}
+
+{% macro card_meta(c) %}
+{%- set has_meta = c.agents or c.sprint or c.parent or c.depends or c.due -%}
+{% if has_meta %}<div class="kc-meta">{{ avatar_stack(c.agents) }}{% if c.sprint %}<span class="kc-sprint">#{{ c.sprint }}</span>{% endif %}{{ chip_parent(c.parent) }}{{ chip_deps(c.depends, c.alias) }}{% if c.due %}<span class="kc-due">⏱ {{ c.due }}</span>{% endif %}</div>{% endif %}
+{%- endmacro %}
+
+{% macro kanban_card(c) %}
+<a href="/project/{{ c.alias }}/board/{{ c.id }}" class="kanban-card" {{ card_data_attrs(c) }}>
+  <div class="kc-top">
+    <span class="kc-prio-dot" data-p="{{ c.priority }}" title="priority {{ c.priority }}"></span>
+    {{ chip_kind(c.kind) }}
+    <span class="kc-id">{{ c.id }}</span>
+    {{ chip_repo(c.projects) }}
+    {{ chip_source(c.source_provider, c.source_url, c.source_ref, c.source_label) }}
+    <button type="button" class="kc-menu" data-card-menu aria-label="Card actions" title="Actions">⋯</button>
+  </div>
+  <div class="kc-title">{{ c.title }}</div>
+  {% if c.preview %}<div class="kc-preview">{{ c.preview }}</div>{% endif %}
+  {{ card_meta(c) }}
+</a>
+{% endmacro %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+{% if is_empty %}
+<div class="empty-state"><h3>No projects yet</h3><p>Run <code>holoctl init</code> in a directory to get started.</p></div>
+{% else %}
+<div class="project-grid">
+  {% for p in cards %}
+  <a href="/project/{{ p.alias }}/board" class="project-card">
+    <div class="project-card-header">
+      <div class="project-card-icon">{{ p.prefix2 }}</div>
+      <div>
+        <div class="project-card-name">{{ p.name }}</div>
+        <div class="project-card-sub">{{ p.alias }}</div>
+      </div>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-segment done" style="width:{{ p.done_pct }}%"></div>
+      <div class="progress-segment doing" style="width:{{ p.doing_pct }}%"></div>
+      <div class="progress-segment backlog" style="width:{{ p.backlog_pct }}%"></div>
+    </div>
+    <div class="project-card-stats">
+      <span class="stat-mini"><span class="stat-dot backlog"></span>{{ p.backlog }} backlog</span>
+      <span class="stat-mini"><span class="stat-dot doing"></span>{{ p.doing }} doing</span>
+      <span class="stat-mini"><span class="stat-dot done"></span>{{ p.done }} done</span>
+    </div>
+    <div class="project-card-meta">
+      {% for t in p.targets %}<span class="chip chip-target">{{ t }}</span>{% endfor %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

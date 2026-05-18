@@ -47,8 +47,16 @@ def ls_cmd(
     agent: Optional[str] = typer.Option(None, "--agent"),
     tag: Optional[str] = typer.Option(None, "--tag"),
     project: Optional[str] = typer.Option(None, "--project", help="Filter by project (subdir name discovered in workspace)"),
+    kind: Optional[str] = typer.Option(None, "--kind", help="Filter by kind (task, story, bug, spec, epic, ...)"),
+    parent: Optional[str] = typer.Option(None, "--parent", help="Filter by parent ID (children of a spec/story/epic)"),
+    tree: bool = typer.Option(False, "--tree", help="Render the parent/child hierarchy with ├─ └─ glyphs"),
 ):
-    """List tickets with optional filters."""
+    """List tickets with optional filters.
+
+    With ``--tree``, the result is rendered as a hierarchy: roots first,
+    children indented with ``├─`` / ``└─``. Filters still apply — ancestors
+    of matched items are kept so the structure stays readable.
+    """
     board, _, _ = _get_board()
     filters: dict = {}
     if sprint:
@@ -63,6 +71,27 @@ def ls_cmd(
         filters["project"] = project
     if priority and priority.startswith("p") and len(priority) == 2:
         filters["priority"] = priority
+    if kind:
+        filters["kind"] = kind
+    if parent:
+        filters["parent"] = parent
+
+    if tree:
+        rows = board.tree(filters or None)
+        if not rows:
+            console.print("[dim]No tickets match the filters.[/dim]")
+            return
+        for row in rows:
+            t = row["ticket"]
+            kind_str = t.get("kind") or "task"
+            kind_disp = f"[magenta]{kind_str[:6]:<6}[/magenta]"
+            agents = ", ".join(t.get("agent") or []) or "—"
+            console.print(
+                f"{row['prefix']}[bold]{t['id']}[/bold]  {kind_disp}  "
+                f"{_status_color(t['status'])}  {t['title'][:60]}  "
+                f"[dim]({agents})[/dim]"
+            )
+        return
 
     tickets = board.ls(filters)
     if not tickets:
@@ -73,42 +102,191 @@ def ls_cmd(
         dep = f" [dim][dep: {', '.join(t['depends'])}][/dim]" if t.get("depends") else ""
         agents = ", ".join(t["agent"]) if t.get("agent") else "—"
         agents_str = f"[green]{agents}[/green]"
+        kind_str = t.get("kind") or "task"
+        kind_disp = f"[magenta]{kind_str[:6]:<6}[/magenta]"
         console.print(
-            f"[bold]{t['id']}[/bold]  {_priority_color(t['priority'])}  "
+            f"[bold]{t['id']}[/bold]  {kind_disp}  {_priority_color(t['priority'])}  "
             f"{_status_color(t['status'])}  {(t.get('sprint') or '—'):<12}  "
             f"{agents_str:<20}  {t['title'][:50]}{dep}"
         )
 
 
-@app.command("move")
-def move_cmd(
-    ticket_id: str = typer.Argument(...),
-    status: str = typer.Argument(...),
+@app.command("children")
+def children_cmd(
+    parent_id: str = typer.Argument(..., help="Parent work item ID (spec/story/epic)"),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    deep: bool = typer.Option(
+        False, "--deep",
+        help="Render the full subtree (grandchildren and beyond) with ├─ └─ glyphs",
+    ),
 ):
-    """Move a ticket to a new status."""
+    """Show direct children of a work item + aggregate DoD progress.
+
+    Useful for inspecting a spec/story/epic: lists each child task with status,
+    plus a roll-up of how many acceptance items are checked vs total.
+
+    ``--deep`` walks the whole subtree (grandchildren and below) and renders
+    it as an ASCII tree.
+    """
     board, _, _ = _get_board()
     try:
-        result = board.move(ticket_id, status)
-        console.print(f"{result['id']}: {result['from']} → [bold]{result['to']}[/bold]")
-    except (ValueError, KeyError) as e:
+        result = board.children(parent_id)
+    except KeyError as e:
         console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    if as_json:
+        print(json.dumps(result, indent=2, default=str))
+        return
+
+    parent = result["parent"]
+    total = result["total_acceptance"]
+    acked = result["acked"]
+    pct = int(100 * acked / total) if total else 0
+
+    if deep:
+        rows = board.tree(root=parent_id)
+        for row in rows:
+            t = row["ticket"]
+            ckind = t.get("kind") or "task"
+            kind_disp = f"[magenta]{ckind[:6]:<6}[/magenta]"
+            console.print(
+                f"{row['prefix']}[bold]{t['id']}[/bold]  {kind_disp}  "
+                f"{_priority_color(t['priority'])}  {_status_color(t['status'])}  "
+                f"{t['title'][:55]}"
+            )
+        console.print(
+            f"\n[dim]DoD progress (direct children):[/dim] {acked}/{total} ({pct}%)  "
+            f"[dim]by_status:[/dim] {result['by_status'] or '(none)'}"
+        )
+        return
+
+    kind = parent.get("kind") or "task"
+    console.print(
+        f"[bold]{parent['id']}[/bold] [magenta]{kind}[/magenta] "
+        f"{_status_color(parent['status'])} {parent.get('title', '')[:60]}"
+    )
+    console.print(
+        f"  [dim]DoD progress:[/dim] {acked}/{total} ({pct}%)  "
+        f"[dim]by_status:[/dim] {result['by_status'] or '(none)'}"
+    )
+    if not result["children"]:
+        console.print("  [dim](no children)[/dim]")
+        return
+    last_idx = len(result["children"]) - 1
+    for i, c in enumerate(result["children"]):
+        glyph = "└─ " if i == last_idx else "├─ "
+        ckind = c.get("kind") or "task"
+        kind_disp = f"[magenta]{ckind[:6]:<6}[/magenta]"
+        console.print(
+            f"{glyph}[bold]{c['id']}[/bold]  {kind_disp}  {_priority_color(c['priority'])}  "
+            f"{_status_color(c['status'])}  {c['title'][:55]}"
+        )
+
+
+@app.command("move")
+def move_cmd(
+    ticket_id: str = typer.Argument(..., help="Ticket ID (or comma-separated list for batch move)"),
+    status: str = typer.Argument(...),
+):
+    """Move a ticket (or multiple, comma-separated) to a new status."""
+    board, _, _ = _get_board()
+    ids = [t.strip() for t in ticket_id.split(",") if t.strip()]
+    if len(ids) == 1:
+        try:
+            result = board.move(ids[0], status)
+            console.print(f"{result['id']}: {result['from']} → [bold]{result['to']}[/bold]")
+        except (ValueError, KeyError) as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+        return
+    result = board.batch_move(ids, status)
+    for r in result["moved"]:
+        console.print(f"{r['id']}: {r['from']} → [bold]{r['to']}[/bold]")
+    for err in result["errors"]:
+        console.print(f"[red]{err['id']}: {err['error']}[/red]")
+    if result["errors"]:
         raise typer.Exit(1)
 
 
 @app.command("set")
 def set_cmd(
-    ticket_id: str = typer.Argument(...),
+    ticket_id: str = typer.Argument(..., help="Ticket ID (or comma-separated list for batch set)"),
     field: str = typer.Argument(...),
     value: list[str] = typer.Argument(...),
 ):
-    """Set a field on a ticket."""
+    """Set a field on one ticket — or many, comma-separated."""
     board, _, _ = _get_board()
-    try:
-        result = board.set(ticket_id, field, " ".join(value))
-        console.print(f"{result['id']}.{result['field']} = {json.dumps(result['value'])}")
-    except (KeyError, ValueError) as e:
-        msg = str(e).strip("'")
-        console.print(f"[red]{msg}[/red]")
+    ids = [t.strip() for t in ticket_id.split(",") if t.strip()]
+    raw_value = " ".join(value)
+    if len(ids) == 1:
+        try:
+            result = board.set(ids[0], field, raw_value)
+            console.print(f"{result['id']}.{result['field']} = {json.dumps(result['value'])}")
+        except (KeyError, ValueError) as e:
+            msg = str(e).strip("'")
+            console.print(f"[red]{msg}[/red]")
+            raise typer.Exit(1)
+        return
+    result = board.batch_set(ids, field, raw_value)
+    for r in result["updated"]:
+        console.print(f"{r['id']}.{r['field']} = {json.dumps(r['value'])}")
+    for err in result["errors"]:
+        console.print(f"[red]{err['id']}: {err['error']}[/red]")
+    if result["errors"]:
+        raise typer.Exit(1)
+
+
+@app.command("delete")
+def delete_cmd(
+    ticket_id: str = typer.Argument(..., help="Ticket ID (or comma-separated list)"),
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Skip confirmation prompt. Required when running non-interactively.",
+    ),
+):
+    """Hard-delete one or more tickets (removes .md file + index entry).
+
+    For soft-delete that keeps the record, use `hctl board move <ID> cancelled`.
+    Hard delete is irreversible — the .md file is removed from disk and the
+    index entry is dropped. The id is NOT reused; nextId keeps incrementing.
+    """
+    import sys
+    board, _, _ = _get_board()
+    ids = [t.strip() for t in ticket_id.split(",") if t.strip()]
+    if not ids:
+        console.print("[red]No ticket IDs provided.[/red]")
+        raise typer.Exit(1)
+
+    if not force:
+        if not sys.stdin.isatty():
+            console.print("[red]Refusing to delete non-interactively without --force.[/red]")
+            raise typer.Exit(1)
+        plural = "tickets" if len(ids) > 1 else "ticket"
+        console.print(
+            f"[yellow]About to permanently delete {len(ids)} {plural}: "
+            f"{', '.join(ids)}.[/yellow]"
+        )
+        answer = typer.prompt("Type 'yes' to confirm")
+        if answer.strip().lower() != "yes":
+            console.print("[dim]Aborted.[/dim]")
+            raise typer.Exit(1)
+
+    if len(ids) == 1:
+        try:
+            result = board.delete(ids[0])
+            console.print(f"[green]Deleted {result['id']}[/green]")
+        except (KeyError, ValueError) as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+        return
+
+    result = board.batch_delete(ids)
+    for r in result["deleted"]:
+        console.print(f"[green]Deleted {r['id']}[/green]")
+    for err in result["errors"]:
+        console.print(f"[red]{err['id']}: {err['error']}[/red]")
+    if result["errors"]:
         raise typer.Exit(1)
 
 
@@ -126,17 +304,71 @@ def add_cmd(ticket_json: str = typer.Argument(..., help="JSON ticket data")):
         raise typer.Exit(1)
 
 
-@app.command("batch")
-def batch_cmd(
-    payload: Optional[str] = typer.Argument(None, help="JSON: {\"shared\":{...},\"tickets\":[...]}"),
-    from_file: Optional[str] = typer.Option(None, "--from-file", "-f", help="Read JSON from a file instead of argv"),
-):
-    """Create N parallel-safe tickets in one call.
+_BATCH_SCHEMA_HELP = """Create N parallel-safe tickets in one atomic call.
 
-    Validates that each ticket declares `files` and that file sets are
-    disjoint between siblings (no two tickets touch the same path). Aborts
-    atomically on any violation — no partial creation.
-    """
+Validates that each ticket declares `files` and that file sets are disjoint
+between siblings (no two tickets touch the same path). Aborts atomically on
+any violation — no partial creation.
+
+JSON schema (top-level object):
+
+    {
+      "shared": {                       // applied to every ticket below
+        "parent":           "TST-001",  //   optional — anchor children under a spec
+        "kind":             "task",     //   optional — task|story|bug|spec|epic|rfc|incident
+        "agent":            ["developer"],
+        "tags":             ["par:auth-flow"],
+        "projects":         ["app"],
+        "priority":         "p2",
+        "sprint":           "2026-W20",
+        "depends":          [],
+        "source_provider":  "linear",   //   optional — inherits to children
+        "source_ref":       "ENG-42",
+        "source_url":       "https://...",
+        "source_label":     "ENG-42: Add JWT"
+      },
+      "tickets": [                      // one row per child to create
+        {
+          "title":      "JWT signing",  //   required
+          "files":      ["src/auth/jwt.py"],   // required — used for disjoint check
+          "acceptance": ["a", "b"],     //   optional — DoD checkboxes
+          "agent":      ["developer"]   //   optional — overrides shared.agent
+        },
+        {
+          "title": "Middleware",
+          "files": ["src/middleware/auth.py"]
+        }
+      ]
+    }
+
+Minimal example:
+
+    hctl board batch '{
+      "shared": {"agent": ["developer"]},
+      "tickets": [
+        {"title": "A", "files": ["src/a.py"]},
+        {"title": "B", "files": ["src/b.py"]}
+      ]
+    }'
+
+Read from a file with --from-file payload.json, or pipe via stdin.
+"""
+
+
+@app.command("batch", help=_BATCH_SCHEMA_HELP)
+def batch_cmd(
+    payload: Optional[str] = typer.Argument(
+        None,
+        help='JSON object: {"shared":{...},"tickets":[{...},...]}. See `--help` for full schema.',
+    ),
+    from_file: Optional[str] = typer.Option(None, "--from-file", "-f", help="Read JSON from a file instead of argv"),
+    schema: bool = typer.Option(False, "--schema", help="Print the JSON payload schema + example and exit"),
+):
+    """Create N parallel-safe tickets in one call. See --help for schema."""
+    if schema:
+        print(_BATCH_SCHEMA_HELP)
+        raise typer.Exit(0)
+
     import sys
     from pathlib import Path as _Path
     board, _, _ = _get_board()
@@ -150,7 +382,7 @@ def batch_cmd(
     else:
         console.print(
             "[red]Pass JSON as argument, via --from-file <path>, or via stdin.[/red]\n"
-            "[dim]Example: hctl board batch '{\"shared\":{\"tags\":[\"par:auth\"]},\"tickets\":[{...},{...}]}'[/dim]"
+            "[dim]Run `hctl board batch --schema` to see the full payload structure.[/dim]"
         )
         raise typer.Exit(1)
 
@@ -174,6 +406,68 @@ def batch_cmd(
     for t in result["tickets"]:
         agents = ",".join(t.get("agent") or []) or "—"
         console.print(f"  [bold]{t['id']}[/bold]  {t['title'][:50]}  [dim](agent={agents}, files={len(t.get('files') or [])})[/dim]")
+
+
+@app.command("show")
+def show_cmd(
+    ticket_id: str = typer.Argument(..., help="Ticket ID"),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    body_only: bool = typer.Option(False, "--body-only", help="Print only the body (no frontmatter)"),
+):
+    """Show full ticket — frontmatter + body — as the single source of truth.
+
+    Replaces reading `.holoctl/board/tickets/<ID>-*.md` directly. Agents
+    should always use this command instead of opening the file by hand.
+    """
+    board, _, _ = _get_board()
+    try:
+        rec = board.show(ticket_id)
+    except (KeyError, FileNotFoundError, ValueError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    if as_json:
+        print(json.dumps({"id": rec["id"], "frontmatter": rec["frontmatter"], "body": rec["body"]}, indent=2, default=str))
+        return
+    if body_only:
+        print(rec["body"])
+        return
+    print(rec["raw"])
+
+
+@app.command("ack")
+def ack_cmd(
+    ticket_id: str = typer.Argument(...),
+    idx: int = typer.Argument(..., help="Zero-based index of the DoD checkbox to toggle"),
+):
+    """Toggle a Definition-of-Done checkbox at index `idx` (zero-based).
+
+    Counts checkboxes in document order across all sections. Agents call this
+    instead of editing the .md by hand (which is blocked by permissions.deny).
+    """
+    board, _, _ = _get_board()
+    try:
+        result = board.ack(ticket_id, idx)
+    except (KeyError, FileNotFoundError, ValueError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    mark = "[x]" if result["checked"] else "[ ]"
+    console.print(f"[green]{result['id']}[/green] ack[{result['idx']}] {mark} {result['text']}")
+
+
+@app.command("note")
+def note_cmd(
+    ticket_id: str = typer.Argument(...),
+    text: list[str] = typer.Argument(..., help="Note text (joined with spaces)"),
+):
+    """Append a timestamped note to the ticket's # Notes section."""
+    board, _, _ = _get_board()
+    try:
+        result = board.note(ticket_id, " ".join(text))
+    except (KeyError, FileNotFoundError, ValueError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]{result['id']}[/green] note added [dim]({result['ts']})[/dim]")
 
 
 @app.command("body")

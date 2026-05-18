@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+{% if is_empty %}
+<div class="empty-state"><p>No context documents.</p></div>
+{% else %}
+<div class="context-list">
+  {% for d in items %}
+  <a href="{{ d.link }}" class="context-item">
+    <div class="context-item-icon {{ d.icon_cls }}">{% if d.is_dir %}{% include "icons/folder.svg" %}{% else %}{% include "icons/doc.svg" %}{% endif %}</div>
+    <div>
+      <div class="context-item-name">{{ d.name }}</div>
+      <div class="context-item-desc">{{ d.desc }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,9 @@
+{% macro avatar_stack(agents) -%}
+{% if agents -%}
+<span class="avatar-stack">
+{%- for a in agents -%}
+<span class="avatar-initials" data-hue="{{ a | avatar_hue }}" title="{{ a }}">{{ a | initials }}</span>
+{%- endfor -%}
+</span>
+{%- endif %}
+{%- endmacro %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+{% if is_empty %}
+<div class="empty-state"><p>No repos registered. Run <code>holoctl repo add &lt;path&gt;</code>.</p></div>
+{% else %}
+<div class="context-list">
+  {% for r in items %}
+  <div class="context-item">
+    <div class="context-item-icon doc">{% include "icons/repo.svg" %}</div>
+    <div style="flex:1">
+      <div class="context-item-name">{{ r.name }}</div>
+      <div class="context-item-desc">{{ r.path }}</div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span class="chip chip-agent">{{ r.branch_display }}</span>
+      <span class="chip chip-sprint">{{ r.ticket_count }} tickets</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

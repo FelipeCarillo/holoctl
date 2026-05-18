@@ -2,6 +2,147 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Removed
+
+- **Timeline board view** — the roadmap-style horizontal view (sprint/agent lanes, day/week/month/quarter zoom) was retired. Sub-controls conflicted with the global controls strip and the value didn't justify the maintenance cost. Tickets still carry `created` / `completed` data attributes that any future view can reuse. URL `?view=timeline` now falls back to kanban.
+
+### Fixed
+
+- **Board controls in list + tree** — `group` now reorganizes list buckets by any axis (status / priority / sprint / agent / tag), not just status. `search` and `filter` now reach tree rows. Sort + Group selects are hidden in tree (where they don't apply).
+
+### Changed
+
+- **Timestamps in the dashboard** are now rendered in the browser-host's local timezone with seconds (`YYYY-MM-DD HH:MM:SS`). Storage and the API contract are unchanged — every timestamp on disk and on the wire stays UTC ISO 8601.
+
+## [0.17.0] — 2026-05-16
+
+Two complementary capabilities built on top of v0.16: provider MCP discovery
+(when the user connects an external-board MCP in Claude Code, holoctl uses it
+automatically), and proactive specialized persona creation (library expansion
++ AI-designed personas tailored to the specific repo).
+
+### Added — provider MCP discovery (M16)
+
+- **`config.providers` catalog** — declarative entries describing which URL patterns map to which MCP tool names. Shipped defaults for **Linear, GitHub, Trello, Azure DevOps, Jira, Slack** (best-guess tool names; user overrides per workspace when wrong). Additive on load: workspaces from v0.16 get the defaults automatically.
+- **`hctl provider {list,add,enable,disable,test,remove}`** — manage the catalog. `provider add` accepts `--mcp-fetch` and `--url-pattern` for **custom providers** (e.g. an internal company board's MCP).
+- **`mcp__holoctl__config_show`** read MCP tool — returns the resolved config, used by skills to read the provider catalog without parsing the file.
+- **`holoctl-provider-mcp` SKILL** — auto-trigger when user pastes an external-board URL or refs a card. Reads catalog, matches URL pattern, probes the configured MCP fetch tool; uses it when available, falls back to paste cleanly when not.
+- **Integration with `/spec` + `holoctl-work-item-router`** — both now delegate URL fetching to `holoctl-provider-mcp` instead of asking for paste first.
+
+### Added — proactive specialized personas (M17)
+
+- **Library expansion** with 4 curated personas:
+  - **`dba`** — schemas, migrations, query optimization (paths: `**/*.sql`, `**/migrations/**`, `**/schema.prisma`, …)
+  - **`devops`** — CI/CD, IaC, k8s, containers (paths: `**/.github/workflows/**`, `**/Dockerfile*`, `**/terraform/**`, `**/k8s/**`, …)
+  - **`security-auditor`** — audit, threats, CVE review (description-triggered, no `paths:` — fires on prompts like "audit", "vulnerability", "is this safe?")
+  - **`tech-writer`** — docs, READMEs, CHANGELOGs (paths: `**/docs/**`, `**/*.md`, …; model: fast)
+- **`agent-designer`** — new reasoning-tier persona whose job is **to design other personas**. Reads the repo (README, package files, top-level dirs), confirms paths exist, and produces schema-correct `.md` bodies tailored to the project. Invoked by `/agent-new` and by `holoctl-persona-suggester`.
+- **`/agent-new <name>` slash command** — explicit entry point for designing a new persona. Workflow: library check → activate `agent-designer` if needed → delegate draft → save as `.draft.md` → preview → on `y` create via `mcp__holoctl__agent_create` and compile.
+- **`mcp__holoctl__agent_create`** write tool (in `permissions.ask`) — validates frontmatter (name, description, body non-empty) and writes `.holoctl/agents/<name>.md`. Refuses to clobber active personas without `force: true`.
+- **`holoctl-persona-suggester` SKILL** — reactive surfacing. Fires when work touches paths/domains no active persona owns. Library match → propose activation; no match → propose `/agent-new` with a candidate name. Caches suggestions per gap to avoid spam.
+- **`hctl agent suggest` expanded** with 4 new signal groups: SQL/migrations → `dba`; workflows/Dockerfile/Terraform/k8s → `devops`; SECURITY.md/audit configs → `security-auditor`; docs/ with >10 md or active CHANGELOG → `tech-writer`.
+
+## [0.16.0] — 2026-05-16
+
+Refactor of every prompt-surface holoctl plants in Claude Code. Each
+`.claude/*` file is now scoped to one responsibility, declares its native
+auto-trigger metadata, and prefers MCP tools over shell-quoted CLI. The board
+gains the missing primitives (`show`, `ack`, `note`) so the framework can stop
+contradicting its own "never edit `.md` by hand" rule. CLAUDE.md grows
+defensive protection against accidental overwrite of hand-curated content.
+
+### Added — board primitives + MCP tools (M7)
+
+- **`hctl board show <ID>`** + `mcp__holoctl__board_show` — read frontmatter + body of a ticket. Replaces the anti-pattern of agents opening `.holoctl/board/tickets/<ID>-*.md` directly.
+- **`hctl board ack <ID> <idx>`** + `mcp__holoctl__board_ack` — toggle a DoD checkbox by zero-based index. Atomic; replaces hand-editing the `.md`.
+- **`hctl board note <ID> "<text>"`** + `mcp__holoctl__board_note` — append a timestamped note to the ticket's `# Notes` section. Append-only.
+- **`mcp__holoctl__board_batch`** — exposed the existing `batch_add` over MCP so agents can create parallel-safe ticket sets without shell quoting.
+
+### Added — batch operations on existing tickets
+
+- **`hctl board move PRJ-1,PRJ-2,PRJ-3 done`** — comma-separated IDs are treated as a batch move. Atomic per-ticket; errors per id reported without aborting siblings.
+- **`hctl board set PRJ-1,PRJ-2 priority p0`** — batch set, same semantics.
+- **`hctl board delete <ID>`** + `--force` (or comma-separated for batch) — **hard-delete**: removes the `.md` file and the index entry. For soft-delete (recoverable), use `move <ID> cancelled` instead.
+- **MCP**: `mcp__holoctl__board_delete`, `_batch_move`, `_batch_set`, `_batch_delete` — explicit array-of-ids tools for atomic batch operations.
+
+### Added — work item types (kind + parent + source_*)
+
+The board now stores generic **work items** — `kind` distinguishes variants and `parent` links them hierarchically. The ticket model gains five new optional fields:
+
+- **`kind`** — `task` (default), `story`, `bug`, `spec`, `epic`, `rfc`, `incident`, or any custom string. Drives which downstream agent is suggested and what lifecycle the item follows. Free-form: not an enum.
+- **`parent`** — ID of a containing work item. A `task` whose `parent` is a `spec` is one of that spec's executable children. Different from `depends:` (which is sequencing, not containment).
+- **`source_provider`** + **`source_ref`** + **`source_url`** + **`source_label`** — preserve the origin when the item came from an external board (Trello card, Linear issue, Azure DevOps PBI, Jira issue, GitHub issue, Slack thread, …). All optional; `manual` is the canonical value when the item was typed directly into the conversation. Inherited from `batch.shared` to all children when the boardmaster decomposes a spec, so round-trip traceability is automatic.
+
+#### Filters and inspection
+
+- **`hctl board ls --kind <kind> --parent <ID>`** + MCP — list filtered by work item type or by hierarchical parent.
+- **`hctl board children <ID>`** + `mcp__holoctl__board_children` — list direct children of a spec/story/epic, with aggregate DoD progress (acked/total) and by-status breakdown.
+
+### Added — `/spec` slash command + Spec-Driven Development flow
+
+- **`/spec <optional-url-or-ref>`** — entry point for **Spec-Driven Development** (M13). Drives the pipeline: external-source intake → discuss to refine scope → materialize a `kind=spec` work item → decompose into parallel-safe child tasks via the boardmaster → propose execution. Works whether the source is pasted, referenced by URL, or invented on the spot.
+- **`holoctl-spec-flow` SKILL** — the auto-triggered workflow behind `/spec`. Fires when the user pastes external board content or a multi-paragraph request worth structuring.
+- **`holoctl-work-item-router` SKILL** — infers `kind` from user language. "como usuário…" → story; "tá com bug" → bug; "preciso definir…" → spec; etc. Also detects external board URLs (Trello/Linear/Azure DevOps/Jira/GitHub/Slack) and pre-fills `source_provider` + `source_ref`.
+- **Boardmaster aware of Spec-Driven hand-off** — when called with `parent: <SPEC_ID>` in `batch.shared`, children automatically inherit `parent` + `source_*` so the entire batch is traceable back to the spec without per-ticket repetition.
+
+### Added — reactive skills planted globally and per-project
+
+Three new SKILL.md files emitted by `compile --target claude` into `.claude/skills/`:
+
+- **`holoctl-parallel-evaluator`** — fires when work touches multiple files/modules. Decides single-vs-batch decomposition before the boardmaster is invoked.
+- **`holoctl-ticket-discipline`** — fires when the user announces non-trivial work without a ticket. Checks for duplicates via `board_list`, proposes creation otherwise.
+- **`holoctl-memory-discipline`** — fires on durable decisions ("vamos sempre X"). Routes to `/decision` (ADR) for hard locks or `memory_add` for soft context.
+
+### Added — `/holoctl` becomes a SKILL with progressive disclosure (M1)
+
+- **`~/.claude/skills/holoctl-router/`** — SKILL.md (~50 lines: Step 1 doctor + Flow C inline) plus `references/flow-a-first-time.md` (lazy first-time setup) and `references/flow-b-upgrade.md` (lazy upgrade flow). Installed globally by `hctl setup-global --target claude`.
+- **`~/.claude/commands/holoctl.md`** — slim slash command (12 lines) that delegates to the SKILL. Slash command convention preserved; heavy content lazy.
+
+### Changed — agent templates rewritten (M3 + M12)
+
+- **`boardmaster.md`** — now `model: fast` (Haiku) since it's pure routing. Reorganized around a paralelo-first decision tree: single-vs-batch is the first question, not a special case. Cut from 142 → 130 lines, with parallel batch invariants kept as canonical reference. MCP tools listed as primary; CLI fallback.
+- **`developer.md`** — adds Claude Code-native `paths:` auto-trigger for `src/**`, `**/*.py`, etc. New "DoD discipline" section pointing to `board_ack` and `board_note` instead of editing the `.md`. Includes handoff protocol to boardmaster on completion.
+- **`reviewer.md`** — adds `paths:`. Issues reported as ticket notes via `board_note` (severity + file:line) instead of free-form prose.
+- **`architect.md`** — adds `paths:` for interface/contract/schema globs. Decisions routed to `/decision` for ADR creation.
+- **`researcher.md`** — now `model: fast` (Haiku). New section on promoting durable findings to memory via `memory_add` instead of dumping in ticket notes.
+- **`compiler/claude.py`** filters `when_to_suggest:` and `trigger:` from agent frontmatter when emitting to `.claude/agents/` — those are curator-private metadata, not Claude Code instructions. Adds `paths:` emission when present in source.
+
+### Changed — slash commands of project are now thin and MCP-first (M2)
+
+Each `.claude/commands/<name>.md` rewritten to ≤ 20 lines with explicit `allowed-tools:`:
+
+- **`/status`** — `board_list` filtered locally; CLI fallback only.
+- **`/ticket`** — collects inputs, runs parallel-evaluator, delegates to boardmaster.
+- **`/board [arg]`** — `board_list` for kanban, `board_show` for inspect, `board_move` for transition. No `Read` of ticket `.md` files.
+- **`/sprint`** — `board_list`/`board_set` for plan and review.
+- **`/decision`** — creates ADR in `.holoctl/context/decisions/` with structured Context/Decision/Implications.
+- **`/close`** — `board_show`/`board_ack`/`board_note`/`board_move` atomically. No hand-editing checkboxes, no hand-editing notes.
+
+### Changed — `CLAUDE.md` seed is invariants only (M4)
+
+`.holoctl/instructions.md` reduced from ~55 lines of CLI cheat-sheet to ~25 lines of invariants + pointers. The board syntax lives in `--help`; CLAUDE.md is the always-on context, so only non-negotiables and where-to-find-it stay.
+
+### Changed — ticket schema refined (M8)
+
+- **`acceptance`** (preferred) is the new field name for what was `goal` — `goal` keeps working as a backwards-compatible alias. Renders as `# Acceptance — Definition of Done`.
+- **`out_of_scope`** (snake_case preferred) — `outOfScope` accepted as legacy alias.
+- **`start`** field removed from the conceptual schema; legacy `start` content merges into `context` on creation. The template's `# Start` section is gone.
+- **`executionNotes`** removed from the creation schema; legacy content goes to `# Notes` instead. Going forward, use `board_note` for the append-only timeline.
+- **`_template.md`** rewritten: frontmatter split into `# Auto — managed by hctl` and `# User — set on creation` blocks so the agent never confuses generated fields (id, created, updated, completed, status) with user-set ones. HTML comments dropped — they violated their own "no HTML comments" rule.
+
+### Added — `hctl compile --force` and defensive overwrite protection (M9 + M11)
+
+- **Hand-edited outputs are now preserved by default.** When `.claude/agents/<n>.md`, `.claude/commands/<n>.md`, etc. lack the `<!-- Generated by holoctl -->` header, `hctl compile --target claude` skips them and reports the skip — instead of overwriting silently.
+- **`CLAUDE.md` gets stronger protection.** Hand-edited content is preserved by renaming to `CLAUDE.local.md` rather than skipped (so the new generated content can land). If `CLAUDE.local.md` already exists, a timestamped variant is used.
+- **`hctl compile --force`** bypasses both. For `CLAUDE.md`, `--force` backs up the existing content to `.claude/.cache/CLAUDE.backup-<ts>.md` before overwriting.
+
+### Migration notes
+
+- Workspaces from 0.15: legacy `goal`/`outOfScope`/`executionNotes` fields keep working. New tickets get the new shape. Run `hctl board rebuild-index` to re-emit `.md`s in the cleaner format.
+- Workspaces with hand-edited `CLAUDE.md`: the first `hctl compile --target claude` after upgrade will rename it to `CLAUDE.local.md`. Move what you want into `.holoctl/instructions.md` and re-compile.
+
 ## [0.15.0] — 2026-05-08
 
 ### Added (cross-tool primitives + rich `/holoctl` router)
