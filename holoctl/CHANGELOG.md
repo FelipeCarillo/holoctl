@@ -4,7 +4,22 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
-### Removed
+### Removed — supported targets reduced to claude / copilot / codex / agents (breaking)
+
+- **`cursor` compile target** — `holoctl/lib/compiler/cursor.py` deleted; emitters for `.cursor/rules/`, `.cursor/commands/`, `.cursor/hooks.json`, `.cursor/mcp.json` removed from `hooks_emit` / `mcp_emit` / `memory_emit`.
+- **`windsurf` compile target** — `holoctl/lib/compiler/windsurf.py` deleted; `.windsurfrules`, `.windsurf/workflows/`, `.windsurf/rules/`, `.windsurf/hooks.json`, `.windsurf/mcp.json` no longer emitted. Companion curator rule `windsurf_memory_promote` retired.
+- **`devin` compile target** — `holoctl/lib/compiler/devin.py` deleted; `.devin/agents/`, `.devin/skills/`, `.devin/rules/`, `.devin/hooks.v1.json`, `.devin/mcp.json` no longer emitted. `hctl setup-global --target devin` removed.
+- **`generic` compile target** — `holoctl/lib/compiler/generic.py` deleted. It emitted a parallel `AGENTS.md` / `COMMANDS.md` / `AI-INSTRUCTIONS.md` that conflicted with the canonical `agents` target. The `agents` target is the universal AGENTS.md path for any tool that doesn't have a dedicated compiler.
+- **Bootstrap command templates retired**: `holoctl-{cursor,windsurf,devin}.md` and `hctl-upgrade-{cursor,windsurf,devin}.md` deleted from `holoctl/templates/commands/`. `holoctl/templates/hooks/cursor_hooks.json` deleted.
+- **Migration is silent**: `lib/config.py:load_config` now filters `cursor` / `windsurf` / `devin` / `generic` out of any workspace's `targets` array on load. Existing workspaces don't break — the next `hctl compile` just emits the remaining targets. Materialized `.cursor/`, `.windsurf/`, `.devin/` directories from earlier compiles are **not** auto-deleted — remove them manually if you want.
+
+### Added — `codex` compile target
+
+- **`holoctl/lib/compiler/codex.py`** — emits `.codex/AGENTS.override.md` (compiled from `instructions.md`; Codex merges this on top of the root `AGENTS.md` per its precedence spec) and `.codex/config.toml` with `[mcp_servers.holoctl]` so Codex auto-spawns the holoctl stdio MCP server when the project is trusted.
+- **`mcp_emit.emit_codex`** — tolerant line-based TOML merge that preserves user's other `[mcp_servers.X]` tables and config sections.
+- Coverage matrix (`hctl coverage`), doctor checks (`hctl doctor`), and per-target docs in README updated.
+
+### Removed (previous Unreleased entries, retained)
 
 - **Timeline board view** — the roadmap-style horizontal view (sprint/agent lanes, day/week/month/quarter zoom) was retired. Sub-controls conflicted with the global controls strip and the value didn't justify the maintenance cost. Tickets still carry `created` / `completed` data attributes that any future view can reuse. URL `?view=timeline` now falls back to kanban.
 
@@ -15,6 +30,8 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 ### Changed
 
 - **Timestamps in the dashboard** are now rendered in the browser-host's local timezone with seconds (`YYYY-MM-DD HH:MM:SS`). Storage and the API contract are unchanged — every timestamp on disk and on the wire stays UTC ISO 8601.
+- **`instructions.md` template** (source of `CLAUDE.md`) updated to surface `/agent-new`, the provider catalog (`hctl provider`), and the MCP-first behavior of `/spec` (was already present in the slash command, now also in boot context).
+- **`holoctl-router` skill** updated with rows for `/agent-new` and `hctl provider`, plus a tiebreak rule clarifying that `holoctl-provider-mcp` runs before `holoctl-spec-flow` whenever a URL is pasted.
 
 ## [0.17.0] — 2026-05-16
 
