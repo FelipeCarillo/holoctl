@@ -157,20 +157,25 @@ def compile_claude(
                 source=f".holoctl/skills/{name}", target="claude",
             ):
                 files.append(out_path)
-            # Copy support files (references/, scripts/, templates/) verbatim.
-            # NOTE: support files are NOT yet tracked in the manifest (Task 21).
-            import shutil as _shutil
+            # Sync support files (references/, scripts/, templates/) per-file
+            # through the ledger so they are manifest-tracked and orphans are
+            # pruned automatically. No rmtree: user-added files under
+            # .claude/skills/<name>/ that holoctl never generated are preserved
+            # (foreign, not in manifest) and never silently deleted.
             for support in ("references", "scripts", "templates"):
                 support_src = skill_dir / support
-                if support_src.exists() and not dry_run:
-                    support_dst = out_dir / support
-                    if support_dst.exists():
-                        _shutil.rmtree(support_dst)
-                    _shutil.copytree(support_src, support_dst)
-                    for sf in support_src.rglob("*"):
-                        if sf.is_file():
-                            rel = sf.relative_to(skill_dir)
-                            files.append(f".claude/skills/{name}/{rel.as_posix()}")
+                if support_src.exists():
+                    for sf in sorted(support_src.rglob("*")):
+                        if not sf.is_file():
+                            continue
+                        rel_within = sf.relative_to(skill_dir)
+                        rel_out = f".claude/skills/{name}/{rel_within.as_posix()}"
+                        if ledger.write_bytes(
+                            rel_out, sf,
+                            source=f".holoctl/skills/{name}",
+                            target="claude",
+                        ):
+                            files.append(rel_out)
 
     # Output styles → .claude/output_styles/<name>.md (Claude Code-specific)
     styles_src = project_root / ".holoctl" / "output_styles"
@@ -319,11 +324,19 @@ def _emit_builtin_skills(
 
     Each subdir of `holoctl/templates/skills/` becomes a skill. Templates are
     resolved against `config` so `{{project.name}}` etc. work. The SKILL.md goes
-    through the ledger (manifest-tracked, headerless); support files
-    (`references/`, `scripts/`, `templates/`) are copied verbatim and are NOT
-    yet manifest-tracked (Task 21).
+    through the ledger (manifest-tracked, headerless). Support files
+    (`references/`, `scripts/`, `templates/`) are synced per-file through the
+    ledger (manifest-tracked, hand-edit-guarded, pruned on removal).
+
+    Override contract
+    -----------------
+    If `.holoctl/skills/<name>/SKILL.md` exists for a given built-in name, that
+    built-in is **skipped** here entirely — the custom-skills loop (which runs
+    immediately after this function) will emit the user's version to the same
+    `.claude/skills/<name>/SKILL.md` path. This gives users an explicit, safe
+    override mechanism: drop a `SKILL.md` in `.holoctl/skills/<name>/` and the
+    built-in is shadowed without any fragile write-order dependency.
     """
-    import shutil as _shutil
     files: list[str] = []
     try:
         from importlib.resources import files as _ires_files
@@ -338,12 +351,22 @@ def _emit_builtin_skills(
         return []
 
     out_skills_dir = project_root / ".claude" / "skills"
+    # Pre-compute the set of built-in names that have a custom override so we
+    # can skip them in a single fast check per skill dir.
+    custom_skills_src = project_root / ".holoctl" / "skills"
 
     for skill_dir in sorted(p for p in skills_root_path.iterdir() if p.is_dir()):
         name = skill_dir.name
         skill_md = skill_dir / "SKILL.md"
         if not skill_md.exists():
             continue
+
+        # Override check: if the user has placed a SKILL.md in
+        # .holoctl/skills/<name>/, skip emitting the built-in. The custom-skills
+        # loop (directly below in compile_claude) will emit the user's version.
+        if (custom_skills_src / name / "SKILL.md").exists():
+            continue
+
         out_dir = out_skills_dir / name
         if not dry_run:
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -354,15 +377,22 @@ def _emit_builtin_skills(
             source="builtin", target="claude",
         ):
             files.append(out_skill_path)
+        # Sync support files per-file through the ledger. Orphaned support files
+        # (removed from the built-in source) are pruned automatically by
+        # prune_orphans() at the end of the compile. User-added files under
+        # .claude/skills/<name>/ that holoctl never generated are never pruned.
         for support in ("references", "scripts", "templates"):
             support_src = skill_dir / support
-            if support_src.exists() and not dry_run:
-                support_dst = out_dir / support
-                if support_dst.exists():
-                    _shutil.rmtree(support_dst)
-                _shutil.copytree(support_src, support_dst)
-                for sf in support_src.rglob("*"):
-                    if sf.is_file():
-                        rel = sf.relative_to(skill_dir)
-                        files.append(f".claude/skills/{name}/{rel.as_posix()}")
+            if support_src.exists():
+                for sf in sorted(support_src.rglob("*")):
+                    if not sf.is_file():
+                        continue
+                    rel_within = sf.relative_to(skill_dir)
+                    rel_out = f".claude/skills/{name}/{rel_within.as_posix()}"
+                    if ledger.write_bytes(
+                        rel_out, sf,
+                        source="builtin",
+                        target="claude",
+                    ):
+                        files.append(rel_out)
     return files

@@ -2,6 +2,30 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed — skills are first-class manifest citizens
+
+- **Built-in skill override**: placing a `SKILL.md` in `.holoctl/skills/<name>/`
+  now explicitly shadows the matching built-in skill shipped with the holoctl
+  package. On compile the built-in is skipped entirely; the user's version is
+  emitted to the same `.claude/skills/<name>/SKILL.md` path. Previously the
+  write order was the only guard — fragile and undocumented.
+
+- **Manifest-tracked support files**: `references/`, `scripts/`, and `templates/`
+  subdirs under both built-in and custom skills are now synced per-file through
+  the `CompileLedger` instead of being blindly `rmtree`+`copytree`d. Each
+  support file is individually owned, hand-edit-guarded, and pruned when removed
+  from source — identical to how `SKILL.md` itself has been treated since Task 20.
+  User-added files under `.claude/skills/<name>/` that holoctl never generated
+  are preserved (foreign, never in the manifest, never pruned).
+
+- **`prune_orphans` dual-channel ownership**: the pruner now tries the byte-channel
+  hash as a fallback when the text-channel hash does not match the manifest entry,
+  before concluding a file is "diverged". This correctly handles support files
+  written via `write_bytes()` (verbatim copies) on Windows where `read_text()`
+  translates line endings and would otherwise produce a hash mismatch.
+
 ## [0.20.0] — 2026-05-28
 
 Claude-only refocus. holoctl now maintains a deep, native compiler **only** for

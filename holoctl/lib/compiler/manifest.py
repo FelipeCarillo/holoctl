@@ -423,11 +423,23 @@ class CompileLedger:
                 self.removed.append(rel)
                 continue
 
-            # Try text ownership first; fall back to bytes for binary files.
+            # Determine ownership, trying both hash channels.
+            #
+            # Files written via write() (text channel) and write_bytes() (byte
+            # channel) share the same manifest schema but differ in how the SHA
+            # was computed.  prune_orphans() doesn't know which channel was used,
+            # so it tries text first; if that doesn't match, it tries bytes before
+            # concluding "diverged".  This correctly handles:
+            #   - Text files written via write() on Windows (LF→CRLF on disk).
+            #   - Binary / verbatim files written via write_bytes().
+            #   - Genuine hand-edits, which won't match either channel's hash.
+            owned = False
             try:
                 on_disk_sha = sha256_text(abs_path.read_text(encoding="utf-8"))
                 owned = on_disk_sha == entry["sha256"]
             except (OSError, UnicodeDecodeError):
+                pass
+            if not owned:
                 try:
                     on_disk_sha_b = sha256_bytes(abs_path.read_bytes())
                     owned = on_disk_sha_b == entry["sha256"]
