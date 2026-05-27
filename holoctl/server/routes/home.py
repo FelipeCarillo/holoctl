@@ -12,8 +12,8 @@ router = APIRouter()
 @router.get("/", response_class=HTMLResponse)
 def home():
     # Lazy import: app.py imports this router and we'd loop on import otherwise.
-    from ..app import _get_projects
-    projects = _get_projects()
+    from ..projects import get_projects
+    projects = get_projects()
     return render(
         "home.html",
         title="Home",

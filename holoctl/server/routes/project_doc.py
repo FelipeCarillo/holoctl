@@ -38,10 +38,11 @@ def _project_breadcrumbs(project: dict, listing_label: str, listing_path: str,
 
 @router.get("/project/{alias}/agents/{slug}", response_class=HTMLResponse)
 def project_agent_detail(alias: str, slug: str):
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
+    from ..app import _not_found_html
     from ...lib.markdown import parse_frontmatter
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
             render("base.html", title="Not Found", content=_not_found_html()),
@@ -81,10 +82,11 @@ def project_agent_detail(alias: str, slug: str):
 
 @router.get("/project/{alias}/commands/{slug}", response_class=HTMLResponse)
 def project_command_detail(alias: str, slug: str):
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
+    from ..app import _not_found_html
     from ...lib.markdown import parse_frontmatter
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
             render("base.html", title="Not Found", content=_not_found_html()),
@@ -119,10 +121,11 @@ def project_command_detail(alias: str, slug: str):
 
 @router.get("/project/{alias}/context/{filename}", response_class=HTMLResponse)
 def project_context_detail(alias: str, filename: str):
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
+    from ..app import _not_found_html
     from ...lib.markdown import parse_frontmatter
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
             render("base.html", title="Not Found", content=_not_found_html()),

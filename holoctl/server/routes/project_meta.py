@@ -26,15 +26,16 @@ def _project_breadcrumbs(project: dict, label: str) -> list[dict]:
 
 @router.get("/project/{alias}/agents", response_class=HTMLResponse)
 def project_agents(alias: str):
-    from ..app import _get_project, _not_found_html, _read_agents
+    from ..projects import get_project, read_agents
+    from ..app import _not_found_html
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
             render("base.html", title="Not Found", content=_not_found_html()),
             status_code=404,
         )
-    agents = _read_agents(Path(project["path"]))
+    agents = read_agents(Path(project["path"]))
     ctx = agents_context(agents, alias)
     return render(
         "project/agents.html",
@@ -50,15 +51,16 @@ def project_agents(alias: str):
 
 @router.get("/project/{alias}/commands", response_class=HTMLResponse)
 def project_commands(alias: str):
-    from ..app import _get_project, _not_found_html, _read_commands
+    from ..projects import get_project, read_commands
+    from ..app import _not_found_html
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
             render("base.html", title="Not Found", content=_not_found_html()),
             status_code=404,
         )
-    commands = _read_commands(Path(project["path"]))
+    commands = read_commands(Path(project["path"]))
     ctx = commands_context(commands, alias)
     return render(
         "project/commands.html",
@@ -74,15 +76,16 @@ def project_commands(alias: str):
 
 @router.get("/project/{alias}/context", response_class=HTMLResponse)
 def project_context(alias: str):
-    from ..app import _get_project, _not_found_html, _read_context_docs
+    from ..projects import get_project, read_context_docs
+    from ..app import _not_found_html
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
             render("base.html", title="Not Found", content=_not_found_html()),
             status_code=404,
         )
-    docs = _read_context_docs(Path(project["path"]))
+    docs = read_context_docs(Path(project["path"]))
     ctx = context_context(docs, alias)
     return render(
         "project/context.html",
@@ -98,11 +101,12 @@ def project_context(alias: str):
 
 @router.get("/project/{alias}/repos", response_class=HTMLResponse)
 def project_repos(alias: str):
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
+    from ..app import _not_found_html
     from ...lib.board import Board
     from ...lib.discover import discover_repos
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
             render("base.html", title="Not Found", content=_not_found_html()),
@@ -136,12 +140,12 @@ def project_repos(alias: str):
 
 @router.get("/agents", response_class=HTMLResponse)
 def global_agents():
-    from ..app import _get_projects, _read_agents
+    from ..projects import get_projects, read_agents
 
-    projects = _get_projects()
+    projects = get_projects()
     all_agents = []
     for p in projects:
-        for a in _read_agents(Path(p["path"])):
+        for a in read_agents(Path(p["path"])):
             all_agents.append({**a, "project": p["alias"]})
     ctx = agents_context(all_agents)
     return render(

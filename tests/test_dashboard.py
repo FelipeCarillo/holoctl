@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 import re
 
 from holoctl.lib.board import Board
-from holoctl.server import app as app_module
+import holoctl.server.projects as projects_module
 from holoctl.server.app import (
     _avatar_hue,
     _board_page,
@@ -46,11 +46,11 @@ from holoctl.server.views.detail import read_ticket_activity
 @pytest.fixture(autouse=True)
 def _isolate_projects_cache():
     """Reset the 5-second project cache so tests can't see each other."""
-    app_module._PROJECTS_CACHE["data"] = None
-    app_module._PROJECTS_CACHE["ts"] = 0.0
+    projects_module.PROJECTS_CACHE["data"] = None
+    projects_module.PROJECTS_CACHE["ts"] = 0.0
     yield
-    app_module._PROJECTS_CACHE["data"] = None
-    app_module._PROJECTS_CACHE["ts"] = 0.0
+    projects_module.PROJECTS_CACHE["data"] = None
+    projects_module.PROJECTS_CACHE["ts"] = 0.0
 
 
 @pytest.fixture
