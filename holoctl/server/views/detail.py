@@ -5,6 +5,7 @@ relationships (parent / children / depends / blocks), and the activity
 timeline (derived events + activity.jsonl entries).
 """
 from __future__ import annotations
+import json
 from pathlib import Path
 
 from .dates import format_iso_datetime
@@ -19,13 +20,44 @@ _TYPE_RANK = {
 }
 
 
+def read_ticket_activity(project_root: Path, ticket_id: str) -> list[dict]:
+    """Pull ticket-scoped events out of `.holoctl/activity.jsonl`.
+
+    Returns a list of `{ts, type, actor}` dicts in chronological order.
+    Best-effort — corrupt lines are skipped silently. The Activity card
+    falls back to derived events (created / updated / completed) when the
+    log is missing or empty.
+    """
+    log = project_root / ".holoctl" / "activity.jsonl"
+    if not log.exists():
+        return []
+    out: list[dict] = []
+    try:
+        for line in log.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if ev.get("ticket") != ticket_id:
+                continue
+            out.append({
+                "ts": ev.get("ts", ""),
+                "type": ev.get("type", "event"),
+                "actor": ev.get("actor", ""),
+            })
+    except OSError:
+        return []
+    return out
+
+
 def detail_context(ticket: dict, body: str, alias: str,
                    *,
                    all_tickets: list[dict] | None = None,
                    project_root: Path | None = None,
                    statuses: list[str] | None = None) -> dict:
-    # Lazy: activity log reader still lives in app.py until cleanup.
-    from ..app import _read_ticket_activity
 
     agents_list = [a for a in (ticket.get("agent") or []) if a]
     tags_list = [t for t in (ticket.get("tags") or []) if t]
@@ -62,7 +94,7 @@ def detail_context(ticket: dict, body: str, alias: str,
     if completed:
         derived.append({"ts": completed, "label": "Marked done", "type": "ticket.completed"})
     if project_root is not None:
-        for ev in _read_ticket_activity(project_root, ticket.get("id", "")):
+        for ev in read_ticket_activity(project_root, ticket.get("id", "")):
             tp = ev.get("type", "")
             if tp == "ticket.created":  # mirrors `created`, would dedup
                 continue

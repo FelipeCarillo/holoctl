@@ -932,39 +932,7 @@ def _render_markdown(body: str) -> str:
 
 
 from .views.dates import format_iso_datetime as _format_iso_datetime  # noqa: E402
-
-
-def _read_ticket_activity(project_root: Path, ticket_id: str) -> list[dict]:
-    """Pull ticket-scoped events out of `.holoctl/activity.jsonl`.
-
-    Returns a list of `{ts, type, actor}` dicts in chronological order.
-    Best-effort — corrupt lines are skipped silently. The Activity card
-    falls back to derived events (created / updated / completed) when the
-    log is missing or empty.
-    """
-    log = project_root / ".holoctl" / "activity.jsonl"
-    if not log.exists():
-        return []
-    out: list[dict] = []
-    try:
-        for line in log.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                ev = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if ev.get("ticket") != ticket_id:
-                continue
-            out.append({
-                "ts": ev.get("ts", ""),
-                "type": ev.get("type", "event"),
-                "actor": ev.get("actor", ""),
-            })
-    except OSError:
-        return []
-    return out
+from .views.detail import read_ticket_activity as _read_ticket_activity  # noqa: E402
 
 
 def _ticket_detail_page(ticket: dict, body: str, alias: str,

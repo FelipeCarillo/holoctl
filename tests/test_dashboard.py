@@ -33,11 +33,11 @@ from holoctl.server.app import (
     _initials,
     _kanban_html,
     _list_html,
-    _read_ticket_activity,
     _ticket_detail_page,
     app,
 )
 from holoctl.server.views.card import format_due, ticket_preview
+from holoctl.server.views.detail import read_ticket_activity
 
 
 # ── Helpers / fixtures ────────────────────────────────────────────────────────
@@ -788,7 +788,7 @@ class TestReadTicketActivity:
             '{"ts":"2026-05-06T10:00:00Z","type":"ticket.created","ticket":"TST-002","actor":"cli"}\n',
             encoding="utf-8",
         )
-        out = _read_ticket_activity(workspace, "TST-001")
+        out = read_ticket_activity(workspace, "TST-001")
         assert len(out) == 2
         assert all(e["type"].startswith("ticket.") for e in out)
 
@@ -800,12 +800,12 @@ class TestReadTicketActivity:
             '\n',
             encoding="utf-8",
         )
-        out = _read_ticket_activity(workspace, "TST-001")
+        out = read_ticket_activity(workspace, "TST-001")
         assert len(out) == 1
 
     def test_missing_log(self, tmp_path: Path):
         # Bare directory, no .holoctl/activity.jsonl.
-        assert _read_ticket_activity(tmp_path, "TST-001") == []
+        assert read_ticket_activity(tmp_path, "TST-001") == []
 
 
 # ── _ticket_detail_page: markup contract ──────────────────────────────────────
