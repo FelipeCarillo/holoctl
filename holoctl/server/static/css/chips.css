@@ -58,7 +58,7 @@
   padding: 0 3px;
   border-radius: 3px;
   background: var(--accent);
-  color: var(--bg);
+  color: var(--bg-card);
   line-height: 1.4;
 }
 .kc-source[data-provider="linear"] { background: var(--purple-subtle); color: var(--purple); }

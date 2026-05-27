@@ -1,25 +1,144 @@
-/* ── Markdown rendering ── */
-.md-li { padding-left: 18px; position: relative; margin-bottom: 5px; }
-.md-li::before { content: ''; position: absolute; left: 6px; top: 10px; width: 4px; height: 4px; border-radius: 50%; background: var(--text-3); }
-.md-li.md-ol { counter-increment: md-ol; }
-.md-li.md-ol::before { content: counter(md-ol) '.'; width: auto; height: auto; border-radius: 0; background: none; color: var(--text-2); font-weight: 600; font-size: 12px; top: 0; left: 0; font-family: var(--font-mono); }
-.detail-section-body { counter-reset: md-ol; }
+/* ── Markdown rendering ──────────────────────────────────────────────────────
+   The detail/doc body renders via markdown-it (standard HTML tags), so these
+   rules style the rendered output inside `.detail-section-body`. Everything is
+   token-driven so both themes inherit the Editorial palette. Terracotta
+   (`--accent`) only appears on links and the blockquote rule — body text stays
+   neutral and editorial. */
 
-.check { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; padding: 4px 0; }
+/* Headings — Fraunces serif to match the page titles, with airy spacing.
+   First-child heading sheds its top margin so the section starts flush. */
+.detail-section-body h1,
+.detail-section-body h2,
+.detail-section-body h3,
+.detail-section-body h4,
+.detail-section-body h5,
+.detail-section-body h6 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  color: var(--text-0);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 1.4em 0 0.5em;
+}
+.detail-section-body > :first-child { margin-top: 0; }
+.detail-section-body h1 { font-size: 22px; }
+.detail-section-body h2 { font-size: 18px; }
+.detail-section-body h3 { font-size: 15px; }
+.detail-section-body h4,
+.detail-section-body h5,
+.detail-section-body h6 { font-size: 13px; }
 
-.check-box {
-  width: 18px; height: 18px;
-  border: 2px solid var(--border-hover);
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  flex-shrink: 0;
-  color: transparent;
-  transition: all 0.15s;
+/* Paragraphs + inline emphasis. */
+.detail-section-body p { margin: 0 0 0.85em; }
+.detail-section-body p:last-child { margin-bottom: 0; }
+.detail-section-body strong { color: var(--text-0); font-weight: 600; }
+.detail-section-body em { font-style: italic; }
+.detail-section-body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.4em 0;
 }
 
-.check.done .check-box { background: var(--green-subtle); border-color: var(--green); color: var(--green); }
-.check.done { color: var(--text-2); text-decoration: line-through; }
+/* Links — terracotta accent, underline only on hover for a clean read. */
+.detail-section-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.detail-section-body a:hover { text-decoration: underline; }
 
+/* Lists. */
+.detail-section-body ul,
+.detail-section-body ol {
+  margin: 0 0 0.85em;
+  padding-left: 1.4em;
+}
+.detail-section-body li { margin-bottom: 0.35em; }
+.detail-section-body li::marker { color: var(--text-3); }
+.detail-section-body li > ul,
+.detail-section-body li > ol { margin-top: 0.35em; margin-bottom: 0; }
+
+/* Inline code. */
+.detail-section-body code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--bg-2);
+  color: var(--text-0);
+  padding: 0.15em 0.4em;
+  border-radius: var(--radius-sm);
+  letter-spacing: -0.2px;
+}
+
+/* Code blocks — the inner <code> drops the inline chrome. */
+.detail-section-body pre {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 0 0 0.85em;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+.detail-section-body pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+/* Blockquote — accent rule, muted text. */
+.detail-section-body blockquote {
+  margin: 0 0 0.85em;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--accent);
+  color: var(--text-2);
+}
+.detail-section-body blockquote p:last-child { margin-bottom: 0; }
+
+/* Tables — hairline borders, subtle header band. */
+.detail-section-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 0.85em;
+  font-size: 12px;
+}
+.detail-section-body th,
+.detail-section-body td {
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.detail-section-body thead th {
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-weight: 600;
+}
+.detail-section-body tbody tr:nth-child(even) { background: var(--bg-1); }
+
+/* Images stay inside the column. */
+.detail-section-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+/* GFM task lists (mdit_py_plugins tasklists) — no bullet, accent checkbox. */
+.detail-section-body ul.contains-task-list { padding-left: 0; list-style: none; }
+.detail-section-body li.task-list-item {
+  list-style: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.detail-section-body li.task-list-item::marker { content: none; }
+.detail-section-body input.task-list-item-checkbox,
+.detail-section-body li.task-list-item input[type="checkbox"] {
+  margin: 0.25em 0 0;
+  accent-color: var(--accent);
+  cursor: default;
+  flex-shrink: 0;
+}
+.detail-section-body li.task-list-item input[type="checkbox"]:checked + * {
+  color: var(--text-2);
+}

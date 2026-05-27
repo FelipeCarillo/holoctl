@@ -2,8 +2,9 @@
 .kanban-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 12px 14px;
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
   transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
   cursor: pointer;
   display: block;
@@ -48,24 +49,25 @@
 }
 
 .kc-prio-dot[data-p="p0"] { background: var(--red);    color: var(--red);    }
-.kc-prio-dot[data-p="p1"] { background: var(--yellow); color: var(--yellow); }
-.kc-prio-dot[data-p="p2"] { background: var(--blue);   color: var(--blue);   }
+.kc-prio-dot[data-p="p1"] { background: var(--accent); color: var(--accent); }
+.kc-prio-dot[data-p="p2"] { background: var(--text-2); color: var(--text-2); }
 .kc-prio-dot[data-p="p3"] { background: var(--text-3); color: var(--text-3); }
+.kc-prio-dot[data-p="p2"]::after,
 .kc-prio-dot[data-p="p3"]::after { opacity: 0; }
 
 .kc-id {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-2);
+  color: var(--text-1);
   font-family: var(--font-mono);
   letter-spacing: -0.2px;
   white-space: nowrap;
 }
 
 .kc-title {
-  font-size: 14px;
-  font-weight: 550;
-  line-height: 1.35;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
   color: var(--text-0);
   /* Up to 2 lines of title before truncation. */
   display: -webkit-box;

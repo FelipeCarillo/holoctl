@@ -2,7 +2,7 @@
 
 export function initTheme() {
   const saved = localStorage.getItem('holoctl-theme');
-  const theme = saved || 'dark';
+  const theme = saved || 'light';
   document.documentElement.setAttribute('data-theme', theme);
   updateThemeIcons(theme);
 }
