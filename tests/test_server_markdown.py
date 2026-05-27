@@ -18,6 +18,12 @@ class TestStripEmptySections:
         body = "# Goal\n\nShip it.\n"
         assert "Ship it." in strip_empty_sections(body)
 
+    def test_keeps_section_with_empty_body(self):
+        body = "# Empty\n\n\n# Real\n\nContent.\n"
+        out = strip_empty_sections(body)
+        assert "Empty" in out  # empty body != placeholder-only
+        assert "Real" in out
+
 
 class TestRenderMarkdown:
     def test_empty_body_returns_placeholder(self):

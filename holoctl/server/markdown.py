@@ -13,9 +13,9 @@ from markdown_it import MarkdownIt
 from mdit_py_plugins.tasklists import tasklists_plugin
 
 _PLACEHOLDER_PATTERNS = (
-    re.compile(r"^\([^)]*\)\s*$"),
-    re.compile(r"^[-*]\s*\[\s*[xX ]?\s*\]\s+\([^)]*\)\s*$"),
-    re.compile(r"^<!--.*-->\s*$"),
+    re.compile(r"^\([^)]*\)\s*$"),                            # `(some hint)`
+    re.compile(r"^[-*]\s*\[\s*[xX ]?\s*\]\s+\([^)]*\)\s*$"),  # `- [ ] (criteria)`
+    re.compile(r"^<!--.*-->\s*$"),                            # `<!-- HTML comment hint -->`
 )
 
 _md = MarkdownIt("gfm-like", {"linkify": False}).use(tasklists_plugin, enabled=True)
@@ -24,7 +24,7 @@ _md = MarkdownIt("gfm-like", {"linkify": False}).use(tasklists_plugin, enabled=T
 def _is_placeholder_only(content: str) -> bool:
     real = [line.strip() for line in content.splitlines() if line.strip()]
     if not real:
-        return False
+        return False  # empty body is not a placeholder hint — keep lone headings
     return all(any(p.match(line) for p in _PLACEHOLDER_PATTERNS) for line in real)
 
 
