@@ -21,6 +21,7 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
+import json
 import re
 
 from holoctl.lib.board import Board
@@ -46,7 +47,7 @@ from holoctl.server.views.detail import read_ticket_activity, detail_context
 def _render_kanban(project_root: Path, config: dict) -> str:
     """Render the kanban partial directly via Jinja (no HTTP round-trip)."""
     b = Board(project_root, config)
-    project = {"alias": project_root.name, "name": "T", "path": str(project_root)}
+    project = {"alias": project_root.name, "name": config.get("project", {}).get("name", project_root.name), "path": str(project_root)}
     return render(
         "partials/board/_kanban.html",
         **board_context(project, b.ls(), config, view="kanban"),
@@ -74,7 +75,10 @@ def _render_tree(project_root: Path, config: dict) -> str:
 def _render_detail(ticket: dict, body: str, alias: str,
                    workspace: Path, config: dict,
                    all_tickets=None, statuses=None) -> str:
-    """Render the full detail page HTML via Jinja (no HTTP round-trip)."""
+    """Render the full detail page HTML via Jinja (no HTTP round-trip).
+
+    # tabs/breadcrumbs omitted — structural chrome, not under test here
+    """
     ctx = detail_context(
         ticket, body, alias,
         all_tickets=all_tickets,
@@ -310,6 +314,8 @@ class TestBoardPage:
         assert 'class="board-path"' in html
         # The workspace path appears somewhere in the page.
         assert str(workspace) in html
+        # The project name (not just the CSS class) must appear in the page.
+        assert "TestProject" in html
 
     def test_new_ticket_cta_is_active(self, client: TestClient, alias: str):
         html = client.get(f"/project/{alias}/board").text
@@ -732,11 +738,7 @@ class TestTreeHtml:
         c1 = b.add({"title": "Sign", "agent": "developer", "parent": spec["id"]})
         c2 = b.add({"title": "Verify", "agent": "developer", "parent": spec["id"]})
 
-        tickets = b.ls()
-        html = render(
-            "partials/board/_tree.html",
-            **tree_context(tickets, workspace.name),
-        )
+        html = _render_tree(workspace, workspace_config)
         # Every ticket has its own row…
         assert f'data-id="{spec["id"]}"' in html
         assert f'data-id="{c1["id"]}"' in html
@@ -759,7 +761,6 @@ class TestTreeHtml:
         b.add({"title": "Orphan", "agent": "developer"})
         # Inject a phantom parent reference via the index so we can simulate
         # a dangling ref without going through add()'s validation.
-        import json
         idx_path = workspace / ".holoctl" / "board" / "index.json"
         data = json.loads(idx_path.read_text(encoding="utf-8"))
         data["tickets"][0]["parent"] = "PHANTOM-999"
@@ -777,10 +778,7 @@ class TestTreeHtml:
     def test_empty_workspace_shows_friendly_message(
         self, workspace: Path, workspace_config: dict
     ):
-        html = render(
-            "partials/board/_tree.html",
-            **tree_context([], workspace.name),
-        )
+        html = _render_tree(workspace, workspace_config)
         assert "tree-empty" in html or "No tickets" in html
 
 
