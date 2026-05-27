@@ -200,18 +200,25 @@ def _check(category: str, message: str, ok: bool) -> None:
 def _doctor_compile_drift() -> None:
     """Detect compiled outputs that are stale vs `.holoctl/`.
 
-    Compiles into a throwaway copy of the workspace, then byte-compares each
-    generated file against the one on disk. A mismatch means the source changed
-    but `hctl compile` wasn't re-run. Hand-edited outputs (no holoctl header)
-    are reported as such, not as drift — they're intentional. Merge-based
-    configs (settings.json / mcp.json / config.toml) are skipped: they carry
-    user content and can't be byte-compared.
+    Compiles into a throwaway copy of the workspace, then classifies each
+    generated file using the manifest (the header is gone):
+
+      - on-disk missing                          → stale (missing)
+      - tracked in the real manifest but its
+        on-disk hash != the manifest hash        → hand-edited (intentional;
+                                                    NOT drift)
+      - on-disk content != freshly-compiled
+        content                                  → stale (source changed,
+                                                    recompile needed)
+      - otherwise                                → up to date
+
+    Merge-based configs (settings.json) are skipped: they carry user content
+    and aren't manifest-tracked.
     """
     import shutil
     import tempfile
 
-    from ..lib.compiler import _COMPILERS, compile_project
-    from ..lib.compiler._safe_write import looks_hand_edited
+    from ..lib.compiler import _COMPILERS, compile_project, manifest
 
     root = find_project_root()
     if not root:
@@ -220,6 +227,10 @@ def _doctor_compile_drift() -> None:
         raise typer.Exit(1)
     config = load_config(root)
     targets = [t for t in config.get("targets", []) if t in _COMPILERS]
+
+    # The real (on-disk) manifest: rel -> {"sha256", ...}. Used to tell apart a
+    # hand-edit (tracked, hash drifted) from a stale source (source changed).
+    real = manifest.load(root)["files"]
 
     stale: list[str] = []
     hand_edited: list[str] = []
@@ -247,9 +258,23 @@ def _doctor_compile_drift() -> None:
                 continue
             if not on_disk.exists():
                 stale.append(f"{rel} (missing)")
-            elif looks_hand_edited(on_disk):
+                continue
+            try:
+                disk_text = on_disk.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # Unreadable as text — fall back to byte compare vs scratch.
+                if on_disk.read_bytes() != canonical.read_bytes():
+                    stale.append(rel)
+                continue
+            disk_sha = manifest.sha256_text(disk_text)
+            entry = real.get(rel)
+            if entry is not None and disk_sha != entry.get("sha256"):
+                # Tracked by holoctl but the on-disk content diverged from what
+                # we recorded → a deliberate hand-edit, not stale source.
                 hand_edited.append(rel)
-            elif on_disk.read_bytes() != canonical.read_bytes():
+            elif disk_text != canonical.read_text(encoding="utf-8"):
+                # Either untracked-but-present, or tracked-and-matching-manifest
+                # while the freshly-compiled content differs → source moved on.
                 stale.append(rel)
 
     if stale:

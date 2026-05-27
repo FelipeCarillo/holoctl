@@ -4,7 +4,8 @@ from pathlib import Path
 
 from ..markdown import parse_frontmatter
 from . import hooks_emit, mcp_emit, memory_emit
-from ._safe_write import HEADER as _HEADER, HEADER_MARKER as _HEADER_MARKER, force as _force, safe_write_md as _safe_write_md
+from ._safe_write import HEADER_MARKER as _HEADER_MARKER
+from .manifest import CompileLedger
 from .template import load_bootstrap, resolve_template
 
 _MODEL_MAP = {"fast": "haiku", "standard": "sonnet", "reasoning": "opus"}
@@ -18,9 +19,34 @@ _TOOL_MAP = {
 }
 
 
-def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> dict:
-    files = []
-    skipped: list[dict] = []
+def compile_claude(
+    project_root: Path,
+    config: dict,
+    dry_run: bool = False,
+    ledger: CompileLedger | None = None,
+) -> dict:
+    """Compile ``.holoctl/`` into Claude Code's native config under ``.claude/``.
+
+    Generated files are emitted **clean** (no header) and tracked via the
+    ``ledger`` (``.holoctl/.compiled.json``). When called without a ledger
+    (e.g. tests, the drift scratch compile), a self-contained one is created
+    and finalized here so the call still produces a manifest + prunes orphans.
+    """
+    owns_ledger = ledger is None
+    if ledger is None:
+        from ._safe_write import force as _force
+        ledger = CompileLedger(
+            project_root,
+            force=_force(),
+            dry_run=dry_run,
+            target="claude",
+            legacy_marker=_HEADER_MARKER,
+        )
+
+    files: list[str] = []
+    # CLAUDE.md's bespoke preserve notes land directly in the ledger's skip
+    # list, so the ledger is the single source of truth for "what we left alone".
+    skipped: list[dict] = ledger.skipped
 
     agents_dir = project_root / ".holoctl" / "agents"
     claude_agents_dir = project_root / ".claude" / "agents"
@@ -57,12 +83,9 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
             fm_lines.append("---")
             frontmatter = "\n".join(fm_lines)
             resolved_body = resolve_template(body, config)
-            output = _HEADER + frontmatter + "\n" + resolved_body
+            output = frontmatter + "\n" + resolved_body
             out_path = f".claude/agents/{f.name}"
-            if not dry_run:
-                if _safe_write_md(project_root / out_path, output, skipped=skipped):
-                    files.append(out_path)
-            else:
+            if ledger.write(out_path, output, source=f".holoctl/agents/{f.name}", target="claude"):
                 files.append(out_path)
 
     commands_dir = project_root / ".holoctl" / "commands"
@@ -73,12 +96,9 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
             claude_commands_dir.mkdir(parents=True, exist_ok=True)
         for f in sorted(commands_dir.glob("*.md")):
             content = f.read_text(encoding="utf-8")
-            output = _HEADER + resolve_template(content, config)
+            output = resolve_template(content, config)
             out_path = f".claude/commands/{f.name}"
-            if not dry_run:
-                if _safe_write_md(project_root / out_path, output, skipped=skipped):
-                    files.append(out_path)
-            else:
+            if ledger.write(out_path, output, source=f".holoctl/commands/{f.name}", target="claude"):
                 files.append(out_path)
 
     instructions_path = project_root / ".holoctl" / "instructions.md"
@@ -89,16 +109,21 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
         # with Claude's native auto-memory (item 11 of the multi-assistant plan).
         if (project_root / ".holoctl" / "memory").exists():
             rendered = rendered.rstrip() + memory_emit.claude_memory_reference_block()
-        output = _HEADER + rendered
+        output = rendered
         out_path = "CLAUDE.md"
         claude_md_path = project_root / out_path
-        # M11: CLAUDE.md gets defensive treatment — if hand-edited (no header),
-        # preserve via rename to CLAUDE.local.md instead of skip-or-overwrite.
+        # M11: CLAUDE.md gets defensive treatment — if genuinely hand-edited
+        # (not owned, not legacy), preserve via rename to CLAUDE.local.md instead
+        # of skip-or-overwrite. Ownership is decided by the ledger/manifest.
         if not dry_run:
-            wrote = _materialize_claude_md(claude_md_path, output, skipped=skipped)
+            wrote = _materialize_claude_md(
+                claude_md_path, output, out_path, ledger, skipped=skipped
+            )
             if wrote:
                 files.append(out_path)
         else:
+            # Dry-run: record in the ledger so it's tracked, write nothing.
+            ledger.record_text(out_path, output, source=".holoctl/instructions.md", target="claude")
             files.append(out_path)
 
     # Path-scoped rules → .claude/rules/<name>.md (with `paths:` frontmatter)
@@ -109,16 +134,15 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
             rules_out.mkdir(parents=True, exist_ok=True)
         for f in sorted(rules_src.glob("*.md")):
             content = f.read_text(encoding="utf-8")
-            output = _HEADER + resolve_template(content, config)
+            output = resolve_template(content, config)
             out_path = f".claude/rules/{f.name}"
-            if not dry_run:
-                (project_root / out_path).write_text(output, encoding="utf-8")
-            files.append(out_path)
+            if ledger.write(out_path, output, source=f".holoctl/rules/{f.name}", target="claude"):
+                files.append(out_path)
 
     # Built-in skills shipped with the holoctl package — reactive skills that
     # the agent auto-triggers via `description:` matching. These live in
     # `holoctl/templates/skills/` and are emitted on every compile.
-    files.extend(_emit_builtin_skills(project_root, config, dry_run=dry_run))
+    files.extend(_emit_builtin_skills(project_root, config, ledger, dry_run=dry_run))
 
     # Custom skills (with progressive disclosure) → .claude/skills/<name>/
     skills_src = project_root / ".holoctl" / "skills"
@@ -133,12 +157,13 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
                 out_dir.mkdir(parents=True, exist_ok=True)
             content = skill_md.read_text(encoding="utf-8")
             out_path = f".claude/skills/{name}/SKILL.md"
-            if not dry_run:
-                (project_root / out_path).write_text(
-                    _HEADER + resolve_template(content, config), encoding="utf-8"
-                )
-            files.append(out_path)
+            if ledger.write(
+                out_path, resolve_template(content, config),
+                source=f".holoctl/skills/{name}", target="claude",
+            ):
+                files.append(out_path)
             # Copy support files (references/, scripts/, templates/) verbatim.
+            # NOTE: support files are NOT yet tracked in the manifest (Task 21).
             import shutil as _shutil
             for support in ("references", "scripts", "templates"):
                 support_src = skill_dir / support
@@ -161,14 +186,14 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
         for f in sorted(styles_src.glob("*.md")):
             content = f.read_text(encoding="utf-8")
             out_path = f".claude/output_styles/{f.name}"
-            if not dry_run:
-                (project_root / out_path).write_text(
-                    _HEADER + resolve_template(content, config), encoding="utf-8"
-                )
-            files.append(out_path)
+            if ledger.write(
+                out_path, resolve_template(content, config),
+                source=f".holoctl/output_styles/{f.name}", target="claude",
+            ):
+                files.append(out_path)
 
     # Memory topics → .claude/skills/holoctl-memory-*/SKILL.md
-    files.extend(memory_emit.emit_claude(project_root, dry_run=dry_run))
+    files.extend(memory_emit.emit_claude(project_root, ledger, dry_run=dry_run))
 
     # Hooks (journal/curator) + write-tool permissions → .claude/settings.json
     files.extend(hooks_emit.emit_claude(project_root, dry_run=dry_run))
@@ -192,6 +217,15 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
             (project_root / out_path).write_text(upgrade_bootstrap, encoding="utf-8")
         files.append(out_path)
 
+    # When this function owns the ledger (no orchestrator passed one), finalize
+    # here so a direct call still prunes orphans + writes the manifest.
+    if owns_ledger:
+        from ... import __version__ as _ver
+        ledger.prune_orphans()
+        ledger.finalize(holoctl_version=_ver)
+
+    # `skipped` IS `ledger.skipped` (same list), so it now holds both CLAUDE.md
+    # preserve notes and the ledger's foreign/hand-edited + orphan skip notes.
     result: dict[str, object] = {"files": files}
     if skipped:
         result["skipped"] = skipped
@@ -205,36 +239,56 @@ def _map_tools(tools) -> str:
     return ", ".join(str(_TOOL_MAP.get(t, t)) for t in arr)
 
 
-def _materialize_claude_md(claude_md_path: Path, generated_content: str, *, skipped: list[dict]) -> bool:
+def _materialize_claude_md(
+    claude_md_path: Path,
+    generated_content: str,
+    rel: str,
+    ledger: CompileLedger,
+    *,
+    skipped: list[dict],
+) -> bool:
     """Write CLAUDE.md, preserving any hand-edited content via rename.
 
-    Behavior:
-      - File doesn't exist → write new.
-      - File exists with holoctl header → safe to overwrite (we generated it).
-      - File exists WITHOUT header (hand-edited) AND --force not passed →
-        rename to `CLAUDE.local.md` to preserve, then write new.
-      - File exists WITHOUT header AND --force passed → backup to
-        `.claude/.cache/CLAUDE.backup-<ts>.md`, then overwrite.
+    Ownership is decided by the manifest (via the ledger), not the header:
+      - File doesn't exist → write new + record in the manifest.
+      - File is holoctl-owned-unmodified OR carries the legacy header (adoption)
+        → safe to overwrite + record.
+      - File is genuinely hand-edited (not owned, not legacy):
+          - `--force` → backup to `.claude/.cache/CLAUDE.backup-<ts>.md`,
+            overwrite, record, append skip note.
+          - otherwise → rename to `CLAUDE.local.md` to preserve, write new,
+            record, append skip note.
+
+    Always records the generated content in the manifest so the next compile
+    recognizes CLAUDE.md as owned (the file we materialize IS ours regardless
+    of which branch we took).
     """
+    def _record() -> None:
+        ledger.record_text(rel, generated_content, source=".holoctl/instructions.md", target="claude")
+
     if not claude_md_path.exists():
         claude_md_path.parent.mkdir(parents=True, exist_ok=True)
         claude_md_path.write_text(generated_content, encoding="utf-8")
+        _record()
+        return True
+
+    if ledger.is_owned_text(rel) or ledger.is_legacy(rel):
+        # Ours (tracked or legacy-headered) — safe to regenerate.
+        claude_md_path.write_text(generated_content, encoding="utf-8")
+        _record()
         return True
 
     existing = claude_md_path.read_text(encoding="utf-8")
-    if _HEADER_MARKER in existing[:400]:
-        # Ours — safe to regenerate.
-        claude_md_path.write_text(generated_content, encoding="utf-8")
-        return True
 
-    # Hand-edited.
-    if _force():
+    # Genuinely hand-edited (foreign / drifted).
+    if ledger.force:
         backup_dir = claude_md_path.parent / ".claude" / ".cache"
         backup_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         backup_path = backup_dir / f"CLAUDE.backup-{ts}.md"
         backup_path.write_text(existing, encoding="utf-8")
         claude_md_path.write_text(generated_content, encoding="utf-8")
+        _record()
         skipped.append({
             "path": str(claude_md_path),
             "reason": f"hand-edited; backed up to {backup_path.relative_to(claude_md_path.parent)} before overwrite (--force)",
@@ -249,6 +303,7 @@ def _materialize_claude_md(claude_md_path: Path, generated_content: str, *, skip
         local_path = claude_md_path.with_name(f"CLAUDE.local.{ts}.md")
     claude_md_path.rename(local_path)
     claude_md_path.write_text(generated_content, encoding="utf-8")
+    _record()
     skipped.append({
         "path": str(claude_md_path),
         "reason": (
@@ -259,12 +314,19 @@ def _materialize_claude_md(claude_md_path: Path, generated_content: str, *, skip
     return True
 
 
-def _emit_builtin_skills(project_root: Path, config: dict, dry_run: bool = False) -> list[str]:
+def _emit_builtin_skills(
+    project_root: Path,
+    config: dict,
+    ledger: CompileLedger,
+    dry_run: bool = False,
+) -> list[str]:
     """Copy built-in reactive skills from the holoctl package into `.claude/skills/`.
 
     Each subdir of `holoctl/templates/skills/` becomes a skill. Templates are
-    resolved against `config` so `{{project.name}}` etc. work. Support files
-    (`references/`, `scripts/`, `templates/`) are copied verbatim.
+    resolved against `config` so `{{project.name}}` etc. work. The SKILL.md goes
+    through the ledger (manifest-tracked, headerless); support files
+    (`references/`, `scripts/`, `templates/`) are copied verbatim and are NOT
+    yet manifest-tracked (Task 21).
     """
     import shutil as _shutil
     files: list[str] = []
@@ -292,11 +354,11 @@ def _emit_builtin_skills(project_root: Path, config: dict, dry_run: bool = False
             out_dir.mkdir(parents=True, exist_ok=True)
         content = skill_md.read_text(encoding="utf-8")
         out_skill_path = f".claude/skills/{name}/SKILL.md"
-        if not dry_run:
-            (project_root / out_skill_path).write_text(
-                _HEADER + resolve_template(content, config), encoding="utf-8"
-            )
-        files.append(out_skill_path)
+        if ledger.write(
+            out_skill_path, resolve_template(content, config),
+            source="builtin", target="claude",
+        ):
+            files.append(out_skill_path)
         for support in ("references", "scripts", "templates"):
             support_src = skill_dir / support
             if support_src.exists() and not dry_run:

@@ -50,9 +50,28 @@ def test_edited_source_reports_drift(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_hand_edited_output_is_not_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
     _init(tmp_path)
-    # User hand-edits CLAUDE.md (strips the holoctl header) — intentional, not drift.
+    # User hand-edits a compiled, manifest-tracked CLAUDE.md — intentional, not drift.
     (tmp_path / "CLAUDE.md").write_text("# My own CLAUDE\n\nmine.\n", encoding="utf-8")
     res = runner.invoke(app, ["doctor", "--compile-drift"])
     assert res.exit_code == 0, res.output
     assert "holoctl: ok" in res.output
     assert "Hand-edited" in res.output
+
+
+def test_compile_drift_cross_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Both `claude` and `agents` outputs are checked; a fresh compile of a
+    multi-target workspace must report no false drift on either side."""
+    monkeypatch.chdir(tmp_path)
+    _init(tmp_path)  # inits with both agents + claude targets
+
+    # Sanity: both targets' headline outputs exist.
+    assert (tmp_path / "CLAUDE.md").exists()
+    assert (tmp_path / "AGENTS.md").exists()
+
+    res = runner.invoke(app, ["doctor", "--compile-drift"])
+    assert res.exit_code == 0, res.output
+    assert "holoctl: ok" in res.output
+    assert "in sync" in res.output
+    # The targets line names both.
+    assert "claude" in res.output
+    assert "agents" in res.output

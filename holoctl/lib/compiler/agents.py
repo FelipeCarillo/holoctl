@@ -12,54 +12,66 @@ bespoke per-tool compiler. This target emits the two files that make that work:
      stripped, per-tool format hints inlined) at a tool-neutral path a foreign
      assistant can read without knowing about `.claude/skills/`.
 
-Both carry holoctl's generated `HEADER`, so the hand-edit guard and
+Both are emitted **clean** (no header) and manifest-tracked via the ledger
+(`.holoctl/.compiled.json`), so the hand-edit guard and
 `hctl doctor --compile-drift` treat them like any other compiled output.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from ._safe_write import HEADER as _HEADER, safe_write_md
+from ._safe_write import HEADER_MARKER as _HEADER_MARKER
+from .manifest import CompileLedger
 from .template import resolve_template
 
 _BOOTSTRAP_REL = ".holoctl/foreign-bootstrap.md"
 _SKILL_NAME = "holoctl-foreign-bootstrap"
 
 
-def compile_agents(project_root: Path, config: dict, dry_run: bool = False) -> dict:
+def compile_agents(
+    project_root: Path,
+    config: dict,
+    dry_run: bool = False,
+    ledger: CompileLedger | None = None,
+) -> dict:
     """Emit the minimal `AGENTS.md` shim + `.holoctl/foreign-bootstrap.md`.
 
     Idempotent: re-running produces identical content for unchanged inputs.
+    Files are headerless and routed through *ledger* (manifest-tracked). When
+    no ledger is supplied (direct call / tests / drift scratch), a self-contained
+    one is created and finalized here.
     """
+    owns_ledger = ledger is None
+    if ledger is None:
+        from ._safe_write import force as _force
+        ledger = CompileLedger(
+            project_root,
+            force=_force(),
+            dry_run=dry_run,
+            target="agents",
+            legacy_marker=_HEADER_MARKER,
+        )
+
     files: list[str] = []
-    skipped: list[dict] = []
 
     project_name = config.get("project", {}).get("name") or project_root.name
-    agents_md = _HEADER + resolve_template(_agents_shim(project_name), config)
-    _emit(project_root / "AGENTS.md", "AGENTS.md", agents_md, files, skipped, dry_run)
+    agents_md = resolve_template(_agents_shim(project_name), config)
+    if ledger.write("AGENTS.md", agents_md, source=".holoctl/instructions.md", target="agents"):
+        files.append("AGENTS.md")
 
-    bootstrap = _HEADER + _foreign_bootstrap_body()
-    _emit(project_root / _BOOTSTRAP_REL, _BOOTSTRAP_REL, bootstrap, files, skipped, dry_run)
+    bootstrap = _foreign_bootstrap_body()
+    if ledger.write(_BOOTSTRAP_REL, bootstrap, source="builtin", target="agents"):
+        files.append(_BOOTSTRAP_REL)
+
+    if owns_ledger:
+        from ... import __version__ as _ver
+        ledger.prune_orphans()
+        ledger.finalize(holoctl_version=_ver)
 
     result: dict[str, object] = {"files": files}
-    if skipped:
-        result["skipped"] = skipped
+    if ledger.skipped:
+        result["skipped"] = ledger.skipped
     return result
-
-
-def _emit(
-    path: Path,
-    rel: str,
-    content: str,
-    files: list[str],
-    skipped: list[dict],
-    dry_run: bool,
-) -> None:
-    if dry_run:
-        files.append(rel)
-        return
-    if safe_write_md(path, content, skipped=skipped):
-        files.append(rel)
 
 
 def _agents_shim(project_name: str) -> str:
