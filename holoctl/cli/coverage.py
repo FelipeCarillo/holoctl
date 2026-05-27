@@ -35,7 +35,7 @@ _COVERAGE = {
     "agents/*.md": {
         "claude":  ".claude/agents/<name>.md",
         "copilot": None,
-        "codex":   None,
+        "codex":   ".codex/AGENTS.override.md (summary)",
         "agents":  None,
     },
     "commands/*.md": {
@@ -53,7 +53,7 @@ _COVERAGE = {
     "memory/topics/*.md": {
         "claude":  ".claude/skills/holoctl-memory-<topic>/SKILL.md",
         "copilot": ".github/instructions/holoctl-memory-<topic>.instructions.md",
-        "codex":   None,
+        "codex":   ".codex/AGENTS.override.md (index + list)",
         "agents":  None,
     },
     "hooks/*.json": {

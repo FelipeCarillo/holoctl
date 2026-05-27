@@ -25,6 +25,8 @@ the web dashboard moved to an optional extra so the core install stays lean.
 
 ### Added
 
+- **`hctl doctor --compile-drift`.** Detects compiled outputs (`CLAUDE.md`, `AGENTS.md`, …) that are stale vs their `.holoctl/` source — i.e. you edited the source but forgot to recompile. It compiles into a throwaway copy of the workspace and byte-compares each generated file; hand-edited outputs (no holoctl header) are reported as such, not as drift, and merge-based configs (`settings.json` / `mcp.json` / `config.toml`) are skipped. Exits non-zero when anything is stale; the first output line (`holoctl: compile-drift` / `ok`) is router-friendly.
+- **Codex parity — memory + personas in `.codex/AGENTS.override.md`.** Codex has no skills/subagent/lazy-memory surface like Claude's `.claude/` tree, so it previously got strictly less context. The override now inlines the always-on memory index + a list of lazy topics (read on demand from `.holoctl/memory/topics/`) and a summary of the active personas. Sections are omitted when their source is absent (empty in → empty out), and the output stays idempotent.
 - **Linting in CI (`ruff`).** A focused pyflakes + bugbear rule set (`[tool.ruff]`, ignoring typer's required call-in-default pattern) runs in CI; existing dead-code and bad-f-string smells were cleaned up, and two redundant `except (..., Exception)` handlers were collapsed. (Type-checking with mypy is deferred to a focused follow-up: the dict-heavy codebase needs a dedicated typing pass to be useful without scattered ignores.)
 
 ### Changed

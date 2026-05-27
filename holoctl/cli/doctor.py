@@ -27,12 +27,36 @@ def _semver_lt(a: str, b: str) -> bool:
     return t(a) < t(b)
 
 
+# JSON/TOML configs holoctl *merges* into (they legitimately carry user
+# content), so they can't be byte-compared for compile drift.
+_MERGE_OUTPUTS = frozenset({
+    ".claude/settings.json",
+    ".vscode/mcp.json",
+    ".codex/config.toml",
+    ".copilot/config.json",
+})
+
+# Top-level files the `agents` compiler reads to build AGENTS.md's Build/Test
+# sections (see `compiler.agents._detect_commands`). The drift check copies
+# them into the scratch workspace so AGENTS.md compiles identically.
+_BUILD_MARKERS = (
+    "package.json", "pyproject.toml", "uv.lock",
+    "Cargo.toml", "go.mod", "Makefile", "Justfile", "justfile",
+)
+
+
 @app.command("doctor")
 def doctor_cmd(
     global_check: bool = typer.Option(
         False,
         "--global",
         help="Check global router installation drift across tools (Claude/Copilot).",
+    ),
+    compile_drift: bool = typer.Option(
+        False,
+        "--compile-drift",
+        help="Check whether compiled outputs (CLAUDE.md, AGENTS.md, ...) are "
+             "stale vs .holoctl/ — i.e. you edited the source but forgot to recompile.",
     ),
 ):
     """Check project health.
@@ -46,10 +70,15 @@ def doctor_cmd(
     to choose init / upgrade / operate flow.
 
     Pass `--global` to check ~/.claude and ~/.copilot install drift instead
-    of project-level health.
+    of project-level health. Pass `--compile-drift` to detect compiled outputs
+    that are out of date with their `.holoctl/` source.
     """
     if global_check:
         _doctor_global()
+        return
+
+    if compile_drift:
+        _doctor_compile_drift()
         return
 
     root = find_project_root()
@@ -171,6 +200,87 @@ def doctor_cmd(
 def _check(category: str, message: str, ok: bool) -> None:
     icon = "[green]✓[/green]" if ok else "[red]✗[/red]"
     console.print(f"  {icon} [dim]{category:<14}[/dim] {message}")
+
+
+def _doctor_compile_drift() -> None:
+    """Detect compiled outputs that are stale vs `.holoctl/`.
+
+    Compiles into a throwaway copy of the workspace, then byte-compares each
+    generated file against the one on disk. A mismatch means the source changed
+    but `hctl compile` wasn't re-run. Hand-edited outputs (no holoctl header)
+    are reported as such, not as drift — they're intentional. Merge-based
+    configs (settings.json / mcp.json / config.toml) are skipped: they carry
+    user content and can't be byte-compared.
+    """
+    import shutil
+    import tempfile
+
+    from ..lib.compiler import _COMPILERS, compile_project
+    from ..lib.compiler._safe_write import looks_hand_edited
+
+    root = find_project_root()
+    if not root:
+        print("holoctl: not initialized")
+        console.print("[red]No .holoctl/ found.[/red]")
+        raise typer.Exit(1)
+    config = load_config(root)
+    targets = [t for t in config.get("targets", []) if t in _COMPILERS]
+
+    stale: list[str] = []
+    hand_edited: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        scratch = Path(td)
+        shutil.copytree(root / ".holoctl", scratch / ".holoctl")
+        # Copy build markers so the `agents` target's Build/Test detection
+        # matches the real repo (else AGENTS.md would falsely look stale).
+        for marker in _BUILD_MARKERS:
+            src = root / marker
+            if src.is_file():
+                shutil.copy2(src, scratch / marker)
+
+        generated: set[str] = set()
+        for tgt in targets:
+            result = compile_project(scratch, config, tgt, dry_run=False)
+            generated.update(result.get("files", []))
+
+        for rel in sorted(generated):
+            if rel in _MERGE_OUTPUTS:
+                continue
+            canonical = scratch / rel
+            on_disk = root / rel
+            if not canonical.is_file():
+                continue
+            if not on_disk.exists():
+                stale.append(f"{rel} (missing)")
+            elif looks_hand_edited(on_disk):
+                hand_edited.append(rel)
+            elif on_disk.read_bytes() != canonical.read_bytes():
+                stale.append(rel)
+
+    if stale:
+        print("holoctl: compile-drift")
+    else:
+        print("holoctl: ok")
+
+    console.print("\n  [bold]hctl doctor --compile-drift[/bold]\n")
+    console.print(f"  [dim]targets: {', '.join(targets) or '(none)'}[/dim]\n")
+    if stale:
+        for rel in stale:
+            _check("Drift", f"{rel} is stale — run `holoctl compile`", False)
+    if hand_edited:
+        for rel in hand_edited:
+            _check("Hand-edited", f"{rel} (no holoctl header; left as-is)", True)
+    if not stale and not hand_edited:
+        _check("Compile", "all outputs up to date with .holoctl/", True)
+
+    console.print("")
+    if stale:
+        console.print(
+            f"[yellow]  {len(stale)} stale output(s). Run "
+            f"[bold]hctl compile[/bold] to regenerate.[/yellow]\n"
+        )
+        raise typer.Exit(1)
+    console.print("[green]  Compiled outputs are in sync with .holoctl/.[/green]\n")
 
 
 def _doctor_global() -> None:
