@@ -29,7 +29,7 @@ _COVERAGE = {
     "instructions.md": {
         "claude":  "CLAUDE.md",
         "copilot": ".github/copilot-instructions.md",
-        "codex":   ".codex/AGENTS.md",
+        "codex":   ".codex/AGENTS.override.md",
         "agents":  "AGENTS.md (Objective+Architecture sections)",
     },
     "agents/*.md": {
@@ -83,7 +83,7 @@ _COVERAGE = {
     "(MCP servers, defined in CLI/server)": {
         "claude":  ".claude/settings.json:mcpServers",
         "copilot": ".vscode/mcp.json",
-        "codex":   "~/.codex/config.toml (user-level)",
+        "codex":   ".codex/config.toml",
         "agents":  None,
     },
 }
@@ -93,7 +93,7 @@ _COVERAGE = {
 def coverage_cmd(
     target_filter: Optional[str] = typer.Option(
         None, "--target", "-t",
-        help="Only show coverage for one target (claude, cursor, etc).",
+        help="Only show coverage for one target (agents, claude, copilot, codex).",
     ),
     only_present: bool = typer.Option(
         False, "--only-present",
@@ -132,9 +132,8 @@ def coverage_cmd(
             if dest is None:
                 cells.append("[dim]—[/dim]".ljust(12))
             else:
-                short = dest.replace(".claude/", ".cl/").replace(".cursor/", ".cu/")
-                short = short.replace(".windsurf/", ".ws/").replace(".github/", ".gh/")
-                short = short.replace(".devin/", ".dv/").replace(".vscode/", ".vs/")
+                short = dest.replace(".claude/", ".cl/").replace(".github/", ".gh/")
+                short = short.replace(".codex/", ".cx/").replace(".vscode/", ".vs/")
                 cells.append(f"[green]✓[/green] {short[:10]}")
         row += " | ".join(cells)
         console.print(row)

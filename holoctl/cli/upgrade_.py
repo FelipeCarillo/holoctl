@@ -8,7 +8,7 @@ from ..lib.board import Board
 from ..lib.changelog import load_changelog, slice_between
 from ..lib.compiler import compile_project
 from ..lib.config import find_project_root, load_config, save_config
-from ..lib.templates import get_templates
+from ..lib.templates import SYNC_TARGETS, get_templates
 
 app = typer.Typer()
 
@@ -125,16 +125,7 @@ def _sync(root, config, dry_run: bool) -> None:
     """Inline sync (templates + agents). Mirrors `cli.sync_.sync_cmd` but
     always includes agents and reports a tighter summary."""
     templates = get_templates(config)
-    targets = {
-        ".holoctl/commands/status.md",
-        ".holoctl/commands/ticket.md",
-        ".holoctl/commands/board.md",
-        ".holoctl/commands/sprint.md",
-        ".holoctl/commands/decision.md",
-        ".holoctl/commands/close.md",
-        ".holoctl/board/WORKFLOW.md",
-        ".holoctl/board/tickets/_template.md",
-    }
+    targets = set(SYNC_TARGETS)
     for key in templates:
         if key.startswith(".holoctl/agents/"):
             targets.add(key)

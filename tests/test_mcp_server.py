@@ -163,6 +163,21 @@ def test_initialized_notification_returns_none():
     assert resp is None
 
 
+def test_ping_returns_empty_result():
+    """F6a: MCP `ping` keep-alive must return an empty result object."""
+    resp = mcp.handle({"jsonrpc": "2.0", "id": 99, "method": "ping"})
+    assert resp == {"jsonrpc": "2.0", "id": 99, "result": {}}
+
+
+def test_unknown_notification_returns_none():
+    """F6a: an unknown method WITHOUT an id is a notification — the server must
+    not reply (replying would violate JSON-RPC and confuse strict clients)."""
+    resp = mcp.handle({"jsonrpc": "2.0", "method": "notifications/cancelled"})
+    assert resp is None
+    # Same for a totally unknown notification.
+    assert mcp.handle({"jsonrpc": "2.0", "method": "something/odd"}) is None
+
+
 def test_write_tools_have_write_flag():
     write_tools = mcp.list_tools(write=True)
     write_names = {t["name"] for t in write_tools}

@@ -4,20 +4,9 @@ import typer
 from ._console import console
 
 from ..lib.config import find_project_root, load_config
-from ..lib.templates import get_templates
+from ..lib.templates import SYNC_TARGETS, get_templates
 
 app = typer.Typer()
-
-_SYNC_TARGETS = {
-    ".holoctl/commands/status.md",
-    ".holoctl/commands/ticket.md",
-    ".holoctl/commands/board.md",
-    ".holoctl/commands/sprint.md",
-    ".holoctl/commands/decision.md",
-    ".holoctl/commands/close.md",
-    ".holoctl/board/WORKFLOW.md",
-    ".holoctl/board/tickets/_template.md",
-}
 
 
 @app.command("sync")
@@ -34,7 +23,7 @@ def sync_cmd(
     config = load_config(root)
     templates = get_templates(config)
 
-    targets = set(_SYNC_TARGETS)
+    targets = set(SYNC_TARGETS)
     if include_agents:
         for key in templates:
             if key.startswith(".holoctl/agents/"):

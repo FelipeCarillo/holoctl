@@ -6,10 +6,10 @@ day, one JSON object per line:
     {"ts": "2026-05-07T13:42:18Z", "source": "claude", "kind": "tool_use",
      "payload": {"tool": "Edit", "file": "src/api/auth.py"}}
 
-The journal is the **input** for the curator (0.14). Hooks emitted by the
-compilers (`SessionStart`, `Stop`, `PostToolUse` for Claude Code;
-`sessionStart`, `afterFileEdit` for Cursor) call ``hctl journal record``
-with a small payload — see ``holoctl/templates/hooks/``.
+The journal is the **input** for the curator. Hooks emitted by the Claude
+compiler (`SessionStart`, `Stop`, `PostToolUse`, `PreToolUse`) call
+``hctl journal record`` with a small payload — see
+``holoctl/templates/hooks/``.
 
 Writes are append-safe under concurrent processes via OS-level locking:
 ``fcntl.flock`` on POSIX, ``msvcrt.locking`` on Windows. We keep the

@@ -2,7 +2,7 @@
 
 Implements just enough of the JSON-RPC over stdio protocol for the
 holoctl tools to be discoverable and callable from any MCP-aware client
-(Claude Code, Cursor, Copilot, Windsurf, Devin).
+(Claude Code, Copilot, Codex, and other MCP-aware assistants).
 
 We don't depend on the `mcp` Python package because:
   1. Adds a 5MB+ install footprint for ~150 lines of protocol logic.
@@ -820,14 +820,14 @@ TOOLS: list[dict] = [
     },
     {
         "name": "holoctl.curate_suggestions",
-        "description": "Get current curator suggestions (stubbed in 0.13; engine in 0.14).",
+        "description": "Get current curator suggestions (open meta:curate tickets on the board).",
         "schema": {"type": "object", "properties": {}},
         "handler": _tool_curate_suggestions,
         "write": False,
     },
     {
         "name": "holoctl.curate_silence",
-        "description": "Suppress a curator pattern for 14 days (stubbed in 0.13).",
+        "description": "Suppress a curator pattern for 14 days.",
         "schema": {
             "type": "object",
             "properties": {"pattern_id": {"type": "string"}},
@@ -892,6 +892,10 @@ def handle(message: dict) -> dict | None:
     if method == "notifications/initialized":
         return None
 
+    if method == "ping":
+        # MCP keep-alive. Spec: empty result object.
+        return _make_response(req_id, {})
+
     if method == "tools/list":
         return _make_response(req_id, {
             "tools": [
@@ -922,6 +926,11 @@ def handle(message: dict) -> dict | None:
     if method == "shutdown":
         return _make_response(req_id, {})
 
+    # Unknown method. A JSON-RPC notification (no `id`) must never receive a
+    # response — returning an error here would violate the protocol and can
+    # confuse strict clients that send `notifications/cancelled` et al.
+    if req_id is None:
+        return None
     return _make_error(req_id, -32601, f"Method not found: {method}")
 
 

@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from holoctl.lib.compiler import hooks_emit
 
@@ -88,5 +94,60 @@ def test_emit_claude_includes_write_tool_permissions(tmp_path: Path):
         "mcp__holoctl__agent_add",
     ):
         assert write_tool in ask
+
+
+def test_emit_claude_uses_generalist_bin_not_absolute_path(tmp_path: Path, monkeypatch):
+    """F0c: hook commands must use the bare `hctl` command, not a machine-specific
+    absolute exe path (which breaks when settings.json is committed + shared)."""
+    monkeypatch.delenv("HOLOCTL_BIN", raising=False)
+    hooks_emit.emit_claude(tmp_path)
+    settings = json.loads((tmp_path / ".claude/settings.json").read_text(encoding="utf-8"))
+    for event, hooks in settings["hooks"].items():
+        for h in hooks:
+            cmd = h.get("command", "")
+            if not cmd:
+                continue
+            bin_token = shlex.split(cmd)[0]
+            assert bin_token == "hctl", (
+                f"{event} hook bin should be the generalist `hctl`, got {bin_token!r} "
+                f"(absolute paths are not portable across machines)"
+            )
+
+
+def _hook_commands(root: Path) -> list[str]:
+    hooks_emit.emit_claude(root)
+    settings = json.loads((root / ".claude/settings.json").read_text(encoding="utf-8"))
+    out: list[str] = []
+    for hooks in settings["hooks"].values():
+        for h in hooks:
+            if h.get("command"):
+                out.append(h["command"])
+    return out
+
+
+def test_hook_commands_are_valid_cli_invocations(tmp_path: Path):
+    """F0a/F0b: every `hctl <subcommand> <flags>` baked into the hooks must be a
+    real CLI invocation. A nonexistent flag (e.g. the old `--auto` / `--deny-glob`)
+    makes typer exit with code 2 — this guard catches that before it ships."""
+    # Initialize a real workspace so the hook commands have state to act on.
+    subprocess.run(
+        [sys.executable, "-m", "holoctl", "init", "--name", "HookTest", "--prefix", "HT"],
+        cwd=tmp_path, capture_output=True, timeout=60, check=True,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    for cmd in _hook_commands(tmp_path):
+        tokens = shlex.split(cmd)
+        assert tokens[0] in ("hctl", "holoctl"), cmd
+        # Run via the module entry point (bare `hctl` may not be on PATH in CI).
+        result = subprocess.run(
+            [sys.executable, "-m", "holoctl", *tokens[1:]],
+            cwd=tmp_path, capture_output=True, timeout=60,
+            input="{}", text=True,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        assert result.returncode != 2, (
+            f"hook command is not a valid CLI invocation (usage error):\n"
+            f"  {cmd}\n  stderr: {result.stderr}"
+        )
 
 

@@ -3,6 +3,26 @@ from __future__ import annotations
 from .agent_library import materialize_agent
 
 
+# Template-managed, non-agent files refreshed by `hctl sync`, `hctl upgrade`,
+# and re-`hctl init`. Single source of truth: the three call sites import this
+# so a newly added template file can't drift out of one of them. (That drift is
+# exactly why `/spec` and `/agent-new` used to go stale after an upgrade — they
+# were produced by get_templates() but missing from every sync list.) Agent
+# personas are synced separately: opt-in on `sync --agents`, always on `upgrade`.
+SYNC_TARGETS = frozenset({
+    ".holoctl/commands/status.md",
+    ".holoctl/commands/ticket.md",
+    ".holoctl/commands/spec.md",
+    ".holoctl/commands/agent-new.md",
+    ".holoctl/commands/board.md",
+    ".holoctl/commands/sprint.md",
+    ".holoctl/commands/decision.md",
+    ".holoctl/commands/close.md",
+    ".holoctl/board/WORKFLOW.md",
+    ".holoctl/board/tickets/_template.md",
+})
+
+
 def get_templates(config: dict) -> dict[str, str]:
     """Return the dict of (rel_path → content) materialized at ``hctl init``.
 

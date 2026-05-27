@@ -1,9 +1,10 @@
 """Per-target MCP config emission.
 
 Each function writes the assistant's native MCP config so the holoctl
-stdio server is auto-spawned at session start. We resolve the absolute
-path to `hctl` via `shutil.which()` to handle uv-tool / pipx / pip-venv
-installs uniformly.
+stdio server is auto-spawned at session start. We emit the generalist
+`hctl` command (PATH-resolved) rather than an absolute exe path, so the
+committed config stays portable across machines / users / assistants.
+Set `HOLOCTL_BIN` to override for installs where `hctl` isn't on PATH.
 
 Decision (item 1 of the multi-assistant plan): stdio transport, NOT
 HTTP daemon. Each assistant spawns its own short-lived `hctl serve --mcp`
@@ -19,8 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import sys
 from pathlib import Path
 
 
@@ -28,13 +27,8 @@ SERVER_KEY = "holoctl"
 
 
 def _resolve_hctl_bin() -> str:
-    env = os.environ.get("HOLOCTL_BIN")
-    if env:
-        return env
-    via_path = shutil.which("hctl") or shutil.which("holoctl")
-    if via_path:
-        return via_path
-    return f"{sys.executable} -m holoctl"
+    # Bare command name, not an absolute exe path — see module docstring.
+    return os.environ.get("HOLOCTL_BIN") or "hctl"
 
 
 def _holoctl_server_entry() -> dict:

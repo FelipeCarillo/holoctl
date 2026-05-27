@@ -87,6 +87,49 @@ def test_coverage_columns_equal_compilers():
         )
 
 
+def _is_concrete_path(dest) -> bool:
+    """True if a _COVERAGE cell is a plain repo-relative path we can verify
+    against emitted files. Excludes None, placeholder paths (`<name>`),
+    JSON-pointer suffixes (`settings.json:mcpServers`), and descriptive prose
+    ('AGENTS.md (Objective…)')."""
+    if not isinstance(dest, str) or not dest:
+        return False
+    return not any(c in dest for c in "<>(~ :")
+
+
+def test_coverage_concrete_paths_match_emitted_outputs(tmp_path: Path):
+    """`hctl coverage` claims, per (source, target), *where* a piece materializes.
+    Every concrete path it claims must be a path the compiler actually emits.
+
+    This is the value-level guard the column check (above) lacks — and it is
+    exactly what would have caught `_COVERAGE['instructions.md']['codex']`
+    pointing at `.codex/AGENTS.md` while the compiler emits
+    `.codex/AGENTS.override.md`.
+    """
+    from holoctl.cli.coverage import _source_exists
+
+    config = _seed_minimal_workspace(tmp_path)
+    emitted: set[str] = set()
+    for target in sorted(_ACTIVE_TARGETS):
+        result = compile_project(tmp_path, config, target, dry_run=False)
+        emitted.update(result.get("files", []))
+
+    for source, mapping in _COVERAGE.items():
+        # Synthetic rows (e.g. MCP servers) start with '(' and have no source
+        # file — their outputs are always emitted; check them too.
+        present = source.startswith("(") or _source_exists(tmp_path, source)
+        if not present:
+            continue
+        for target, dest in mapping.items():
+            if not _is_concrete_path(dest):
+                continue
+            assert dest in emitted, (
+                f"_COVERAGE['{source}']['{target}'] = {dest!r} but compiling "
+                f"the targets never emitted it. Fix holoctl/cli/coverage.py "
+                f"(or the compiler). Emitted: {sorted(emitted)}"
+            )
+
+
 def test_removed_and_active_targets_disjoint():
     """A target can't be both retired and live — the silent filter would eat it."""
     overlap = _REMOVED_TARGETS & _ACTIVE_TARGETS

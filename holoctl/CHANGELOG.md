@@ -2,6 +2,24 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.18.1] — 2026-05-27
+
+Correctness + drift quick-wins (Phase A of the post-0.18 audit). No schema
+or API changes; existing workspaces benefit on the next `hctl compile` /
+`hctl sync`.
+
+### Fixed
+
+- **Claude hooks were broken on every session.** The compiled `.claude/settings.json` invoked two flags that don't exist: the `Stop` hook ran `handoff --quiet --auto` and the `PreToolUse` hook ran `journal record … --deny-glob …`, both of which made typer exit with a usage error. Switched to the real generalist commands (`handoff --quiet`, `journal record write_attempt … --quiet`); direct writes to derived state were already blocked by `permissions.deny`, so `--deny-glob` was redundant on top of being invalid. New guard `test_hooks_emit.py::test_hook_commands_are_valid_cli_invocations` runs each baked hook command and fails on any usage error.
+- **Hooks + MCP config baked a machine-specific absolute path.** `_resolve_hctl_bin()` (in `compiler/hooks_emit.py` and `compiler/mcp_emit.py`) resolved `shutil.which("hctl")`, so a committed `.claude/settings.json` / `.vscode/mcp.json` / `.codex/config.toml` broke the moment it was used on another machine, user, or assistant. Now emits the portable `hctl` command (PATH-resolved); set `HOLOCTL_BIN` to override.
+- **`/spec` and `/agent-new` went stale after upgrades.** The sync allow-list was duplicated across `cli/sync_.py`, `cli/init_.py`, and `cli/upgrade_.py`, and all three copies omitted `spec.md` and `agent-new.md` — so the two flagship 0.17 commands were seeded once at `init` but never refreshed. The list is now a single shared constant, `lib/templates.SYNC_TARGETS`, that includes them (guarded by `test_sync_targets.py`).
+- **`hctl coverage` pointed at the wrong Codex path.** The matrix mapped `instructions.md` → codex `.codex/AGENTS.md` and MCP → `~/.codex/config.toml (user-level)`, while the compiler emits `.codex/AGENTS.override.md` and a project-level `.codex/config.toml`. Corrected, and `test_target_consistency.py` now validates `_COVERAGE`'s concrete path *values* against the files compilers actually emit (it previously checked only the column set).
+- **MCP server replied to JSON-RPC notifications.** `server/mcp.py` returned an error response for any unknown method, including notifications (no `id`) — a protocol violation. Unknown notifications now return nothing, and a `ping` keep-alive handler was added.
+
+### Changed
+
+- **Docs/drift sweep.** `ARCHITECTURE.md` corrected (it claimed `setup-global` was removed and that nothing is written to `$HOME`, and its layout / compile-pipeline / ticket-body / static-asset sections were stale); the generated `AGENTS.md` no longer cites the retired `.cursor/rules/`; stale docstrings (`memory.py`, `journal.py`, `server/mcp.py`) and MCP tool descriptions ("stubbed in 0.13") refreshed; `hctl coverage` help + glyphs no longer reference retired targets; `CONTRIBUTING.md` points at the new shared `SYNC_TARGETS`.
+
 ## [0.18.0] — 2026-05-18
 
 Target slimdown + first-class Codex support. Holoctl now ships four

@@ -205,9 +205,9 @@ Common commands you can run:
 
 - Never edit `.holoctl/board/index.json` or `.holoctl/memory/MEMORY.md` by
   hand. Use `hctl <subcommand>`.
-- Never overwrite hand-edited AI configs (`CLAUDE.md`, `.cursor/rules/`,
-  populated `AGENTS.md` sections outside the holoctl-generated block) — read
-  for context.
+- Never overwrite hand-edited AI configs (`CLAUDE.md`,
+  `.github/copilot-instructions.md`, `.codex/AGENTS.override.md`, or populated
+  `AGENTS.md` sections outside the holoctl-generated block) — read for context.
 - Slash command equivalent: `/holoctl` (or `holoctl` skill). It detects
   workspace state and routes to init / upgrade / operate.
 """
