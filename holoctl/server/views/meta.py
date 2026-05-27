@@ -7,7 +7,7 @@ def agents_context(agents: list[dict], alias: str = "") -> dict:
     cards = []
     for a in agents:
         name = a.get("name", a.get("file", "?").replace(".md", ""))
-        tools = a.get("tools", [])
+        tools = a.get("tools") or []
         if isinstance(tools, str):
             tools = [t.strip() for t in tools.split(",")]
         link = (f"/project/{alias}/agents/{a.get('file','').replace('.md','')}"

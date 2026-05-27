@@ -1453,3 +1453,14 @@ class TestDocDetailRoutes:
     def test_agent_detail_missing_404(self, client: TestClient, alias: str):
         r = client.get(f"/project/{alias}/agents/nonexistent")
         assert r.status_code == 404
+
+    def test_agents_list_survives_null_tools(self, client: TestClient, alias: str, workspace: Path):
+        # An agent whose frontmatter has `tools:` empty/null must not 500 the
+        # whole /agents list (meta.agents_context coerces None → []).
+        (workspace / ".holoctl" / "agents" / "notools.md").write_text(
+            "---\nname: notools\ndescription: no tools here\ntools:\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        r = client.get(f"/project/{alias}/agents")
+        assert r.status_code == 200
+        assert "notools" in r.text
