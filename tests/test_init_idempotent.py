@@ -8,7 +8,6 @@ import pytest
 from typer.testing import CliRunner
 
 from holoctl.cli.init_ import _semver_lt, _semver_tuple, app as init_app
-from holoctl import __version__
 
 
 def test_semver_tuple_parses():

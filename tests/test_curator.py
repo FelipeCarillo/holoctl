@@ -2,22 +2,19 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 
 from holoctl.lib.config import get_defaults, save_config
 from holoctl.lib.curator import (
     CuratorState,
-    Suggestion,
     _load_ticket_meta,
     apply_curator_action,
-    hash_pattern,
     run_curator,
     silence_pattern,
 )
-from holoctl.lib.curator_rules import library_persona_match, repeated_glob_edits, repeated_prompt, unused_topic
+from holoctl.lib.curator_rules import library_persona_match, repeated_prompt, unused_topic
 from holoctl.lib.journal import Journal
 from holoctl.lib.memory import Memory
 

@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Lint — ruff
+        run: uv run ruff check holoctl/ tests/
+
       - name: Smoke test — CLI loads
         run: |
           uv run holoctl --version

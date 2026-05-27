@@ -430,7 +430,6 @@ class Board:
         # The agent must pass valid status / priority / agent names — no silent
         # coercion, so malformed tickets fail loud and the agent retries.
         statuses = self._config["board"]["statuses"]
-        priorities = self._config["board"]["priorities"]
         status = patch.get("status", statuses[0])
         priority = patch.get("priority") or "p2"
         self._validate_status(status)
@@ -790,7 +789,6 @@ class Board:
         # Pre-flight: validate every ticket through the same rules `add` uses,
         # without creating anything yet.
         statuses = self._config["board"]["statuses"]
-        priorities = self._config["board"]["priorities"]
         for i, m in enumerate(merged):
             if not (m.get("title") or "").strip():
                 raise ValueError(f"tickets[{i}]: title is required.")
@@ -1031,8 +1029,16 @@ def _parse_set_value(value: str):
 
 
 def _log_activity(project_root: Path, event: dict) -> None:
-    from datetime import datetime, timezone
+    """Append a board mutation to ``.holoctl/activity.jsonl``.
+
+    This is a *separate* store from the event journal (``.holoctl/journal/``):
+    it has a ticket-scoped schema (``{ts, type, ticket, ...}``) and feeds the
+    dashboard's per-ticket activity timeline, whereas the journal has a
+    session-event schema and feeds the curator. They share the same locked
+    append primitive so neither interleaves a half-written line under
+    concurrent writers.
+    """
+    from .jsonl import append_jsonl_line
     log_path = project_root / ".holoctl" / "activity.jsonl"
     entry = {"ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), **event}
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+    append_jsonl_line(log_path, json.dumps(entry) + "\n")

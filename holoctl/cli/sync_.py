@@ -29,7 +29,7 @@ def sync_cmd(
             if key.startswith(".holoctl/agents/"):
                 targets.add(key)
 
-    console.print(f"\n  [bold]holoctl sync[/bold]\n")
+    console.print("\n  [bold]holoctl sync[/bold]\n")
 
     updated, added = [], []
 

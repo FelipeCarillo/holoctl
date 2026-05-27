@@ -34,11 +34,10 @@ parse and render natively.
 from __future__ import annotations
 
 import json
-import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "holoctl"

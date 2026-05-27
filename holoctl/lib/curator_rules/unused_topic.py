@@ -7,7 +7,6 @@ this is currently a coarse heuristic on file mtime.
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 
 from ..curator import CuratorContext, Suggestion, hash_pattern
 

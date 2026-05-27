@@ -1,7 +1,6 @@
 """Tests for holoctl.lib.agent_library — latent persona catalog."""
 from __future__ import annotations
 
-import pytest
 
 from holoctl.lib.agent_library import (
     list_library_agents,

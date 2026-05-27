@@ -19,7 +19,6 @@ away (`hctl board get`, `hctl memory get <topic>`, `hctl curate show`).
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 

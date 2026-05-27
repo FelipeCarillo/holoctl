@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "holoctl"
-version = "0.18.1"
+version = "0.19.0"
 description = "Universal project operating system for AI coding assistants"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -31,13 +31,19 @@ classifiers = [
 dependencies = [
     "typer>=0.12",
     "rich>=13",
-    "fastapi>=0.115",
-    "uvicorn>=0.30",
     "pyyaml>=6",
-    "jinja2>=3.1",
 ]
 
 [project.optional-dependencies]
+dashboard = [
+    # The HTTP dashboard (`hctl serve`). Kept out of the lean core so a
+    # CLI-only / MCP-only install (the common case) doesn't pull the whole
+    # web stack (fastapi → pydantic → starlette, plus uvicorn + jinja2).
+    # `hctl serve` prints an install hint when this extra is absent.
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+]
 ml = [
     # Optional embeddings backend for the curator's repeated-prompt rule.
     # Without this extra the curator falls back to token-hash matching
@@ -80,9 +86,38 @@ dev = [
     "pytest>=8",
     # Required by fastapi.testclient (used by tests/test_dashboard.py).
     "httpx>=0.27",
+    # The dashboard moved to the optional `[dashboard]` extra; the dev env
+    # still needs it so tests/test_dashboard.py can import + exercise it.
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    # Linter (correctness net — see [tool.ruff]).
+    "ruff>=0.6",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+# Focused, high-signal set: pyflakes (dead code, bad f-strings) + bugbear
+# (likely-bug patterns). Stylistic rules (E7 semicolons, line length) are
+# left off deliberately to keep the linter about correctness, not formatting.
+select = ["F", "B"]
+ignore = [
+    # typer / FastAPI REQUIRE the call-in-default pattern
+    # (`x: T = typer.Option(...)`, `Body(...)`); B008 is a false positive here.
+    "B008",
+    # The CLI deliberately re-raises `typer.Exit` inside `except` blocks without
+    # `from`; chaining would leak tracebacks into user-facing output.
+    "B904",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use throwaway bindings and import-for-side-effect patterns freely.
+"tests/*" = ["F841", "B007"]

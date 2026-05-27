@@ -11,11 +11,9 @@ compiler (`SessionStart`, `Stop`, `PostToolUse`, `PreToolUse`) call
 ``hctl journal record`` with a small payload — see
 ``holoctl/templates/hooks/``.
 
-Writes are append-safe under concurrent processes via OS-level locking:
-``fcntl.flock`` on POSIX, ``msvcrt.locking`` on Windows. We keep the
-critical section as small as possible (one open / lock / write / unlock /
-close per record) so the lock window is microseconds even when two
-assistants are writing at once.
+Writes are append-safe under concurrent processes via the shared
+``lib.jsonl.append_jsonl_line`` primitive (OS-level ``fcntl.flock`` /
+``msvcrt.locking``), the same one the board's activity log uses.
 
 This module is import-cheap (no I/O at import time) so it can be loaded
 on hot CLI paths like ``hctl boot`` without slowing things down.
@@ -23,17 +21,11 @@ on hot CLI paths like ``hctl boot`` without slowing things down.
 from __future__ import annotations
 
 import json
-import os
-import sys
-import threading
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-# Per-process lock — serializes threads in the same Python process.
-# Cross-process serialization is handled by msvcrt.locking / fcntl.flock below.
-_PROCESS_LOCK = threading.Lock()
+from .jsonl import append_jsonl_line
 
 
 def _now_iso() -> str:
@@ -42,70 +34,6 @@ def _now_iso() -> str:
 
 def _today_filename() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d") + ".jsonl"
-
-
-@contextmanager
-def _locked_append(path: Path) -> Iterator:
-    """Open `path` in append mode under an OS-level exclusive lock.
-
-    Released on context exit. On platforms that don't support flock-style
-    locking (rare), this degrades to a plain append (still atomic at the
-    OS level for small writes <PIPE_BUF, which our records are).
-
-    Windows: retries non-blocking lock with exponential backoff up to ~1s.
-    Real-world contention is microseconds; the backoff is just defense.
-    """
-    import time
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Serialize threads in this process before touching the OS-level lock.
-    # This avoids msvcrt.locking conflicts between threads sharing the same
-    # process (which gets confused by multiple handles on the same byte range).
-    _PROCESS_LOCK.acquire()
-    f = open(path, "a", encoding="utf-8")
-    _have_lock = False
-    try:
-        if sys.platform == "win32":
-            try:
-                import msvcrt
-                deadline = time.monotonic() + 2.0
-                wait = 0.001
-                while time.monotonic() < deadline:
-                    try:
-                        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
-                        _have_lock = True
-                        break
-                    except OSError:
-                        time.sleep(wait)
-                        wait = min(wait * 2, 0.05)
-            except ImportError:
-                pass
-        else:
-            try:
-                import fcntl
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                _have_lock = True
-            except (OSError, ImportError):
-                _have_lock = False
-        yield f
-        f.flush()
-        try:
-            os.fsync(f.fileno())
-        except OSError:
-            pass
-        if _have_lock:
-            try:
-                if sys.platform == "win32":
-                    import msvcrt
-                    f.seek(0)
-                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            except OSError:
-                pass
-    finally:
-        f.close()
-        _PROCESS_LOCK.release()
 
 
 class Journal:
@@ -133,8 +61,7 @@ class Journal:
             "payload": payload or {},
         }
         line = json.dumps(record, separators=(",", ":"), ensure_ascii=False) + "\n"
-        with _locked_append(self.today_path) as f:
-            f.write(line)
+        append_jsonl_line(self.today_path, line)
         return record
 
     def iter_records(

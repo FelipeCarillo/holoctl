@@ -1,7 +1,6 @@
 """Tests for the neutral init flow — only boardmaster materializes by default."""
 from __future__ import annotations
 
-from pathlib import Path
 
 from holoctl.lib.config import get_defaults
 from holoctl.lib.templates import get_templates

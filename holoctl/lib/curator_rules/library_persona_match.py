@@ -34,7 +34,6 @@ import yaml
 
 from ..agent_library import list_library_agents, load_library_agent
 from ..curator import CuratorContext, Suggestion, hash_pattern
-from ..markdown import parse_frontmatter
 
 
 def run(ctx: CuratorContext) -> list[Suggestion]:

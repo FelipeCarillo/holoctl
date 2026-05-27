@@ -74,7 +74,7 @@ def init_cmd(
     config["project"]["prefix"] = project_prefix
     config["targets"] = target_list
 
-    console.print(f"\n  [bold]holoctl init[/bold]\n")
+    console.print("\n  [bold]holoctl init[/bold]\n")
     console.print(f"  Project:  [green]{project_name}[/green]")
     console.print(f"  Prefix:   [green]{project_prefix}[/green] (tickets: {project_prefix}-001, {project_prefix}-002, ...)")
     console.print(f"  Targets:  [green]{', '.join(target_list)}[/green]")
@@ -122,8 +122,8 @@ def init_cmd(
     (cwd / ".holoctl" / "activity.jsonl").write_text("", encoding="utf-8")
 
     console.print(
-        f"  [green]✓ .holoctl/ initialized[/green] "
-        f"[dim](neutral — only `boardmaster` active; library loaded)[/dim]\n"
+        "  [green]✓ .holoctl/ initialized[/green] "
+        "[dim](neutral — only `boardmaster` active; library loaded)[/dim]\n"
     )
 
     if bare:
@@ -145,17 +145,17 @@ def init_cmd(
     console.print("")
     console.print("  Next steps:")
     console.print(
-        f"    [dim]$[/dim] hctl agent list                     "
-        f"[dim]# see latent personas you can activate[/dim]"
+        "    [dim]$[/dim] hctl agent list                     "
+        "[dim]# see latent personas you can activate[/dim]"
     )
     console.print(
-        f"    [dim]$[/dim] hctl agent add developer            "
-        f"[dim]# example: activate the code-implementation persona[/dim]"
+        "    [dim]$[/dim] hctl agent add developer            "
+        "[dim]# example: activate the code-implementation persona[/dim]"
     )
     console.print(
-        f"    [dim]$[/dim] hctl board add '{{\"title\":\"My first ticket\",\"agent\":\"boardmaster\"}}'"
+        "    [dim]$[/dim] hctl board add '{\"title\":\"My first ticket\",\"agent\":\"boardmaster\"}'"
     )
-    console.print(f"    [dim]$[/dim] hctl serve")
+    console.print("    [dim]$[/dim] hctl serve")
     console.print("")
 
 

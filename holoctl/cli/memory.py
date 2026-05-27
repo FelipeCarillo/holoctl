@@ -175,8 +175,8 @@ def memory_seed():
     mem.ensure_gitignore()
     if created:
         console.print(
-            f"  [green]✓ seeded[/green] .holoctl/memory/MEMORY.md "
-            f"[dim](and .gitignore)[/dim]"
+            "  [green]✓ seeded[/green] .holoctl/memory/MEMORY.md "
+            "[dim](and .gitignore)[/dim]"
         )
     else:
         console.print("[dim]MEMORY.md already exists; nothing to do.[/dim]")

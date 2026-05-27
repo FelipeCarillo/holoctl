@@ -17,10 +17,8 @@ Idempotent: re-running produces no diff if templates haven't changed.
 """
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -119,7 +117,6 @@ def _install_claude(*, dry_run: bool, force: bool) -> bool:
 
 def _install_claude_skill(*, dry_run: bool, force: bool) -> bool:
     """Install the holoctl-router SKILL globally with its references/."""
-    import shutil as _shutil
     try:
         from importlib.resources import files as _ires_files
         skill_src_root = _ires_files("holoctl") / "templates" / "skills" / "holoctl-router"

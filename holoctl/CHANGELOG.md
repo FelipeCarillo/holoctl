@@ -2,19 +2,30 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.18.1] — 2026-05-27
+## [0.19.0] — 2026-05-27
 
-Correctness + drift quick-wins (Phase A of the post-0.18 audit). No schema
-or API changes; existing workspaces benefit on the next `hctl compile` /
-`hctl sync`.
+Post-0.18 audit: correctness + drift fixes (Phase A) plus structural
+hardening (Phase B). The headline is a set of **previously-broken Claude
+hooks** that now work; the hand-edit guard now protects every target; and
+the web dashboard moved to an optional extra so the core install stays lean.
+
+### Changed (packaging — action may be needed)
+
+- **The dashboard (`hctl serve`) moved to an optional `[dashboard]` extra.** `fastapi`, `uvicorn`, and `jinja2` are no longer core dependencies, so a CLI/MCP-only install (the common case) no longer pulls the web stack (fastapi → pydantic → starlette). Install the dashboard with `pip install 'holoctl[dashboard]'` (or `uv tool install 'holoctl[dashboard]'`); `hctl serve` prints this hint and exits non-zero if the extra is absent. The CLI, board, compile, and MCP server (`hctl serve --mcp`) are unaffected. A guard test locks the invariant that importing the CLI never pulls the web stack.
 
 ### Fixed
 
 - **Claude hooks were broken on every session.** The compiled `.claude/settings.json` invoked two flags that don't exist: the `Stop` hook ran `handoff --quiet --auto` and the `PreToolUse` hook ran `journal record … --deny-glob …`, both of which made typer exit with a usage error. Switched to the real generalist commands (`handoff --quiet`, `journal record write_attempt … --quiet`); direct writes to derived state were already blocked by `permissions.deny`, so `--deny-glob` was redundant on top of being invalid. New guard `test_hooks_emit.py::test_hook_commands_are_valid_cli_invocations` runs each baked hook command and fails on any usage error.
 - **Hooks + MCP config baked a machine-specific absolute path.** `_resolve_hctl_bin()` (in `compiler/hooks_emit.py` and `compiler/mcp_emit.py`) resolved `shutil.which("hctl")`, so a committed `.claude/settings.json` / `.vscode/mcp.json` / `.codex/config.toml` broke the moment it was used on another machine, user, or assistant. Now emits the portable `hctl` command (PATH-resolved); set `HOLOCTL_BIN` to override.
+- **Recompile clobbered hand-edited target files.** The header-aware hand-edit guard that protected `CLAUDE.md` now also protects `AGENTS.md`, `.github/copilot-instructions.md`, and `.codex/AGENTS.override.md`: a hand-edited copy (no holoctl header) is preserved instead of overwritten, and `--force` still overwrites. Previously only the Claude target honored this — the others wrote blindly, contradicting the "never overwrite hand-edited configs" rule holoctl itself ships.
 - **`/spec` and `/agent-new` went stale after upgrades.** The sync allow-list was duplicated across `cli/sync_.py`, `cli/init_.py`, and `cli/upgrade_.py`, and all three copies omitted `spec.md` and `agent-new.md` — so the two flagship 0.17 commands were seeded once at `init` but never refreshed. The list is now a single shared constant, `lib/templates.SYNC_TARGETS`, that includes them (guarded by `test_sync_targets.py`).
 - **`hctl coverage` pointed at the wrong Codex path.** The matrix mapped `instructions.md` → codex `.codex/AGENTS.md` and MCP → `~/.codex/config.toml (user-level)`, while the compiler emits `.codex/AGENTS.override.md` and a project-level `.codex/config.toml`. Corrected, and `test_target_consistency.py` now validates `_COVERAGE`'s concrete path *values* against the files compilers actually emit (it previously checked only the column set).
 - **MCP server replied to JSON-RPC notifications.** `server/mcp.py` returned an error response for any unknown method, including notifications (no `id`) — a protocol violation. Unknown notifications now return nothing, and a `ping` keep-alive handler was added.
+- **The board activity log appended without a lock.** `.holoctl/activity.jsonl` (board mutations, read by the dashboard) was a plain append while the journal used OS-level locking — a corruption risk under concurrent assistants. Both now share `lib.jsonl.append_jsonl_line` (fcntl/msvcrt). The two logs stay separate on purpose (different schema + consumer); only the lock is shared.
+
+### Added
+
+- **Linting in CI (`ruff`).** A focused pyflakes + bugbear rule set (`[tool.ruff]`, ignoring typer's required call-in-default pattern) runs in CI; existing dead-code and bad-f-string smells were cleaned up, and two redundant `except (..., Exception)` handlers were collapsed. (Type-checking with mypy is deferred to a focused follow-up: the dict-heavy codebase needs a dedicated typing pass to be useful without scattered ignores.)
 
 ### Changed
 

@@ -7,19 +7,19 @@ if sys.platform == "win32":
 
 import typer
 
-from .cli.init_ import app as _init_app, init_cmd
+from .cli.init_ import init_cmd
 from .cli.board import app as _board_app
-from .cli.compile_ import app as _compile_app, compile_cmd
-from .cli.sync_ import app as _sync_app, sync_cmd
-from .cli.upgrade_ import app as _upgrade_app, upgrade_cmd
-from .cli.doctor import app as _doctor_app, doctor_cmd
+from .cli.compile_ import compile_cmd
+from .cli.sync_ import sync_cmd
+from .cli.upgrade_ import upgrade_cmd
+from .cli.doctor import doctor_cmd
 from .cli.agent import app as _agent_app
 from .cli.memory import app as _memory_app
 from .cli.journal import app as _journal_app
 from .cli.repo import app as _repo_app
 from .cli.provider import app as _provider_app
-from .cli.serve import app as _serve_app, serve_cmd
-from .cli.overview import app as _overview_app, overview_cmd
+from .cli.serve import serve_cmd
+from .cli.overview import overview_cmd
 from .cli.setup import setup_cmd
 from .cli.setup_global import setup_global_cmd
 from .cli.boot import boot_cmd
