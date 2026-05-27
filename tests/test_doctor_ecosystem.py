@@ -12,7 +12,7 @@ from holoctl.__main__ import app
 runner = CliRunner()
 
 
-def _init_compile(tmp_path: Path) -> None:
+def _init_compile() -> None:
     """Init a fresh workspace with both targets, then compile."""
     res = runner.invoke(app, ["init", "--name", "EcoTest", "--prefix", "ET",
                               "--targets", "agents,claude"])
@@ -27,7 +27,7 @@ def _init_compile(tmp_path: Path) -> None:
 def test_mcp_health_ok_after_init(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """After init (which compiles), MCP section reports hctl resolvable + registered."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     # `hctl` is on PATH in the test environment (invoked via the runner), but
     # the real binary may not be.  Patch shutil.which to always return a fake
@@ -48,7 +48,7 @@ def test_mcp_health_ok_after_init(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_mcp_health_missing_registration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Removing mcpServers.holoctl from settings.json is reported as an issue."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")
@@ -69,7 +69,7 @@ def test_mcp_health_missing_registration(tmp_path: Path, monkeypatch: pytest.Mon
 def test_mcp_health_hctl_not_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """When shutil.which can't find hctl, doctor flags it as an issue."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: None)
@@ -87,7 +87,7 @@ def test_mcp_health_hctl_not_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_ecosystem_all_managed_after_init(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """After a clean init+compile, all agents/commands/skills are managed (no foreign)."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")
@@ -103,7 +103,7 @@ def test_ecosystem_all_managed_after_init(tmp_path: Path, monkeypatch: pytest.Mo
 def test_ecosystem_foreign_agent_listed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A .claude/agents/*.md not in the manifest is listed as foreign."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")
@@ -127,7 +127,7 @@ def test_ecosystem_foreign_agent_listed(tmp_path: Path, monkeypatch: pytest.Monk
 def test_ecosystem_foreign_command_listed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A .claude/commands/*.md not in the manifest (and not a bootstrap cmd) is foreign."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")
@@ -145,7 +145,7 @@ def test_ecosystem_foreign_command_listed(tmp_path: Path, monkeypatch: pytest.Mo
 def test_ecosystem_foreign_skill_listed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A .claude/skills/<name>/ dir whose SKILL.md is absent from the manifest is foreign."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")
@@ -163,7 +163,7 @@ def test_ecosystem_foreign_skill_listed(tmp_path: Path, monkeypatch: pytest.Monk
 def test_ecosystem_bootstrap_commands_not_foreign(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """The holoctl bootstrap commands (holoctl.md, hctl-upgrade.md) are NOT listed as foreign."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")
@@ -177,7 +177,7 @@ def test_ecosystem_bootstrap_commands_not_foreign(tmp_path: Path, monkeypatch: p
 def test_ecosystem_foreign_mcp_server_listed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A third-party MCP server in .mcp.json appears as third-party in the Ecosystem section."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")
@@ -197,7 +197,7 @@ def test_ecosystem_foreign_mcp_server_listed(tmp_path: Path, monkeypatch: pytest
 def test_ecosystem_foreign_items_no_issue_increment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Foreign ecosystem items (all kinds) must not increment the issue counter."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")
@@ -234,7 +234,7 @@ def test_ecosystem_foreign_items_no_issue_increment(tmp_path: Path, monkeypatch:
 def test_ecosystem_managed_agents_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Managed agents are counted and NOT listed as foreign."""
     monkeypatch.chdir(tmp_path)
-    _init_compile(tmp_path)
+    _init_compile()
 
     import holoctl.cli.doctor as doctor_mod
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda _name: "/usr/local/bin/hctl")

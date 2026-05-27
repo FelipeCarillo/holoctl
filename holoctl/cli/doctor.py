@@ -328,7 +328,7 @@ def _check_ecosystem(root: Path) -> None:
 
     _info(
         "Ecosystem",
-        f"MCP servers: {len(mcp_managed)} holoctl, {len(mcp_foreign)} third-party"
+        f"MCP servers: holoctl {'registered' if mcp_managed else 'not registered'}, {len(mcp_foreign)} third-party"
         + (f" ({', '.join(mcp_foreign)})" if mcp_foreign else ""),
     )
 
