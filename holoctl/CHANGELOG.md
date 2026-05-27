@@ -4,6 +4,21 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+### Added — dashboard: managed-vs-foreign badges on agents & commands pages
+
+- The per-project `/agents` and `/commands` dashboard pages now surface **foreign** items
+  (those in `.claude/` but NOT tracked by the manifest) alongside holoctl-managed ones.
+  Foreign items carry a subtle amber **"foreign"** badge with a tooltip pointing to
+  `hctl adopt`. Managed items get no badge (foreign should stand out, not managed).
+- Guard: foreign detection is suppressed when `.holoctl/.compiled.json` does not exist
+  (project never compiled with manifest-era holoctl) so no false positives occur.
+- New helpers: `read_foreign_agents(project_path)` and `read_foreign_commands(project_path)`
+  in `holoctl/server/projects.py` — consume `scan_unmanaged` + `manifest.manifest_path`.
+- `agents_context` / `commands_context` in `views/meta.py` propagate a `managed` bool
+  (defaulting `True`) so the global `/agents` registry and any future callers stay safe.
+- New `.foreign-badge` CSS class in `agents.css` using the `--yellow`/`--yellow-subtle`
+  editorial token (warm amber, on-brand, not alarming).
+
 ### Added — `hctl adopt`: bring foreign config under holoctl management
 
 - **`hctl adopt`** brings externally-authored Claude config (agents, skills,

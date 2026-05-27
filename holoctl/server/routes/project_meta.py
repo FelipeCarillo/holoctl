@@ -26,7 +26,7 @@ def _project_breadcrumbs(project: dict, label: str) -> list[dict]:
 
 @router.get("/project/{alias}/agents", response_class=HTMLResponse)
 def project_agents(alias: str):
-    from ..projects import get_project, read_agents
+    from ..projects import get_project, read_agents, read_foreign_agents
 
     project = get_project(alias)
     if not project:
@@ -35,7 +35,7 @@ def project_agents(alias: str):
                    content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
-    agents = read_agents(Path(project["path"]))
+    agents = read_agents(Path(project["path"])) + read_foreign_agents(Path(project["path"]))
     ctx = agents_context(agents, alias)
     return render(
         "project/agents.html",
@@ -51,7 +51,7 @@ def project_agents(alias: str):
 
 @router.get("/project/{alias}/commands", response_class=HTMLResponse)
 def project_commands(alias: str):
-    from ..projects import get_project, read_commands
+    from ..projects import get_project, read_commands, read_foreign_commands
 
     project = get_project(alias)
     if not project:
@@ -60,7 +60,7 @@ def project_commands(alias: str):
                    content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
-    commands = read_commands(Path(project["path"]))
+    commands = read_commands(Path(project["path"])) + read_foreign_commands(Path(project["path"]))
     ctx = commands_context(commands, alias)
     return render(
         "project/commands.html",

@@ -123,3 +123,19 @@
   letter-spacing: -0.2px;
 }
 
+/* ── Foreign-item badge ── */
+/* Shown on agents/commands NOT tracked by the holoctl manifest (.compiled.json).
+   Warm amber tone (reuses --yellow / --yellow-subtle tokens) — on-brand, subtle,
+   distinct from the managed-item badges without being alarming. */
+.foreign-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--yellow-subtle);
+  color: var(--yellow);
+  font-family: var(--font-mono);
+  letter-spacing: -0.1px;
+  cursor: help;
+}
+

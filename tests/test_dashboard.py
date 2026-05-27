@@ -1464,3 +1464,137 @@ class TestDocDetailRoutes:
         r = client.get(f"/project/{alias}/agents")
         assert r.status_code == 200
         assert "notools" in r.text
+
+
+# ── Foreign-badge surface: managed vs foreign items ───────────────────────────
+
+
+def _write_manifest(workspace: Path, managed_files: list[str]) -> None:
+    """Write a minimal .holoctl/.compiled.json that marks files as managed."""
+    from holoctl.lib.compiler.manifest import save
+    files = {rel: {"sha256": "abc123", "source": "test", "target": "claude"} for rel in managed_files}
+    save(workspace, files, holoctl_version="0.0.0-test")
+
+
+class TestForeignBadge:
+    """Task-25: foreign agents/commands appear with a 'foreign' badge; managed
+    items get no badge; guard (no manifest) emits nothing foreign."""
+
+    # ── agents ──────────────────────────────────────────────────────────────
+
+    def test_foreign_agent_shows_badge(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        # Write a manifest that records only the managed .holoctl/ agents —
+        # i.e. the .claude/agents/handmade.md is NOT in the manifest.
+        _write_manifest(workspace, [
+            ".claude/agents/developer.md",
+            ".claude/agents/reviewer.md",
+            ".claude/agents/architect.md",
+            ".claude/agents/researcher.md",
+        ])
+        # Drop a foreign agent into .claude/agents/
+        claude_agents = workspace / ".claude" / "agents"
+        claude_agents.mkdir(parents=True, exist_ok=True)
+        (claude_agents / "handmade.md").write_text(
+            "---\nname: handmade\ndescription: user-authored agent\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        r = client.get(f"/project/{alias}/agents")
+        assert r.status_code == 200
+        assert "handmade" in r.text
+        # Foreign badge present for the foreign agent
+        assert 'class="foreign-badge"' in r.text
+
+    def test_managed_agent_has_no_foreign_badge(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        # Manifest records all managed agents — none of .holoctl/ agents are foreign.
+        _write_manifest(workspace, [
+            ".claude/agents/developer.md",
+        ])
+        r = client.get(f"/project/{alias}/agents")
+        assert r.status_code == 200
+        # developer is a managed .holoctl/ agent — no foreign badge on it.
+        # (No .claude/agents/ foreign file was dropped, so no badge at all.)
+        assert "developer" in r.text
+        assert 'class="foreign-badge"' not in r.text
+
+    def test_no_manifest_no_foreign_badge(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        # No manifest → guard returns [] for foreign detection.
+        # Drop a .claude/agents/ file — it must NOT appear as foreign.
+        claude_agents = workspace / ".claude" / "agents"
+        claude_agents.mkdir(parents=True, exist_ok=True)
+        (claude_agents / "orphan.md").write_text(
+            "---\nname: orphan\ndescription: dropped without manifest\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        r = client.get(f"/project/{alias}/agents")
+        assert r.status_code == 200
+        # Managed source agents still listed.
+        assert "developer" in r.text
+        # No foreign badge — guard suppressed it.
+        assert 'class="foreign-badge"' not in r.text
+
+    # ── commands ─────────────────────────────────────────────────────────────
+
+    def test_foreign_command_shows_badge(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        # Write a manifest that does NOT include the handmade-cmd.
+        _write_manifest(workspace, [".claude/agents/developer.md"])
+        # Drop a foreign command
+        claude_cmds = workspace / ".claude" / "commands"
+        claude_cmds.mkdir(parents=True, exist_ok=True)
+        (claude_cmds / "handmade-cmd.md").write_text(
+            "---\nname: handmade-cmd\ndescription: user command\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        # Also need a managed command so we can compare badges
+        commands_dir = workspace / ".holoctl" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "status.md").write_text(
+            "---\nname: status\ndescription: Show status\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        r = client.get(f"/project/{alias}/commands")
+        assert r.status_code == 200
+        assert "handmade-cmd" in r.text
+        assert 'class="foreign-badge"' in r.text
+
+    def test_managed_command_has_no_foreign_badge(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        # Manifest records the managed command — it is NOT foreign.
+        commands_dir = workspace / ".holoctl" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "status.md").write_text(
+            "---\nname: status\ndescription: Show status\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        _write_manifest(workspace, [".claude/commands/status.md"])
+        r = client.get(f"/project/{alias}/commands")
+        assert r.status_code == 200
+        assert "status" in r.text
+        assert 'class="foreign-badge"' not in r.text
+
+    def test_no_manifest_no_foreign_command_badge(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        # No manifest → guard suppresses foreign commands entirely.
+        claude_cmds = workspace / ".claude" / "commands"
+        claude_cmds.mkdir(parents=True, exist_ok=True)
+        (claude_cmds / "orphan-cmd.md").write_text(
+            "---\nname: orphan-cmd\ndescription: no manifest\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        r = client.get(f"/project/{alias}/commands")
+        assert r.status_code == 200
+        assert 'class="foreign-badge"' not in r.text
+
+    # ── CSS presence ──────────────────────────────────────────────────────────
+
+    def test_foreign_badge_class_in_css(self, dashboard_css: str):
+        assert ".foreign-badge" in dashboard_css

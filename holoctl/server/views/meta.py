@@ -19,6 +19,7 @@ def agents_context(agents: list[dict], alias: str = "") -> dict:
             "desc": a.get("description", ""),
             "tools": list(tools),
             "link": link,
+            "managed": bool(a.get("managed", True)),
         })
     return {"cards": cards, "is_empty": not agents}
 
@@ -31,6 +32,7 @@ def commands_context(commands: list[dict], alias: str) -> dict:
             "name": name,
             "desc": c.get("description", ""),
             "link": f"/project/{alias}/commands/{c.get('file','').replace('.md','')}",
+            "managed": bool(c.get("managed", True)),
         })
     return {"items": items, "is_empty": not commands}
 
