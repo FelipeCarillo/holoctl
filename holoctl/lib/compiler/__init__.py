@@ -3,19 +3,18 @@ from pathlib import Path
 
 from .agents import compile_agents
 from .claude import compile_claude
-from .codex import compile_codex
-from .copilot import compile_copilot
 
 _COMPILERS = {
-    # Cross-tool universal: AGENTS.md respected by Aider / Zed / Junie /
-    # Jules / Factory / goose and other agents.md-aware assistants. Codex
-    # also reads AGENTS.md but has additional first-class surfaces
-    # (.codex/config.toml for MCP, .codex/AGENTS.override.md) so it gets a
-    # dedicated target on top of the cross-tool one.
+    # holoctl maintains a deep, native compiler only for Claude Code. Every
+    # other assistant is served by the `holoctl-foreign-bootstrap` skill, which
+    # teaches it to read `.holoctl/` and generate its own config dir.
+    #
+    # `agents` is NOT a second native compiler — it emits a minimal AGENTS.md
+    # discovery shim (the cross-tool convention) that points any non-Claude
+    # assistant at that bootstrap skill, plus the bootstrap body itself at
+    # `.holoctl/foreign-bootstrap.md`.
     "agents": compile_agents,
     "claude": compile_claude,
-    "copilot": compile_copilot,
-    "codex": compile_codex,
 }
 
 

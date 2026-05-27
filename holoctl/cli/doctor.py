@@ -14,8 +14,6 @@ app = typer.Typer()
 
 _TARGET_OUTPUTS = {
     "claude": ["CLAUDE.md", ".claude/commands"],
-    "copilot": [".github/copilot-instructions.md", ".github/prompts"],
-    "codex": [".codex/AGENTS.override.md", ".codex/config.toml"],
     "agents": ["AGENTS.md"],
 }
 
@@ -27,13 +25,10 @@ def _semver_lt(a: str, b: str) -> bool:
     return t(a) < t(b)
 
 
-# JSON/TOML configs holoctl *merges* into (they legitimately carry user
-# content), so they can't be byte-compared for compile drift.
+# JSON configs holoctl *merges* into (they legitimately carry user content),
+# so they can't be byte-compared for compile drift.
 _MERGE_OUTPUTS = frozenset({
     ".claude/settings.json",
-    ".vscode/mcp.json",
-    ".codex/config.toml",
-    ".copilot/config.json",
 })
 
 # Top-level files the `agents` compiler reads to build AGENTS.md's Build/Test
@@ -50,7 +45,7 @@ def doctor_cmd(
     global_check: bool = typer.Option(
         False,
         "--global",
-        help="Check global router installation drift across tools (Claude/Copilot).",
+        help="Check global router installation drift (Claude Code).",
     ),
     compile_drift: bool = typer.Option(
         False,
@@ -66,11 +61,11 @@ def doctor_cmd(
       - `holoctl: outdated`         → workspace below installed hctl version
       - `holoctl: ok`               → workspace healthy
 
-    Slash command routers (Claude `/holoctl`, Copilot prompt) parse this line
-    to choose init / upgrade / operate flow.
+    The Claude `/holoctl` slash router parses this line to choose
+    init / upgrade / operate flow.
 
-    Pass `--global` to check ~/.claude and ~/.copilot install drift instead
-    of project-level health. Pass `--compile-drift` to detect compiled outputs
+    Pass `--global` to check ~/.claude router install drift instead of
+    project-level health. Pass `--compile-drift` to detect compiled outputs
     that are out of date with their `.holoctl/` source.
     """
     if global_check:
@@ -284,7 +279,7 @@ def _doctor_compile_drift() -> None:
 
 
 def _doctor_global() -> None:
-    """Check that global routers are installed and current across all tools."""
+    """Check that the Claude Code global router is installed and current."""
     print("holoctl: global-check")
     console.print("\n  [bold]hctl doctor --global[/bold]\n")
 
@@ -304,24 +299,11 @@ def _doctor_global() -> None:
     else:
         _check("Claude", f"router up-to-date ({claude_path})", True)
 
-    # Copilot
-    copilot_path = Path.home() / ".copilot" / "AGENTS.md"
-    if not copilot_path.exists():
-        _check("Copilot", "no ~/.copilot/AGENTS.md — run `hctl setup-global --target copilot`", False)
-        issues += 1
-    else:
-        existing = copilot_path.read_text(encoding="utf-8")
-        if "<!-- holoctl:start -->" not in existing or "<!-- holoctl:end -->" not in existing:
-            _check("Copilot", "AGENTS.md missing holoctl block — run `hctl setup-global --target copilot`", False)
-            issues += 1
-        else:
-            _check("Copilot", f"holoctl block present ({copilot_path})", True)
-
     console.print("")
     if issues == 0:
-        console.print("[green]  All global routers up-to-date.[/green]\n")
+        console.print("[green]  Global router up-to-date.[/green]\n")
     else:
         console.print(
             f"[yellow]  {issues} issue(s). Run "
-            f"[bold]hctl setup-global --target all[/bold] to fix.[/yellow]\n"
+            f"[bold]hctl setup-global --target claude[/bold] to fix.[/yellow]\n"
         )

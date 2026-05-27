@@ -2,6 +2,41 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.20.0] — 2026-05-28
+
+Claude-only refocus. holoctl now maintains a deep, native compiler **only** for
+Claude Code. The bespoke `copilot` and `codex` compilers are gone; every other
+assistant is served by a single portable **`holoctl-foreign-bootstrap` skill**
+that teaches it to read `.holoctl/` and generate its own native config dir. The
+`agents` target no longer mirrors content — it emits a **minimal AGENTS.md
+discovery shim** that points non-Claude assistants at that skill. The translation
+knowledge that used to live in N maintained Python compilers now lives in one
+skill the foreign assistant executes at runtime.
+
+Workspaces still listing `copilot` / `codex` in `config.json:targets[]` keep
+compiling cleanly — the silent migration filter strips them before the dispatcher
+sees them, exactly like the 0.18.0 long-tail removal.
+
+### Removed — `copilot` + `codex` compile targets (breaking)
+
+- **`holoctl/lib/compiler/copilot.py`** deleted — `.github/copilot-instructions.md`, `.github/prompts/<name>.prompt.md`, `.github/instructions/holoctl-memory-*.instructions.md`, `.copilot/config.json`, and `.vscode/mcp.json` are no longer emitted.
+- **`holoctl/lib/compiler/codex.py`** deleted — `.codex/AGENTS.override.md` and `.codex/config.toml` are no longer emitted.
+- **Shared emitters pruned**: `mcp_emit.emit_copilot` / `emit_codex` (+ the TOML merge helpers), `memory_emit.emit_copilot`, and the already-dead `hooks_emit.emit_copilot` removed.
+- **Bootstrap command templates** `holoctl-copilot.prompt.md` and `hctl-upgrade-copilot.prompt.md` deleted from `holoctl/templates/commands/`.
+- **`hctl setup-global`** ships an installer only for Claude now — the `copilot` target (the `~/.copilot/AGENTS.md` block) is gone; `--target all` resolves to just `claude`.
+- **Migration is silent**: `lib/config.py:load_config` filters `copilot` / `codex` (alongside `cursor` / `windsurf` / `devin` / `generic`) out of any workspace's `targets` array on load. Already-materialized `.github/`, `.codex/`, `.vscode/`, `.copilot/` directories from earlier compiles are **not** auto-deleted — remove them by hand if you want.
+
+### Changed — `agents` target is now a discovery shim
+
+- **`AGENTS.md` is minimal.** It no longer mirrors objective/architecture/conventions/build-commands. It states the project is holoctl-managed, points Claude at `.claude/`, and points every other assistant at `.holoctl/foreign-bootstrap.md`. The hand-edit guard + `--compile-drift` still apply.
+- **`hctl coverage` / `hctl doctor`** matrices and checks collapsed to the two live targets (`agents`, `claude`); `_MERGE_OUTPUTS` and `doctor --global` no longer reference the dropped per-assistant configs.
+- **Default `config.targets` stays `["agents", "claude"]`** — `agents` first so a foreign assistant finds the pointer immediately.
+- **Positioning**: README / `ARCHITECTURE.md` / `CONTRIBUTING.md` reframed from "multi-assistant compiler" to "Claude-first, with a portable bootstrap for the rest." Adding a new native compiler is explicitly no longer the extension path — the bootstrap skill is.
+
+### Added — portable `holoctl-foreign-bootstrap` skill
+
+- **`holoctl/templates/skills/holoctl-foreign-bootstrap/`** (SKILL.md + `references/format-hints.md`). Compiled into `.claude/skills/` by the existing built-in-skill glob, and its body is also emitted (frontmatter stripped, hints inlined) at **`.holoctl/foreign-bootstrap.md`** — a tool-neutral path any non-Claude assistant can read. It reads `.holoctl/` as the canonical source and carries per-tool format hints (Copilot / Codex / Cursor / generic) so the foreign assistant materializes its own config dir.
+
 ## [0.19.0] — 2026-05-27
 
 Post-0.18 audit: correctness + drift fixes (Phase A) plus structural

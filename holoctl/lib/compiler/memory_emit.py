@@ -13,7 +13,6 @@ explicit setting they tweak themselves.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 from ..memory import Memory, Topic
 
@@ -107,61 +106,11 @@ def emit_claude(project_root: Path, dry_run: bool = False) -> list[str]:
     return written
 
 
-def emit_copilot(project_root: Path, dry_run: bool = False) -> list[str]:
-    """Emit memory as Copilot instruction files.
-
-    - MEMORY.md (always-on) → appended to .github/copilot-instructions.md as
-      a section (or written if not present — main compiler handles base file).
-    - Glob/lazy topics → .github/instructions/holoctl-memory-<topic>.instructions.md
-      with applyTo:.
-    """
-    mem = Memory(project_root)
-    if not mem.dir.exists():
-        return []
-    written: list[str] = []
-    instructions_dir = project_root / ".github" / "instructions"
-
-    for topic in mem.list_topics():
-        slug = _slug(topic.name)
-        path = instructions_dir / f"holoctl-memory-{slug}.instructions.md"
-        if topic.scope == "glob":
-            apply_to = ", ".join(topic.globs)
-        elif topic.scope == "always_on":
-            apply_to = "**"
-        else:
-            apply_to = "**"
-        front_lines = [
-            "---",
-            f'applyTo: "{apply_to}"',
-        ]
-        if topic.description:
-            front_lines.append(
-                f'description: "{_escape_quotes(topic.description)}"'
-            )
-        front_lines.append("---")
-        body = (
-            "\n".join(front_lines)
-            + "\n\n"
-            + _HEADER
-            + _topic_body_for_emission(topic)
-        )
-        if not dry_run:
-            instructions_dir.mkdir(parents=True, exist_ok=True)
-            path.write_text(body, encoding="utf-8")
-        written.append(str(path.relative_to(project_root)).replace("\\", "/"))
-
-    return written
-
-
 # ---- helpers --------------------------------------------------------------
 
 
 def _escape_quotes(s: str) -> str:
     return s.replace('"', '\\"')
-
-
-def _yaml_list(items: Iterable[str]) -> str:
-    return "[" + ", ".join(f'"{i}"' for i in items) + "]"
 
 
 def claude_memory_reference_block() -> str:

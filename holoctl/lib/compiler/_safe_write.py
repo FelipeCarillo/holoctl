@@ -3,8 +3,8 @@
 holoctl prefixes every file it generates with ``HEADER``. On recompile we use
 that marker to tell *our* files (safe to overwrite) from files a human has
 edited (must be preserved). Without this, recompiling would silently clobber a
-user's hand-edits to ``AGENTS.md`` / ``copilot-instructions.md`` /
-``.codex/AGENTS.override.md`` — the exact thing the generated ``AGENTS.md``
+user's hand-edits to ``CLAUDE.md`` / ``AGENTS.md`` /
+``.holoctl/foreign-bootstrap.md`` — the exact thing the generated ``AGENTS.md``
 tells assistants never to do.
 
 Only apply this to outputs that carry ``HEADER``. Bootstrap commands copied

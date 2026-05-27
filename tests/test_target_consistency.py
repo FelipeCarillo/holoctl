@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -200,45 +199,6 @@ def _diff_snapshots(a: dict, b: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Codex-specific: emitted config.toml must be valid TOML and parseable
-# ---------------------------------------------------------------------------
-
-
-def test_codex_config_toml_is_valid_toml(tmp_path: Path):
-    """The TOML emit_codex writes must parse cleanly via tomllib."""
-    config = _seed_minimal_workspace(tmp_path)
-    compile_project(tmp_path, config, "codex", dry_run=False)
-    cfg = tmp_path / ".codex" / "config.toml"
-    parsed = tomllib.loads(cfg.read_text(encoding="utf-8"))
-    assert "mcp_servers" in parsed
-    assert "holoctl" in parsed["mcp_servers"]
-    entry = parsed["mcp_servers"]["holoctl"]
-    assert isinstance(entry.get("command"), str) and entry["command"]
-    assert entry.get("args") == ["serve", "--mcp"]
-
-
-def test_codex_config_toml_merge_preserves_user_tables(tmp_path: Path):
-    """User's other [mcp_servers.X] and [section] entries must survive a recompile."""
-    config = _seed_minimal_workspace(tmp_path)
-    cfg_dir = tmp_path / ".codex"
-    cfg_dir.mkdir(parents=True)
-    (cfg_dir / "config.toml").write_text(
-        '[mcp_servers.filesystem]\n'
-        'command = "npx"\n'
-        'args = ["-y", "@modelcontextprotocol/server-filesystem"]\n'
-        '\n'
-        '[telemetry]\n'
-        'enabled = false\n',
-        encoding="utf-8",
-    )
-    compile_project(tmp_path, config, "codex", dry_run=False)
-    parsed = tomllib.loads((cfg_dir / "config.toml").read_text(encoding="utf-8"))
-    assert parsed["mcp_servers"]["filesystem"]["command"] == "npx"
-    assert parsed["telemetry"]["enabled"] is False
-    assert parsed["mcp_servers"]["holoctl"]["args"] == ["serve", "--mcp"]
-
-
-# ---------------------------------------------------------------------------
 # Dispatcher: removed targets reject with the help text the user needs
 # ---------------------------------------------------------------------------
 
@@ -313,12 +273,11 @@ def test_init_help_lists_only_active_targets():
 
 
 def test_setup_global_help_omits_retired_tools():
-    """setup-global only ships installers for claude + copilot. Earlier tools
-    (cursor / windsurf / devin) must not appear in --help anymore."""
+    """setup-global ships an installer only for claude. Retired tools
+    (copilot / cursor / windsurf / devin) must not appear in --help anymore."""
     out = _capture_help("setup-global")
     assert "claude" in out
-    assert "copilot" in out
-    for r in ("devin", "cursor", "windsurf"):
+    for r in ("copilot", "devin", "cursor", "windsurf"):
         assert r not in out, f"`setup-global --help` still mentions '{r}':\n{out}"
 
 
@@ -342,4 +301,4 @@ def test_load_config_filters_removed_targets(tmp_path: Path):
     (holoctl / "config.json").write_text(json.dumps(legacy), encoding="utf-8")
 
     loaded = load_config(tmp_path)
-    assert set(loaded["targets"]) == {"agents", "claude", "copilot", "codex"}
+    assert set(loaded["targets"]) == {"agents", "claude"}

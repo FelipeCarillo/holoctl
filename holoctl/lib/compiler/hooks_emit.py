@@ -89,9 +89,8 @@ def _merge_lists_dedup(existing: list[Any], incoming: list[Any]) -> list[Any]:
 
 
 def _deep_merge_hooks(target: dict, incoming: dict) -> dict:
-    """Merge `incoming` into `target` non-destructively for dict-of-list-of-dict
-    shapes used by Claude (.claude/settings.json:hooks) and Copilot
-    (.copilot/config.json)."""
+    """Merge `incoming` into `target` non-destructively for the
+    dict-of-list-of-dict shape used by Claude (.claude/settings.json:hooks)."""
     out = dict(target)
     for key, val in incoming.items():
         if key == "hooks" and isinstance(val, dict):
@@ -133,23 +132,5 @@ def emit_claude(project_root: Path, dry_run: bool = False) -> list[str]:
     if not dry_run:
         _write_json(path, merged)
     return [".claude/settings.json"]
-
-
-def emit_copilot(project_root: Path, dry_run: bool = False) -> list[str]:
-    """Merge holoctl's hooks into `.copilot/config.json` (deny/allow lists).
-
-    Copilot CLI's customization is flag-driven (`--allow-tool`, `--deny-tool`)
-    but a `.copilot/config.json` convention is emerging for persisted policy.
-    Idempotent: skips if no template found.
-    """
-    incoming = _load_template("copilot_config.json")
-    if incoming is None:
-        return []
-    path = project_root / ".copilot" / "config.json"
-    existing = _read_json(path)
-    merged = _deep_merge_hooks(existing, incoming)
-    if not dry_run:
-        _write_json(path, merged)
-    return [".copilot/config.json"]
 
 

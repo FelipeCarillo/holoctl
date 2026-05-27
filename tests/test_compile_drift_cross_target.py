@@ -1,11 +1,9 @@
-"""F4 — the hand-edit guard now protects every markdown target, not just Claude.
+"""F4 — the hand-edit guard protects the `agents` markdown output, not just Claude.
 
 Before this, only `compile_claude` checked for the holoctl header before
-overwriting. `agents` / `copilot` / `codex` wrote blindly, so a user's
-hand-edited `AGENTS.md` / `.github/copilot-instructions.md` /
-`.codex/AGENTS.override.md` was silently clobbered on recompile — directly
-contradicting the "never overwrite hand-edited AI configs" rule holoctl itself
-ships in the generated `AGENTS.md`.
+overwriting. `agents` wrote blindly, so a user's hand-edited `AGENTS.md` was
+silently clobbered on recompile — directly contradicting the "never overwrite
+hand-edited AI configs" rule holoctl itself ships in the generated `AGENTS.md`.
 """
 from __future__ import annotations
 
@@ -15,8 +13,6 @@ from pathlib import Path
 import pytest
 
 from holoctl.lib.compiler.agents import compile_agents
-from holoctl.lib.compiler.codex import compile_codex
-from holoctl.lib.compiler.copilot import compile_copilot
 from holoctl.lib.config import get_defaults
 
 
@@ -47,8 +43,6 @@ def _config() -> dict:
 # (compiler, output rel path)
 _CASES = [
     (compile_agents, "AGENTS.md"),
-    (compile_copilot, ".github/copilot-instructions.md"),
-    (compile_codex, ".codex/AGENTS.override.md"),
 ]
 
 

@@ -1,6 +1,6 @@
 # holoctl
 
-> **A living project operating system for AI coding assistants.** One source of truth in `.holoctl/`, compiled to whatever Claude Code, GitHub Copilot, OpenAI Codex, or any AGENTS.md-aware tool (Aider, Zed, Junie, Jules, Factory, goose…) reads. Durable cross-assistant memory, autonomous curator, multi-target compile, MCP server, web dashboard — all version-controlled next to your code.
+> **A living project operating system for Claude Code.** One source of truth in `.holoctl/`, compiled into Claude Code's native config (`CLAUDE.md`, `.claude/`). Every other assistant (Copilot, Codex, Cursor, Aider, Zed, Junie, …) self-configures from the same source via a portable **bootstrap skill** — holoctl emits a minimal `AGENTS.md` that points it there. Durable memory, autonomous curator, MCP server, web dashboard — all version-controlled next to your code.
 
 <p align="center">
   🇺🇸 <a href="README.md">English</a> |
@@ -25,9 +25,10 @@ uv tool install holoctl                      # recommended
 # or:  pipx install holoctl
 # or:  pip install holoctl                   # ⚠️ requires an active venv (see below)
 
-# 2. Plant the global router (once per machine, per assistant)
-hctl setup-global --target all               # Claude + Copilot
-# (Codex picks up the per-project AGENTS.md + .codex/config.toml emitted by `hctl init`.)
+# 2. Plant the global router (once per machine)
+hctl setup-global --target claude            # Claude Code
+# (Other assistants pick up the per-project AGENTS.md shim emitted by `hctl init`,
+#  which points them at the holoctl-foreign-bootstrap skill.)
 
 # 3. Initialize a project
 cd ~/my-project && hctl init
@@ -45,13 +46,13 @@ Open Claude Code (or any supported assistant) in `~/my-project` and type `/holoc
 4. [Per-machine global setup](#per-machine-global-setup)
 5. [Per-project initialization](#per-project-initialization)
 6. [The `/holoctl` slash command — what it actually does](#the-holoctl-slash-command)
-7. [Cross-tool compilation](#cross-tool-compilation)
+7. [Compilation](#compilation)
 8. [MCP vs CLI — design choice](#mcp-vs-cli)
 9. [Daily workflows](#daily-workflows)
 10. [Command reference](#command-reference)
 11. [Configuration](#configuration)
 12. [Lifecycle hooks](#lifecycle-hooks)
-13. [Per-assistant guide](#per-assistant-guide) — Claude / Copilot / Codex
+13. [Per-assistant guide](#per-assistant-guide) — Claude / everything else (foreign-bootstrap)
 14. [Coverage and doctor](#coverage-and-doctor)
 15. [Privacy & coexistence](#privacy--coexistence)
 16. [Troubleshooting](#troubleshooting)
@@ -64,13 +65,15 @@ Open Claude Code (or any supported assistant) in `~/my-project` and type `/holoc
 
 ## Why holoctl
 
-Every AI coding assistant defines its own native primitives — Claude Code skills, Copilot prompts, Codex `.codex/config.toml`, AGENTS.md for everything else. Maintaining the same project context across all of them is **manual, error-prone, and never up-to-date**.
+Claude Code's native primitives — skills, subagents, hooks, settings, lazy-loaded memory — are powerful but scattered across `.claude/` and easy to let rot between sessions. holoctl gives them **one source of truth** in `.holoctl/`, version-controlled next to your code, and compiles it into the right `.claude/` shapes on demand.
 
-`holoctl` is the **abstraction that's missing from the ecosystem**: you write project context **once** in `.holoctl/`, the compiler materializes the right native files for every tool. Plus a CLI, a Kanban board, a memory layer that survives across sessions, an event journal, an autonomous curator that proposes structural improvements, an MCP server, and a web dashboard — all built around the same source of truth.
+You write project context **once** in `.holoctl/`; `hctl compile` materializes Claude Code's native files. Plus a CLI, a Kanban board, a memory layer that survives across sessions, an event journal, an autonomous curator that proposes structural improvements, an MCP server, and a web dashboard — all built around the same source of truth.
+
+**Not on Claude Code?** holoctl maintains a deep compiler only for Claude. Every other assistant self-configures from the *same* `.holoctl/` source via the portable **`holoctl-foreign-bootstrap` skill**: holoctl emits a minimal `AGENTS.md` (the cross-tool convention) pointing the assistant at `.holoctl/foreign-bootstrap.md`, which teaches it to read `.holoctl/` and generate its own native config dir. The per-tool translation lives in one skill the assistant runs at runtime — not in N Python compilers holoctl has to keep in lockstep.
 
 **It's "living" because it wakes up between sessions:**
 
-- **Durable memory** at `.holoctl/memory/` — the same notes appear in Claude (as skills), Copilot (as `.github/instructions/`), and Codex (via AGENTS.md) in each one's native shape.
+- **Durable memory** at `.holoctl/memory/` — compiled into Claude as skills (always-on index + lazy/glob topics); foreign assistants read the same tree directly via the bootstrap skill.
 - **Event journal** captures every tool use, edit, and session boundary via hooks plumbed automatically.
 - **Autonomous curator** watches the journal and proposes new personas, path-scoped rules, or topic archives as `meta:curate` tickets on the board. Approve a suggestion by moving the ticket to `done` — it auto-executes.
 - **Token-economy boot** prints ≤1KB of session-zero context (top pendings, recent decisions, available topics) so the assistant doesn't burn tokens loading the whole `CLAUDE.md`.
@@ -84,7 +87,7 @@ Every AI coding assistant defines its own native primitives — Claude Code skil
 your-project/
 ├── .holoctl/                       ← single source of truth, committed to git
 │   ├── config.json                 ← project name, prefix, board statuses, targets
-│   ├── instructions.md             ← compiled to CLAUDE.md / AGENTS.md / .codex/AGENTS.override.md / .github/copilot-instructions.md
+│   ├── instructions.md             ← compiled to CLAUDE.md (Claude); read directly by foreign assistants
 │   │
 │   ├── board/                      ← Kanban + tickets
 │   │   ├── WORKFLOW.md             ← state machine doc (template-managed)
@@ -123,14 +126,14 @@ your-project/
 │
 ├── …your code
 │
-└── (compiled outputs — usually .gitignored)
-    ├── AGENTS.md                   ← cross-tool universal (Codex / Aider / Zed / Junie / …)
-    ├── CLAUDE.md                   ← Claude Code
-    ├── .claude/                    ← Claude Code agents/commands/settings.json
-    ├── .github/                    ← Copilot instructions + prompts + memory instructions
-    ├── .vscode/mcp.json            ← MCP server config for Copilot-in-VSCode
-    └── .codex/                     ← OpenAI Codex: AGENTS.override.md + config.toml (mcp_servers)
+└── (compiled outputs)
+    ├── CLAUDE.md                   ← Claude Code instructions (usually .gitignored)
+    ├── .claude/                    ← Claude Code agents / commands / skills / settings.json
+    ├── AGENTS.md                   ← minimal discovery shim → points non-Claude tools at the bootstrap
+    └── .holoctl/foreign-bootstrap.md ← bootstrap procedure for non-Claude assistants
 ```
+
+> **Non-Claude assistants** generate their own native config (`.github/`, `.codex/`, `.cursor/`, …) by following `.holoctl/foreign-bootstrap.md` — holoctl does not emit those directories itself.
 
 > **Optional folders** (`hooks/`, `rules/`, `skills/`, `output_styles/`, `ignore`) are **not created by `hctl init`**. They're opt-in surfaces you create when you need them. Compilers only emit what exists in the source — empty input produces empty output (anti-overengineering).
 
@@ -209,7 +212,7 @@ uv tool install "holoctl[ml]"        # ~250MB — adds ONNX paraphrase detection
 ```bash
 hctl --version              # 0.17.0+
 hctl --help                 # full command list
-hctl doctor --global        # checks ~/.claude and ~/.copilot install (will report 'missing' until step 2)
+hctl doctor --global        # checks ~/.claude router install (will report 'missing' until step 2)
 ```
 
 ---
@@ -219,10 +222,8 @@ hctl doctor --global        # checks ~/.claude and ~/.copilot install (will repo
 `hctl setup-global` plants the **`/holoctl` router** in each AI tool's user-level config, so the slash command works in any folder — even before `hctl init`.
 
 ```bash
-hctl setup-global --target all              # Claude + Copilot
-hctl setup-global --target claude           # only Claude Code
-hctl setup-global --target copilot          # only Copilot CLI
-hctl setup-global --target all --dry-run    # preview without writing
+hctl setup-global --target claude           # Claude Code (the only supported target)
+hctl setup-global --target claude --dry-run # preview without writing
 ```
 
 What gets installed:
@@ -230,9 +231,8 @@ What gets installed:
 | Tool        | File                                                | Format                                | Idempotent block |
 |-------------|-----------------------------------------------------|---------------------------------------|------------------|
 | Claude Code | `~/.claude/commands/holoctl.md` + `~/.claude/skills/holoctl-router/` | Slash command + skill with references | replaces files   |
-| Copilot     | `~/.copilot/AGENTS.md`                              | Markdown section appended             | `<!-- holoctl:start … end -->` markers |
 
-Codex and other AGENTS.md-aware assistants (Aider, Zed, Junie, Jules, Factory, goose) pick up the per-project `AGENTS.md` emitted by `hctl compile --target agents` — they have no documented user-level surface for slash routers, so `setup-global` is a no-op for them.
+Every other assistant (Copilot, Codex, Aider, Zed, Junie, Jules, Factory, goose, …) picks up the per-project `AGENTS.md` discovery shim emitted by `hctl compile --target agents`, which points it at the `holoctl-foreign-bootstrap` skill. None of them expose a documented user-level surface for slash routers, so `setup-global` only targets Claude.
 
 **Detecting drift:**
 
@@ -245,9 +245,8 @@ Output:
 ```
 holoctl: global-check
   ✓ Claude         router up-to-date (~/.claude/commands/holoctl.md)
-  ✓ Copilot        holoctl block present (~/.copilot/AGENTS.md)
 
-  All global routers up-to-date.
+  Global router up-to-date.
 ```
 
 ---
@@ -275,7 +274,7 @@ What `init` does, in order:
 
 ```bash
 hctl init --name "My Project" --prefix "MP"           # explicit
-hctl init --targets agents,claude,copilot,codex      # custom target set
+hctl init --targets agents,claude                    # custom target set (these are the only two)
 hctl init --bare                                       # skeleton only — skip compile/hooks/MCP
 hctl init --skip-compile                               # init but don't compile yet
 ```
@@ -324,34 +323,37 @@ The first line of output is router-friendly — one of:
 
 ---
 
-## Cross-tool compilation
+## Compilation
 
-`hctl compile` reads `.holoctl/` and emits files in each target's native format. Targets:
+`hctl compile` reads `.holoctl/` and emits Claude Code's native files, plus the cross-tool discovery shim. Two targets:
 
 ```bash
-hctl compile --target agents              # AGENTS.md (cross-tool universal)
-hctl compile --target claude              # CLAUDE.md + .claude/...
-hctl compile --target copilot             # .github/copilot-instructions.md + .github/prompts/... + .vscode/mcp.json
-hctl compile --target codex               # .codex/AGENTS.override.md + .codex/config.toml (mcp_servers)
-hctl compile                              # all targets in config.targets[]
+hctl compile --target claude              # CLAUDE.md + .claude/ (agents, commands, skills, settings.json)
+hctl compile --target agents              # minimal AGENTS.md shim + .holoctl/foreign-bootstrap.md
+hctl compile                              # both (config.targets[] defaults to ["agents", "claude"])
 ```
 
-**The `agents` target** emits `AGENTS.md` at the repo root — the [agents.md](https://agents.md/) standard adopted by OpenAI Codex, Aider, Zed, JetBrains Junie, Google Jules, Factory, goose, and other agents.md-aware tools. Always include it in your `targets` (the default config does).
+**The `claude` target** is the deep one — it materializes Claude Code's full native config from `.holoctl/`.
+
+**The `agents` target** emits a *minimal* `AGENTS.md` at the repo root (the [agents.md](https://agents.md/) cross-tool convention) plus `.holoctl/foreign-bootstrap.md`. The `AGENTS.md` no longer mirrors your project content — it's a **discovery shim** that points any non-Claude assistant at the bootstrap procedure. Keep `agents` in your `targets` (the default does) so foreign tools can find their way in.
+
+**Other assistants** (Copilot, Codex, Cursor, Aider, Zed, …) are **not** compiled by holoctl. They self-configure by following `.holoctl/foreign-bootstrap.md`, which teaches them to read `.holoctl/` and generate their own native config dir. See [Per-assistant guide](#per-assistant-guide).
 
 **Coverage matrix** — what each compiler emits from each `.holoctl/` source:
 
-| `.holoctl/` source            | claude                            | copilot                                      | codex                          | agents                              |
-|-------------------------------|-----------------------------------|----------------------------------------------|--------------------------------|-------------------------------------|
-| `instructions.md`             | `CLAUDE.md`                       | `.github/copilot-instructions.md`            | `.codex/AGENTS.override.md`    | `AGENTS.md` (Objective/Architecture)|
-| `agents/*.md`                 | `.claude/agents/<n>.md`           | —                                            | —                              | —                                   |
-| `commands/*.md`               | `.claude/commands/<n>.md`         | `.github/prompts/<n>.prompt.md`              | —                              | —                                   |
-| `context/*.md`                | (via instructions/memory)         | (via instructions)                           | (via instructions override)    | `AGENTS.md` body                    |
-| `memory/topics/*.md`          | `.claude/skills/holoctl-mem-*`    | `.github/instructions/holoctl-mem-*`         | —                              | —                                   |
-| `hooks/*.json` *(opt)*        | `.claude/settings.json` merge     | `.copilot/config.json` merge                 | —                              | —                                   |
-| `rules/*.md` *(opt)*          | `.claude/rules/<n>.md`            | —                                            | —                              | —                                   |
-| `skills/<n>/SKILL.md` *(opt)* | `.claude/skills/<n>/...`          | —                                            | —                              | —                                   |
-| `output_styles/*.md` *(opt)*  | `.claude/output_styles/`          | —                                            | —                              | —                                   |
-| MCP servers (config)          | `.claude/settings.json:mcp`       | `.vscode/mcp.json`                           | `.codex/config.toml:mcp_servers` | —                                 |
+| `.holoctl/` source            | claude                            | agents                              |
+|-------------------------------|-----------------------------------|-------------------------------------|
+| `instructions.md`             | `CLAUDE.md`                       | — (read directly via bootstrap)     |
+| `agents/*.md`                 | `.claude/agents/<n>.md`           | —                                   |
+| `commands/*.md`               | `.claude/commands/<n>.md`         | —                                   |
+| `context/*.md`                | (via instructions/memory)         | —                                   |
+| `memory/topics/*.md`          | `.claude/skills/holoctl-mem-*`    | —                                   |
+| `hooks/*.json` *(opt)*        | `.claude/settings.json` merge     | —                                   |
+| `rules/*.md` *(opt)*          | `.claude/rules/<n>.md`            | —                                   |
+| `skills/<n>/SKILL.md` *(opt)* | `.claude/skills/<n>/...`          | —                                   |
+| `output_styles/*.md` *(opt)*  | `.claude/output_styles/`          | —                                   |
+| MCP servers (config)          | `.claude/settings.json:mcp`       | —                                   |
+| *(discovery shim)*            | —                                 | `AGENTS.md` + `.holoctl/foreign-bootstrap.md` |
 
 > See `hctl coverage` for a live, workspace-specific version of this table.
 
@@ -364,7 +366,7 @@ hctl compile                              # all targets in config.targets[]
 Since v0.17, slash commands, agents, and reactive skills **prefer the MCP server when it's running**, falling back to `hctl` CLI (or paste, for external content) when not. Examples:
 
 - Boardmaster calls `mcp__holoctl__board_create({...})` first; CLI `hctl board add '<json>'` is the documented fallback.
-- `/spec` invokes the `holoctl-provider-mcp` skill to fetch an external card body via the provider's MCP (Linear / GitHub / Trello / Azure DevOps / Jira / Slack — or a custom internal board registered via `hctl provider add`); paste is the fallback, with `source_*` preserved either way. The MCP server is auto-spawned by Claude (via `.claude/settings.json:mcpServers`), Copilot (via `.vscode/mcp.json`), or Codex (via `.codex/config.toml:[mcp_servers.holoctl]`).
+- `/spec` invokes the `holoctl-provider-mcp` skill to fetch an external card body via the provider's MCP (Linear / GitHub / Trello / Azure DevOps / Jira / Slack — or a custom internal board registered via `hctl provider add`); paste is the fallback, with `source_*` preserved either way. The MCP server is auto-spawned by Claude (via `.claude/settings.json:mcpServers`). Non-Claude assistants wire it into their own MCP config as part of the `holoctl-foreign-bootstrap` step.
 - `/agent-new` calls `mcp__holoctl__agent_create` to materialize a designed persona; manual `.md` editing remains the escape hatch.
 - The `/holoctl` router still runs `hctl doctor` / `hctl init` / `hctl boot` over the shell — these don't have MCP equivalents because they bootstrap or terminate the assistant session itself.
 
@@ -589,7 +591,7 @@ Configured automatically by `hctl init` so you don't run it manually. Test it st
 |--------------------------------------|------------------------------------------------------------------------------|
 | `hctl init`                          | Create or sync `.holoctl/` (idempotent).                                    |
 | `hctl setup`                         | Plant `/holoctl` skill in every detected assistant (legacy — see `setup-global`). |
-| `hctl setup-global --target X`       | Install the global router for tool X (Claude / Copilot / all).              |
+| `hctl setup-global --target claude`  | Install the global `/holoctl` router for Claude Code.                       |
 | `hctl upgrade`                       | Migrate workspace + recompile to installed version.                         |
 | `hctl compile --target X`            | Generate AI-tool integration files. Default = `config.targets[]`.           |
 | `hctl serve [--mcp]`                 | Web dashboard (4242), or stdio MCP server.                                  |
@@ -630,7 +632,7 @@ Every command supports `--help`.
     "idPadding": 3
   },
   "git": { "checkDirty": false },
-  "targets": ["agents", "claude", "copilot", "codex"],
+  "targets": ["agents", "claude"],
   "server": { "port": 4242, "theme": "dark" },
   "providers": {
     "linear":  { "enabled": "auto", "url_pattern": "...", "mcp_fetch_tool": "mcp__linear__get_issue",   "label_template": "{ref}: {title}" },
@@ -685,7 +687,7 @@ Every command supports `--help`.
 
 **The deny list is the enforcement** for the rule "never edit derived state by hand" — even if the agent forgets the instruction, the harness blocks the tool call.
 
-Copilot receives `.copilot/config.json` (allow/deny lists). Codex doesn't expose a public per-project hooks API — its lifecycle is handled by the user agent and AGENTS.md content.
+These hooks and the deny-list are Claude Code-specific. Non-Claude assistants don't get holoctl-managed hooks — the `holoctl-foreign-bootstrap` skill carries the equivalent operating rules (e.g. "never edit derived state by hand") as instructions instead.
 
 ---
 
@@ -708,31 +710,16 @@ hctl doctor --global               # router install drift
 ls .claude/                        # agents/, commands/, settings.json
 ```
 
-### GitHub Copilot
+### Every other assistant (Copilot, Codex, Cursor, Aider, Zed, Junie, goose, …)
 
-After `hctl setup-global --target copilot` and `hctl init`:
+holoctl does not maintain a compiler for these. They self-configure from the same `.holoctl/` source via the **`holoctl-foreign-bootstrap` skill**. After `hctl init`:
 
-- **Global**: `~/.copilot/AGENTS.md` — appended block with `<!-- holoctl:start … end -->` markers.
-- **Project**: `.github/copilot-instructions.md`, `.github/prompts/<name>.prompt.md`.
-- **Memory**: `.github/instructions/holoctl-memory-*.instructions.md` with `applyTo:` glob.
-- **MCP**: `.vscode/mcp.json`.
-- **Permissions**: deny-list and allow-list flags via `.copilot/config.json`.
+1. The repo root has a minimal `AGENTS.md` (the cross-tool convention) that points the assistant at `.holoctl/foreign-bootstrap.md`.
+2. `.holoctl/foreign-bootstrap.md` is the procedure: read `.holoctl/` (`instructions.md`, `context/*`, `agents/*`, `memory/`, `commands/*`) and **generate your own native config dir** — Copilot → `.github/`; Codex → `.codex/`; Cursor → `.cursor/rules/`; generic AGENTS.md-aware tools → `AGENTS.md`. It carries per-tool format hints (frontmatter, MCP-server snippets) inline.
 
-Copilot accumulates AGENTS.md content (doesn't overwrite) — the holoctl block coexists with anything else you have.
+So the flow for a non-Claude assistant is: open the repo → read `AGENTS.md` → follow `.holoctl/foreign-bootstrap.md` → it writes the tool's native config from `.holoctl/`. Re-run that step after `hctl upgrade` (or whenever `.holoctl/` changes) to stay in sync — treat the generated `.github/` / `.codex/` / `.cursor/` as derived, don't hand-edit them.
 
-### OpenAI Codex
-
-After `hctl init` with `codex` in `config.targets` (or `hctl compile --target codex`):
-
-- **Project AGENTS.md** at the repo root (emitted by the `agents` target — Codex reads this natively per the spec).
-- **Codex-specific override**: `.codex/AGENTS.override.md` — compiled from `.holoctl/instructions.md`. Codex merges this on top of the root `AGENTS.md`, so it's the right place for Codex-only guidance without polluting the cross-tool file.
-- **MCP**: `.codex/config.toml:[mcp_servers.holoctl]` declares the holoctl stdio server. Codex loads `.codex/config.toml` once you trust the project (`codex trust .` or the prompt on first run).
-
-No `setup-global` step — Codex has no documented user-level surface for slash routers.
-
-### Aider / Zed / Junie / Jules / Factory / goose / others
-
-Any tool that respects `AGENTS.md` reads the file emitted by `hctl compile --target agents`. No tool-specific config needed for these — just keep `agents` in your `config.targets` (it ships there by default).
+This moves the per-tool translation out of holoctl's maintained Python and into one portable skill the assistant executes at runtime — which is why holoctl can support any AGENTS.md-aware tool without shipping (and keeping in lockstep) a bespoke compiler for each.
 
 ---
 
@@ -753,15 +740,16 @@ Output (filtered):
 ```text
 hctl coverage (source → per-target outputs)
   workspace: /home/me/my-project
-  active targets: agents, claude, copilot, codex
+  active targets: agents, claude
 
-  Source                             | agents     | claude       | copilot       | codex
-  ─────────────────────────────────────────────────────────────────────────────────────────────
-  instructions.md                    | ✓ AGENTS   | ✓ CLAUDE.md  | ✓ .gh/copi.md | ✓ .cx/AGENTS.override
-  agents/*.md                        | —          | ✓ .cl/agents | —             | —
-  commands/*.md                      | —          | ✓ .cl/comma  | ✓ .gh/prompts | —
-  memory/topics/*.md                 | —          | ✓ .cl/skills | ✓ .gh/instr   | —
-  (MCP servers)                      | —          | ✓ settings   | ✓ .vsc/mcp    | ✓ .cx/config.toml
+  Source                             | agents     | claude
+  ──────────────────────────────────────────────────────────────
+  instructions.md                    | —          | ✓ CLAUDE.md
+  agents/*.md                        | —          | ✓ .cl/agents
+  commands/*.md                      | —          | ✓ .cl/comma
+  memory/topics/*.md                 | —          | ✓ .cl/skills
+  (MCP servers)                      | —          | ✓ settings
+  (foreign-assistant bootstrap)      | ✓ AGENTS.md| —
 ```
 
 ### `hctl doctor`
@@ -786,7 +774,7 @@ First line is **router-friendly** (parsed by `/holoctl`):
 - **No machine-wide registry, no daemon, no telemetry, no auto-update check.** Workspace = `.holoctl/` next to your code. That's the entire footprint.
 - **`.holoctl/memory/.gitignore`** ships with `_archived/` excluded by default. Privacy-strict workspaces uncomment two lines to make the whole memory tree local-only.
 - **Coexists with native auto-memory.** Claude Code's auto-memory is **not** disabled. `holoctl` adds a `@.holoctl/memory/MEMORY.md` reference to `CLAUDE.md` so Claude reads both sources.
-- **Compiled outputs** are best `.gitignore`'d (`.claude/`, `.codex/`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`) — they're regenerated from `.holoctl/`. Some teams prefer to commit them for new contributors who don't have `holoctl` installed yet.
+- **Compiled outputs** are best `.gitignore`'d (`.claude/`, `CLAUDE.md`) — they're regenerated from `.holoctl/`. The `AGENTS.md` shim and `.holoctl/foreign-bootstrap.md` are usually worth committing, so a non-Claude assistant cloning the repo can bootstrap itself without `holoctl` installed. Some teams commit `.claude/` too, for new contributors who don't have `holoctl` yet.
 
 ---
 
@@ -849,9 +837,9 @@ No — they coexist. Claude reads both `CLAUDE.md` (which references `.holoctl/m
 
 Yes — that's the design. `hctl init` at the monorepo root, then `hctl repo add ./backend ./frontend ./mobile`. Tickets can declare `projects: [backend, shared]`.
 
-**How do I add a new compile target (e.g. for a new AI tool)?**
+**How do I support a new AI tool?**
 
-Add a module in `holoctl/lib/compiler/<name>.py` exposing `compile_<name>(project_root, config, dry_run)`, register in `compiler/__init__.py`. See `CONTRIBUTING.md`.
+You usually don't add a compiler — that's the whole point of the redesign. Any AGENTS.md-aware (or instruction-file-aware) assistant is served by the `holoctl-foreign-bootstrap` skill, which reads `.holoctl/` and writes the tool's native config. If the tool needs format hints holoctl doesn't already carry, add them to `holoctl/templates/skills/holoctl-foreign-bootstrap/references/format-hints.md` — no Python. holoctl maintains a native compiler only for Claude Code (`compiler/claude.py`); see `CONTRIBUTING.md`.
 
 **Where's the data stored?**
 

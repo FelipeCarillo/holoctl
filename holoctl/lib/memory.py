@@ -16,13 +16,14 @@ Each topic .md has frontmatter declaring how it loads:
     description: "..."        # only when scope=lazy (model decides to read)
     ---
 
-This frontmatter is the *canonical* description; per-target compilers
-translate it to native primitives:
+This frontmatter is the *canonical* description; the Claude compiler
+translates it to native primitives:
 
   - Claude Code: skill description (lazy), CLAUDE.md import (always_on),
     skill ``paths:`` (glob).
-  - Copilot: ``.github/instructions/<name>.instructions.md`` with
-    ``applyTo:`` (glob), or section in copilot-instructions.md (always_on).
+
+Non-Claude assistants read this canonical frontmatter directly via the
+``holoctl-foreign-bootstrap`` skill and map it to their own primitives.
 
 Memory is **not auto-edited**. Writes go through ``hctl memory add`` (or the
 curator in 0.14, after user approval of a ``meta:curate`` ticket).

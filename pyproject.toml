@@ -4,15 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "holoctl"
-version = "0.19.0"
-description = "Universal project operating system for AI coding assistants"
+version = "0.20.0"
+description = "Project operating system for Claude Code, with a portable bootstrap for other AI assistants"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [{ name = "Felipe Carillo" }]
 keywords = [
-  "ai", "project-management", "kanban", "claude-code", "copilot",
-  "codex", "aider", "agents", "cli",
+  "ai", "project-management", "kanban", "claude-code", "agents", "cli",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",

@@ -54,7 +54,7 @@ def test_init_then_doctor_reports_healthy(tmp_path: Path):
     doctor looks for (the bug that motivated this whole file)."""
     _run(
         ["init", "--name", "ci", "--prefix", "CI",
-         "--targets", "agents,claude,copilot,codex"],
+         "--targets", "agents,claude"],
         cwd=tmp_path,
     )
     result = _run(["doctor"], cwd=tmp_path)
@@ -62,19 +62,6 @@ def test_init_then_doctor_reports_healthy(tmp_path: Path):
     assert "holoctl: ok" in out, out
     assert "All checks passed" in out, out
     assert "issue(s) found" not in out, out
-
-
-def test_compile_codex_emits_valid_toml_via_subprocess(tmp_path: Path):
-    """A second tomllib check, this time via the real CLI binary, so any
-    Windows newline or encoding surprise gets exercised."""
-    import tomllib
-    _run(
-        ["init", "--name", "ci", "--targets", "agents,claude,codex"],
-        cwd=tmp_path,
-    )
-    cfg = tmp_path / ".codex" / "config.toml"
-    parsed = tomllib.loads(cfg.read_text(encoding="utf-8"))
-    assert parsed["mcp_servers"]["holoctl"]["args"] == ["serve", "--mcp"]
 
 
 def test_compile_unknown_target_fails_with_help(tmp_path: Path):

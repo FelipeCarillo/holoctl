@@ -1,4 +1,4 @@
-"""Tests for per-target memory emission (compiler/memory_emit.py)."""
+"""Tests for Claude memory emission (compiler/memory_emit.py)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -61,24 +61,9 @@ def test_emit_claude_glob_topic_has_paths(tmp_path: Path):
     assert "src/api/**" in body
 
 
-def test_emit_copilot_uses_apply_to_glob(tmp_path: Path):
-    _seed(tmp_path)
-    memory_emit.emit_copilot(tmp_path)
-    api = (
-        tmp_path
-        / ".github/instructions/holoctl-memory-api-conventions.instructions.md"
-    ).read_text(encoding="utf-8")
-    assert "applyTo:" in api
-    assert "src/api/**" in api
-
-
 def test_emit_no_memory_dir_returns_empty(tmp_path: Path):
-    """Compilers must be tolerant of workspaces without memory yet."""
-    for emit in (
-        memory_emit.emit_claude,
-        memory_emit.emit_copilot,
-    ):
-        assert emit(tmp_path) == []
+    """The compiler must be tolerant of workspaces without memory yet."""
+    assert memory_emit.emit_claude(tmp_path) == []
 
 
 def test_claude_memory_reference_block_mentions_index_and_cli():
