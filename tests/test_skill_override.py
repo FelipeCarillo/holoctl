@@ -26,7 +26,6 @@ from holoctl.lib.config import get_defaults
 # support file under `references/`.  If the package layout ever changes, update
 # this constant.
 _BUILTIN_WITH_REFS = "holoctl-router"
-_BUILTIN_SIMPLE = "holoctl-memory-discipline"  # no support dirs — safe fallback
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +145,7 @@ def test_builtin_support_file_tracked_in_manifest(tmp_path: Path):
 
     tracked = load(tmp_path)["files"]
     # holoctl-router ships with at least one file under references/
+    # NOTE: update this path if the built-in skill's support files are renamed or removed.
     ref_key = f".claude/skills/{_BUILTIN_WITH_REFS}/references/flow-a-first-time.md"
     assert ref_key in tracked, (
         f"Built-in support file {ref_key} must be manifest-tracked"

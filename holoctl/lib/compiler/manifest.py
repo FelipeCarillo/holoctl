@@ -433,22 +433,16 @@ class CompileLedger:
             #   - Text files written via write() on Windows (LF→CRLF on disk).
             #   - Binary / verbatim files written via write_bytes().
             #   - Genuine hand-edits, which won't match either channel's hash.
-            owned = False
-            try:
-                on_disk_sha = sha256_text(abs_path.read_text(encoding="utf-8"))
-                owned = on_disk_sha == entry["sha256"]
-            except (OSError, UnicodeDecodeError):
-                pass
-            if not owned:
-                try:
-                    on_disk_sha_b = sha256_bytes(abs_path.read_bytes())
-                    owned = on_disk_sha_b == entry["sha256"]
-                except OSError:
-                    owned = False
+            owned = (
+                self._owned_unmodified(rel, self._hash_text)
+                or self._owned_unmodified(rel, self._hash_bytes)
+            )
 
             if owned:
                 if not self.dry_run:
                     abs_path.unlink(missing_ok=True)
+                    # Parent dirs (references/, scripts/, templates/) are left
+                    # in place when emptied — they are inert and ignored by Claude Code.
                 self.removed.append(rel)
             else:
                 self.skipped.append({
