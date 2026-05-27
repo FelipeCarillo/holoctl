@@ -136,3 +136,21 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ── Editorial typography ──
+   Body/UI uses the sans (`--font`, set on `body` in reset.css); titles use
+   the Fraunces serif (`--font-serif`). Component-specific sizing stays in
+   each component's CSS — here we only swap the family + the tracking/weight
+   that make the serif read as editorial. */
+.board-title,
+.detail-title,
+.dr-card-title,
+.detail-section-title,
+.section-title,
+.project-card-name,
+.kc-title,
+.lr-title-link {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+

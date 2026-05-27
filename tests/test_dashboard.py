@@ -1270,6 +1270,27 @@ class TestDetailPageScrollContainment:
         assert m_rail and "overflow-y: auto" in m_rail.group(0)
 
 
+# ── Editorial visual token system ─────────────────────────────────────────────
+
+
+class TestEditorialTokens:
+    def test_fonts_imported(self, dashboard_css):
+        assert "Fraunces" in dashboard_css
+        assert "Inter" in dashboard_css
+        assert "JetBrains Mono" in dashboard_css
+
+    def test_serif_token_present(self, dashboard_css):
+        assert "--font-serif" in dashboard_css
+
+    def test_terracotta_accent(self, dashboard_css):
+        assert "--accent" in dashboard_css
+        assert "#c2410c" in dashboard_css or "#ea580c" in dashboard_css
+
+    def test_both_themes_defined(self, dashboard_css):
+        assert '[data-theme="light"]' in dashboard_css
+        assert '[data-theme="dark"]' in dashboard_css
+
+
 class TestDetailPageStatusList:
     """Regression for "Move ▾ button does nothing" on the detail page.
 
