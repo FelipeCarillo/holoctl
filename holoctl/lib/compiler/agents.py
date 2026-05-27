@@ -100,7 +100,7 @@ def compile_agents(project_root: Path, config: dict, dry_run: bool = False) -> d
     else:
         files.append(out_path)
 
-    result = {"files": files}
+    result: dict[str, object] = {"files": files}
     if skipped:
         result["skipped"] = skipped
     return result

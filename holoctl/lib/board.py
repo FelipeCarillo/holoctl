@@ -66,7 +66,7 @@ class Board:
             str_val = _yaml_format(val)
             content = re.sub(
                 rf"^({re.escape(key)}:\s*)(.*)$",
-                lambda m, v=str_val: f"{m.group(1)}{v}",
+                lambda m, v=str_val: f"{m.group(1)}{v}",  # type: ignore[misc]
                 content,
                 flags=re.MULTILINE,
             )
@@ -824,7 +824,7 @@ class Board:
             "tickets": tickets,
         }
         self._save(index)
-        return {"ticketCount": len(tickets), "nextId": index["meta"]["nextId"]}
+        return {"ticketCount": len(tickets), "nextId": max_num + 1}
 
     def _create_ticket_md(self, ticket: dict, body: str | None = None) -> None:
         md_path = self._board_dir / ticket["file"]

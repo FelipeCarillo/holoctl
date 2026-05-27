@@ -103,5 +103,5 @@ def scan_dir(abs_path: Path, depth: int = 0, max_depth: int = 1, skip_hidden: bo
                 "ext": entry.suffix.lstrip(".").lower(),
             })
 
-    result.sort(key=lambda x: (0 if x["type"] == "dir" else 1, x["name"].lower()))
+    result.sort(key=lambda x: (0 if x["type"] == "dir" else 1, str(x["name"]).lower()))
     return result

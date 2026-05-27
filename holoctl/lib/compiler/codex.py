@@ -58,7 +58,7 @@ def compile_codex(project_root: Path, config: dict, dry_run: bool = False) -> di
 
     files.extend(mcp_emit.emit_codex(project_root, dry_run=dry_run))
 
-    result = {"files": files}
+    result: dict[str, object] = {"files": files}
     if skipped:
         result["skipped"] = skipped
     return result

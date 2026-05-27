@@ -60,6 +60,19 @@ def _project_root() -> Path:
     return root
 
 
+def _coerce_set_value(value: Any) -> str:
+    """Normalize a board_set/batch_set value to the string form Board expects.
+
+    Board.set parses the string via `_parse_set_value` (which understands
+    `null` / `true` / `false` / `[json,array]`). JSON clients may send a real
+    None / bool / list / number, so non-strings are json-dumped — which maps
+    cleanly onto exactly those literals (None→`null`, True→`true`, [..]→array).
+    """
+    if isinstance(value, str):
+        return value
+    return json.dumps(value)
+
+
 def _tool_board_list(args: dict) -> Any:
     from ..lib.board import Board
     from ..lib.config import load_config
@@ -175,7 +188,7 @@ def _tool_board_batch_set(args: dict) -> Any:
     value = args.get("value")
     if not ids or not field:
         raise ValueError("missing required args: ids, field")
-    return board.batch_set(list(ids), field, value)
+    return board.batch_set(list(ids), field, _coerce_set_value(value))
 
 
 def _tool_board_batch_delete(args: dict) -> Any:
@@ -219,7 +232,7 @@ def _tool_board_set(args: dict) -> Any:
     value = args.get("value")
     if not tid or not field:
         raise ValueError("missing required args: id, field")
-    return board.set(tid, field, value)
+    return board.set(tid, field, _coerce_set_value(value))
 
 
 def _tool_memory_list_topics(args: dict) -> Any:
