@@ -289,7 +289,7 @@ def _doctor_compile_drift() -> None:
             _check("Drift", f"{rel} is stale — run `holoctl compile`", False)
     if hand_edited:
         for rel in hand_edited:
-            _check("Hand-edited", f"{rel} (no holoctl header; left as-is)", True)
+            _check("Hand-edited", f"{rel} (hand-edited; left as-is)", True)
     if not stale and not hand_edited:
         _check("Compile", "all outputs up to date with .holoctl/", True)
 

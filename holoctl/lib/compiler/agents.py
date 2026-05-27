@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ._safe_write import HEADER_MARKER as _HEADER_MARKER
 from .manifest import CompileLedger
 from .template import resolve_template
 
@@ -44,12 +43,8 @@ def compile_agents(
     owns_ledger = ledger is None
     if ledger is None:
         from ._safe_write import force as _force
-        ledger = CompileLedger(
-            project_root,
-            force=_force(),
-            dry_run=dry_run,
-            target="agents",
-            legacy_marker=_HEADER_MARKER,
+        ledger = CompileLedger.for_target(
+            project_root, "agents", dry_run=dry_run, force=_force()
         )
 
     files: list[str] = []

@@ -3,7 +3,6 @@ from pathlib import Path
 
 from .agents import compile_agents
 from .claude import compile_claude
-from ._safe_write import HEADER_MARKER
 from .manifest import CompileLedger
 
 _COMPILERS = {
@@ -44,13 +43,7 @@ def compile_project(
 
     from ... import __version__
 
-    ledger = CompileLedger(
-        project_root,
-        force=force,
-        dry_run=dry_run,
-        target=target,
-        legacy_marker=HEADER_MARKER,
-    )
+    ledger = CompileLedger.for_target(project_root, target, dry_run=dry_run, force=force)
     result = compiler(project_root, config, dry_run=dry_run, ledger=ledger)
     ledger.prune_orphans()
     ledger.finalize(holoctl_version=__version__)

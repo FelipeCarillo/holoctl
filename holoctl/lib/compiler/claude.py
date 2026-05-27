@@ -4,7 +4,6 @@ from pathlib import Path
 
 from ..markdown import parse_frontmatter
 from . import hooks_emit, mcp_emit, memory_emit
-from ._safe_write import HEADER_MARKER as _HEADER_MARKER
 from .manifest import CompileLedger
 from .template import load_bootstrap, resolve_template
 
@@ -35,12 +34,8 @@ def compile_claude(
     owns_ledger = ledger is None
     if ledger is None:
         from ._safe_write import force as _force
-        ledger = CompileLedger(
-            project_root,
-            force=_force(),
-            dry_run=dry_run,
-            target="claude",
-            legacy_marker=_HEADER_MARKER,
+        ledger = CompileLedger.for_target(
+            project_root, "claude", dry_run=dry_run, force=_force()
         )
 
     files: list[str] = []
