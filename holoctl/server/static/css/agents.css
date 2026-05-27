@@ -1,3 +1,43 @@
+/* ── Meta search bar (agents / commands / context list pages) ── */
+.meta-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 360px;
+  margin-bottom: 16px;
+}
+
+.meta-search-glyph {
+  position: absolute;
+  left: 12px;
+  font-size: 12px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.meta-search {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: -0.1px;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.meta-search::placeholder { color: var(--text-3); }
+.meta-search:hover { border-color: var(--border-hover); }
+.meta-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+
+/* Hidden items via meta-search filter */
+.meta-hidden { display: none !important; }
+
 /* ── Agent cards ── */
 .agent-grid {
   display: grid;

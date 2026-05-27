@@ -14,7 +14,7 @@ def doc_context(title: str, body: str, alias: str, kind: str,
                 continue
             meta_rows.append({"label": k, "value": v})
     return {
-        "title": title,
+        "doc_title": title,
         "body_html": body_html,
         "alias": alias,
         "kind": kind,

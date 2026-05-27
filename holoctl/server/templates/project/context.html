@@ -3,6 +3,10 @@
 {% if is_empty %}
 <div class="empty-state"><p>No context documents.</p></div>
 {% else %}
+<div class="meta-search-bar">
+  <span class="meta-search-glyph" aria-hidden="true">🔍</span>
+  <input type="search" class="meta-search" data-meta-search placeholder="Search context…" autocomplete="off" spellcheck="false" aria-label="Search context">
+</div>
 <div class="context-list">
   {% for d in items %}
   <a href="{{ d.link }}" class="context-item">

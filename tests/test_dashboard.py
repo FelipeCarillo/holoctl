@@ -1409,3 +1409,47 @@ class TestTimelineRemoved:
     def test_timeline_html_fragment_route_gone(self, client: TestClient, alias: str):
         r = client.get(f"/api/project/{alias}/timeline-html")
         assert r.status_code == 404
+
+
+# ── Doc detail routes: agents / commands / context ────────────────────────────
+
+
+class TestDocDetailRoutes:
+    """Regression suite for /agents/{slug}, /commands/{slug}, /context/{filename}.
+
+    These routes were 500ing with TypeError (duplicate 'title' kwarg) because
+    doc_context() returned a 'title' key that collided with the explicit
+    title=f"{title} — {project['name']}" passed to render(). Fixed by
+    renaming the ctx key to 'doc_title'.
+    """
+
+    def test_agent_detail_200(self, client: TestClient, alias: str, workspace: Path):
+        # workspace fixture plants developer.md under .holoctl/agents/
+        r = client.get(f"/project/{alias}/agents/developer")
+        assert r.status_code == 200
+        assert "developer" in r.text
+
+    def test_command_detail_200(self, client: TestClient, alias: str, workspace: Path):
+        commands_dir = workspace / ".holoctl" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "status.md").write_text(
+            "---\nname: status\ndescription: Show status\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        r = client.get(f"/project/{alias}/commands/status")
+        assert r.status_code == 200
+        assert "status" in r.text
+
+    def test_context_detail_200(self, client: TestClient, alias: str, workspace: Path):
+        context_dir = workspace / ".holoctl" / "context"
+        context_dir.mkdir(parents=True, exist_ok=True)
+        (context_dir / "objective.md").write_text(
+            "# Objective\n\nShip it.\n", encoding="utf-8"
+        )
+        r = client.get(f"/project/{alias}/context/objective.md")
+        assert r.status_code == 200
+        assert "Objective" in r.text
+
+    def test_agent_detail_missing_404(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/agents/nonexistent")
+        assert r.status_code == 404
