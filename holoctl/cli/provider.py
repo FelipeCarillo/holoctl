@@ -106,10 +106,10 @@ def provider_add(
         raise typer.Exit(1)
 
     root = _require_root()
+    servers = read_mcp_servers(root)
 
     # If --mcp-fetch is not provided, discover configured MCP servers and guide the user.
     if mcp_fetch is None:
-        servers = read_mcp_servers(root)
         console.print(
             "[yellow]--mcp-fetch is required.[/yellow] "
             "Specify the MCP tool name used to fetch one item from this provider."
@@ -126,7 +126,7 @@ def provider_add(
                 "\n  [dim]No MCP servers detected in .mcp.json or .claude/settings.json.[/dim]"
             )
         console.print(
-            f"\n  Re-run with [bold]--mcp-fetch mcp__<server>__<tool_name>[/bold], e.g.:\n"
+            "\n  Re-run with [bold]--mcp-fetch mcp__<server>__<tool_name>[/bold], e.g.:\n"
             f"    hctl provider add {name} --url-pattern '...' --mcp-fetch mcp__<server>__get_card"
         )
         raise typer.Exit(1)
@@ -139,7 +139,6 @@ def provider_add(
         raise typer.Exit(1)
 
     # Warn if the tool's server is not currently configured (helpful, non-fatal).
-    servers = read_mcp_servers(root)
     if not is_tool_connected(mcp_fetch, servers):
         srv = server_for_tool(mcp_fetch)
         if srv:
@@ -264,8 +263,9 @@ def provider_doctor():
 
     Reads ``.mcp.json`` and ``.claude/settings.json`` to discover which MCP
     servers are configured, then reports per-provider whether its MCP fetch
-    tool's server is present.  Informational only — always exits 0 (or 1
-    if no providers are configured at all).
+    tool's server is present.  Missing MCP servers are informational and do
+    NOT change the exit code.  Exits 0 in all normal cases; exits 1 only if
+    no providers are configured.
     """
     root = _require_root()
     config = load_config(root)
@@ -290,7 +290,7 @@ def provider_doctor():
         entry = providers[name]
         fetch = entry.get("mcp_fetch_tool") or ""
         if not fetch:
-            console.print(f"  [dim]{name:<18}[/dim]  [dim]—  no MCP tool configured[/dim]")
+            console.print(f"  [dim]{name:<18}[/dim]  [dim]no MCP tool[/dim]")
             no_tool_count += 1
         elif is_tool_connected(fetch, servers):
             console.print(f"  [bold]{name:<18}[/bold]  [green]✓ connected[/green]  [dim]{fetch}[/dim]")

@@ -21,6 +21,8 @@ import json
 from pathlib import Path
 
 
+# Layer boundary: intentionally does NOT reuse holoctl/lib/compiler/_read_json helpers.
+# lib/ must not depend upward on lib/compiler/, and this version adds isinstance guards.
 def _read_json_safe(path: Path) -> dict:
     """Return parsed JSON dict from *path*, or empty dict on any error."""
     if not path.exists():
