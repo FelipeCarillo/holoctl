@@ -29,6 +29,8 @@ the web dashboard moved to an optional extra so the core install stays lean.
 
 ### Changed
 
+- **`lib/board.py` decomposition (internal, no behavior change).** The 1000-LOC god-module shed two distinct responsibilities into focused, independently-testable modules: ASCII tree rendering → `lib/board_tree.py` (`render_tree`, a pure function), and ticket-body assembly → `lib/board_body.py` (`build_body`). `Board.tree` is now a thin wrapper. Covered by new `test_board_tree.py` plus the existing board suite.
+- **MCP stdio conformance test.** `test_mcp_stdio.py` drives the real `hctl serve --mcp` subprocess through a full initialize → list → call → ping handshake and asserts notifications get no response line (the in-process tests couldn't cover the cold-start stdio loop).
 - **Docs/drift sweep.** `ARCHITECTURE.md` corrected (it claimed `setup-global` was removed and that nothing is written to `$HOME`, and its layout / compile-pipeline / ticket-body / static-asset sections were stale); the generated `AGENTS.md` no longer cites the retired `.cursor/rules/`; stale docstrings (`memory.py`, `journal.py`, `server/mcp.py`) and MCP tool descriptions ("stubbed in 0.13") refreshed; `hctl coverage` help + glyphs no longer reference retired targets; `CONTRIBUTING.md` points at the new shared `SYNC_TARGETS`.
 
 ## [0.18.0] — 2026-05-18
