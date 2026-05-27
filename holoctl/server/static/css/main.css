@@ -28,16 +28,17 @@
   backdrop-filter: blur(8px);
 }
 
-[data-theme="light"] .topbar { background: rgba(248,248,250,0.85); }
-[data-theme="dark"] .topbar { background: rgba(14,14,18,0.85); }
+[data-theme="light"] .topbar { background: rgba(243, 242, 238, 0.85); }
+[data-theme="dark"] .topbar { background: rgba(20, 19, 15, 0.85); }
 
 .topbar-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.4px;
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text-0);
   flex-shrink: 0;
 }
@@ -57,6 +58,8 @@
 }
 
 .topbar-brand .brand-name { color: var(--text-0); }
+/* Editorial wordmark: serif "holo" in ink, terracotta "ctl" as the accent. */
+.topbar-brand .brand-accent { color: var(--accent); }
 .topbar-brand:hover .brand-name { color: var(--accent); }
 
 .topbar-breadcrumb {
@@ -147,6 +150,9 @@
 .detail-section-title,
 .section-title,
 .project-card-name,
+.agent-card-name,
+.context-item-name,
+.empty-state h3,
 .kc-title,
 .lr-title-link {
   font-family: var(--font-serif);

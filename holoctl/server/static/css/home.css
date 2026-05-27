@@ -8,23 +8,26 @@
 .project-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   padding: 22px;
   cursor: pointer;
-  transition: all 0.25s var(--ease);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), border-color 0.2s var(--ease);
   display: block;
   position: relative;
   overflow: hidden;
 }
 
+/* Editorial: a single terracotta hairline rides the top edge on hover —
+   the accent only appears on the interaction, never at rest. */
 .project-card::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--purple));
+  height: 2px;
+  background: var(--accent);
   opacity: 0;
-  transition: opacity 0.25s;
+  transition: opacity 0.2s var(--ease);
 }
 
 .project-card:hover {
@@ -45,7 +48,7 @@
 .project-card-icon {
   width: 40px; height: 40px;
   background: var(--accent-subtle);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;

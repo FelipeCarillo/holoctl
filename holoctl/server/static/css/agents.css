@@ -8,16 +8,17 @@
 .agent-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   padding: 20px;
-  transition: all 0.2s var(--ease);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
   display: block;
   cursor: pointer;
 }
 
 .agent-card:hover {
   border-color: var(--border-hover);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
 
