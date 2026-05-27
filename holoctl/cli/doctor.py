@@ -219,7 +219,7 @@ _HOLOCTL_BOOTSTRAP_COMMANDS: frozenset[str] = frozenset({
 
 def _check_mcp_health(root: Path, config: dict | None, issues: int) -> int:
     """Check MCP server health and registration; return updated issues count."""
-    from ..lib.mcp_config import _read_json_safe
+    from ..lib.mcp_config import read_mcp_servers
 
     hctl_bin = os.environ.get("HOLOCTL_BIN") or "hctl"
     bin_path = shutil.which(hctl_bin)
@@ -234,14 +234,11 @@ def _check_mcp_health(root: Path, config: dict | None, issues: int) -> int:
     else:
         _check("MCP", f"hctl resolvable ({bin_path})", True)
 
-    # Check that mcpServers.holoctl is present in .claude/settings.json when
-    # the 'claude' target is active (the claude compiler emits it there).
+    # Check that mcpServers.holoctl is present (in .mcp.json or .claude/settings.json)
+    # when the 'claude' target is active (the claude compiler writes it to settings.json).
     targets = (config or {}).get("targets", [])
     if "claude" in targets:
-        settings_path = root / ".claude" / "settings.json"
-        settings = _read_json_safe(settings_path)
-        mcp_servers = settings.get("mcpServers", {})
-        if "holoctl" not in mcp_servers:
+        if "holoctl" not in read_mcp_servers(root):
             _check(
                 "MCP",
                 "mcpServers.holoctl missing from .claude/settings.json — run `hctl compile`",
