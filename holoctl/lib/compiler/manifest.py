@@ -120,6 +120,23 @@ class CompileLedger:
         ledger.write(".claude/agents/dev.md", content, source="...", target="...")
         ledger.prune_orphans()
         summary = ledger.finalize(holoctl_version="0.20.0")
+
+    Hash-channel contract
+    ---------------------
+    There are two write channels, and they must never be mixed for the same path:
+
+    * ``write`` (text channel) — hashes the **logical** string content via
+      ``sha256_text``, which encodes to UTF-8 before hashing.  On Windows,
+      ``Path.write_text`` translates ``\\n``→``\\r\\n`` on disk, so on-disk
+      bytes differ from what was hashed; this is intentional and safe because
+      ``_hash_text`` reads back through ``read_text`` (same
+      translation) before hashing.
+    * ``write_bytes`` (byte channel) — hashes **literal** on-disk bytes via
+      ``sha256_bytes``; no newline translation occurs.
+
+    A given path **must** use exactly one channel across all compile runs.
+    Switching channels between runs will cause the ownership check to fail
+    (hash mismatch) and the file will be treated as hand-edited.
     """
 
     def __init__(
@@ -150,34 +167,82 @@ class CompileLedger:
         """Resolve a POSIX-normalised rel path against self.root."""
         return self.root / Path(rel)
 
-    def _owned_unmodified_text(self, rel: str) -> bool:
-        """True if *rel* is in prev and its on-disk content matches prev hash."""
+    def _owned_unmodified(
+        self,
+        rel: str,
+        hash_fn: object,
+    ) -> bool:
+        """True if *rel* is in prev and its on-disk hash (computed by *hash_fn*) matches.
+
+        *hash_fn* must be a callable ``(Path) -> str`` that reads the file and
+        returns its hex SHA-256 digest.  Use ``_hash_text`` for the text channel
+        and ``_hash_bytes`` for the byte channel.
+        """
         if rel not in self.prev:
             return False
         p = self._abs(rel)
         if not p.exists():
             return False
         try:
-            on_disk = sha256_text(p.read_text(encoding="utf-8"))
+            on_disk = hash_fn(p)  # type: ignore[operator]
         except (OSError, UnicodeDecodeError):
             return False
         return on_disk == self.prev[rel]["sha256"]
 
-    def _owned_unmodified_bytes(self, rel: str) -> bool:
-        """True if *rel* is in prev and on-disk bytes hash matches prev hash."""
-        if rel not in self.prev:
-            return False
-        p = self._abs(rel)
-        if not p.exists():
-            return False
-        try:
-            on_disk = sha256_bytes(p.read_bytes())
-        except OSError:
-            return False
-        return on_disk == self.prev[rel]["sha256"]
+    @staticmethod
+    def _hash_text(p: Path) -> str:
+        """Hash the logical (decoded) text content of *p*."""
+        return sha256_text(p.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _hash_bytes(p: Path) -> str:
+        """Hash the raw byte content of *p*."""
+        return sha256_bytes(p.read_bytes())
 
     def _record(self, rel: str, sha: str, *, source: str, target: str) -> None:
         self.written[rel] = {"sha256": sha, "source": source, "target": target}
+
+    def _commit(
+        self,
+        rel: str,
+        abs_path: Path,
+        sha: str,
+        write_fn: object,
+        *,
+        source: str,
+        target: str,
+        owned: bool,
+    ) -> bool:
+        """Apply the ownership decision tree shared by ``write`` and ``write_bytes``.
+
+        *write_fn* is a callable ``(abs_path: Path) -> None`` that performs the
+        actual disk write (text vs bytes).  Returns ``True`` when the file was
+        written/recorded, ``False`` when skipped.
+        """
+        absent = not abs_path.exists()
+
+        if absent or owned:
+            # Safe to write (new file or still owned-unmodified).
+            if not self.dry_run:
+                abs_path.parent.mkdir(parents=True, exist_ok=True)
+                write_fn(abs_path)  # type: ignore[operator]
+            self._record(rel, sha, source=source, target=target)
+            return True
+
+        # Present but not owned.
+        if self.force:
+            if not self.dry_run:
+                abs_path.parent.mkdir(parents=True, exist_ok=True)
+                write_fn(abs_path)  # type: ignore[operator]
+            self._record(rel, sha, source=source, target=target)
+            self.skipped.append({"path": rel, "reason": "overwritten (--force)"})
+            return True
+
+        self.skipped.append({
+            "path": rel,
+            "reason": "external or hand-edited; left as-is (pass --force to overwrite)",
+        })
+        return False
 
     # ------------------------------------------------------------------
     # Public API
@@ -185,6 +250,10 @@ class CompileLedger:
 
     def write(self, rel: str, content: str, *, source: str, target: str) -> bool:
         """Write *content* to the file at *rel* (POSIX relative path).
+
+        Uses the **text channel**: content is hashed as a logical UTF-8 string
+        via ``sha256_text``.  See the class-level hash-channel contract for why
+        this path must never be mixed with ``write_bytes`` for the same file.
 
         Ownership semantics:
 
@@ -200,66 +269,32 @@ class CompileLedger:
         rel = _to_posix(rel)
         abs_path = self._abs(rel)
         sha = sha256_text(content)
-
-        absent = not abs_path.exists()
-        owned = self._owned_unmodified_text(rel)
-
-        if absent or owned:
-            # Safe to write.
-            if not self.dry_run:
-                abs_path.parent.mkdir(parents=True, exist_ok=True)
-                abs_path.write_text(content, encoding="utf-8")
-            self._record(rel, sha, source=source, target=target)
-            return True
-
-        # Present but not owned.
-        if self.force:
-            if not self.dry_run:
-                abs_path.parent.mkdir(parents=True, exist_ok=True)
-                abs_path.write_text(content, encoding="utf-8")
-            self._record(rel, sha, source=source, target=target)
-            self.skipped.append({"path": rel, "reason": "overwritten (--force)"})
-            return True
-
-        self.skipped.append({
-            "path": rel,
-            "reason": "external or hand-edited; left as-is (pass --force to overwrite)",
-        })
-        return False
+        owned = self._owned_unmodified(rel, self._hash_text)
+        return self._commit(
+            rel, abs_path, sha,
+            lambda p: p.write_text(content, encoding="utf-8"),
+            source=source, target=target, owned=owned,
+        )
 
     def write_bytes(self, rel: str, src: Path, *, source: str, target: str) -> bool:
         """Copy the binary file at *src* to *rel* (POSIX relative path).
 
-        Same ownership semantics as :meth:`write` but uses byte-level hashing.
+        Uses the **byte channel**: content is hashed as raw bytes via
+        ``sha256_bytes``.  See the class-level hash-channel contract for why
+        this path must never be mixed with ``write`` for the same file.
+
+        Same ownership semantics as :meth:`write`.
         """
         rel = _to_posix(rel)
         abs_path = self._abs(rel)
         data = src.read_bytes()
         sha = sha256_bytes(data)
-
-        absent = not abs_path.exists()
-        owned = self._owned_unmodified_bytes(rel)
-
-        if absent or owned:
-            if not self.dry_run:
-                abs_path.parent.mkdir(parents=True, exist_ok=True)
-                abs_path.write_bytes(data)
-            self._record(rel, sha, source=source, target=target)
-            return True
-
-        if self.force:
-            if not self.dry_run:
-                abs_path.parent.mkdir(parents=True, exist_ok=True)
-                abs_path.write_bytes(data)
-            self._record(rel, sha, source=source, target=target)
-            self.skipped.append({"path": rel, "reason": "overwritten (--force)"})
-            return True
-
-        self.skipped.append({
-            "path": rel,
-            "reason": "external or hand-edited; left as-is (pass --force to overwrite)",
-        })
-        return False
+        owned = self._owned_unmodified(rel, self._hash_bytes)
+        return self._commit(
+            rel, abs_path, sha,
+            lambda p: p.write_bytes(data),
+            source=source, target=target, owned=owned,
+        )
 
     def prune_orphans(self) -> None:
         """Delete files holoctl previously owned but did not write this run.
