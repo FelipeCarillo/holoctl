@@ -62,7 +62,7 @@ def compile_copilot(project_root: Path, config: dict, dry_run: bool = False) -> 
     # MCP server config → .vscode/mcp.json
     files.extend(mcp_emit.emit_copilot(project_root, dry_run=dry_run))
 
-    result = {"files": files}
+    result: dict[str, object] = {"files": files}
     if skipped:
         result["skipped"] = skipped
     return result

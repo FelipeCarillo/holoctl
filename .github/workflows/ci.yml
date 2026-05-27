@@ -31,6 +31,9 @@ jobs:
       - name: Lint — ruff
         run: uv run ruff check holoctl/ tests/
 
+      - name: Type check — mypy
+        run: uv run mypy holoctl/lib holoctl/cli
+
       - name: Smoke test — CLI loads
         run: |
           uv run holoctl --version

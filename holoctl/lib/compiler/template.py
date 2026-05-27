@@ -30,9 +30,9 @@ def resolve_template(template: str, config: dict) -> str:
     return re.sub(r"\{\{([^}]+)\}\}", replace, template)
 
 
-def _get_nested(obj: dict, key: str):
+def _get_nested(obj: dict, key: str) -> object:
     parts = key.split(".")
-    current = obj
+    current: object = obj
     for part in parts:
         if not isinstance(current, dict):
             return None

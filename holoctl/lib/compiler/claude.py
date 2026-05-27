@@ -192,7 +192,7 @@ def compile_claude(project_root: Path, config: dict, dry_run: bool = False) -> d
             (project_root / out_path).write_text(upgrade_bootstrap, encoding="utf-8")
         files.append(out_path)
 
-    result = {"files": files}
+    result: dict[str, object] = {"files": files}
     if skipped:
         result["skipped"] = skipped
     return result
@@ -202,7 +202,7 @@ def _map_tools(tools) -> str:
     if not tools:
         return "Read, Grep, Glob, Edit, Write, Bash"
     arr = tools if isinstance(tools, list) else [t.strip() for t in str(tools).split(",")]
-    return ", ".join(_TOOL_MAP.get(t, t) for t in arr)
+    return ", ".join(str(_TOOL_MAP.get(t, t)) for t in arr)
 
 
 def _materialize_claude_md(claude_md_path: Path, generated_content: str, *, skipped: list[dict]) -> bool:

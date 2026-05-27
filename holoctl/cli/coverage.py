@@ -24,7 +24,7 @@ app = typer.Typer()
 # (source rel path under .holoctl/, label) → which targets consume it.
 # This is a static catalog of expected coverage, not introspected from the
 # compilers — kept in sync manually but small enough to be obvious.
-_COVERAGE = {
+_COVERAGE: dict[str, dict[str, str | None]] = {
     # Source path under .holoctl/  : { target: rel_path under repo root | None }
     "instructions.md": {
         "claude":  "CLAUDE.md",

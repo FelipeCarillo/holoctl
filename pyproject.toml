@@ -91,8 +91,10 @@ dev = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "jinja2>=3.1",
-    # Linter (correctness net — see [tool.ruff]).
+    # Linter + type checker (correctness nets — see [tool.ruff] / [tool.mypy]).
     "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML>=6",
 ]
 
 [tool.pytest.ini_options]
@@ -121,3 +123,11 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests use throwaway bindings and import-for-side-effect patterns freely.
 "tests/*" = ["F841", "B007"]
+
+[tool.mypy]
+python_version = "3.11"
+# Lenient by design: a cheap regression net for obvious type errors, not a
+# strict gate. CI runs it on the core (`holoctl/lib`, `holoctl/cli`); the
+# FastAPI dashboard (`holoctl/server/app.py` + routes/views) is dynamically
+# typed and intentionally out of scope (it's only reachable via a lazy import).
+ignore_missing_imports = true
