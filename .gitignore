@@ -10,6 +10,9 @@ node_modules/
 # Brainstorming visual-companion mockups (superpowers)
 .superpowers/
 
+# Git worktrees (superpowers subagent-driven execution)
+.worktrees/
+
 # Ad-hoc drafts (linkedin posts, screenshots, etc.) — keep out of the repo.
 *-draft.jpg
 *-draft.png
