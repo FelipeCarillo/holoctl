@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .dates import format_iso_datetime
+from ..markdown import render_markdown
 
 
 _TYPE_RANK = {
@@ -23,10 +24,8 @@ def detail_context(ticket: dict, body: str, alias: str,
                    all_tickets: list[dict] | None = None,
                    project_root: Path | None = None,
                    statuses: list[str] | None = None) -> dict:
-    # Lazy: markdown + activity log readers still live in app.py until cleanup.
-    from ..app import (
-        _render_markdown, _strip_empty_sections, _read_ticket_activity,
-    )
+    # Lazy: activity log reader still lives in app.py until cleanup.
+    from ..app import _read_ticket_activity
 
     agents_list = [a for a in (ticket.get("agent") or []) if a]
     tags_list = [t for t in (ticket.get("tags") or []) if t]
@@ -52,7 +51,7 @@ def detail_context(ticket: dict, body: str, alias: str,
     updated = ticket.get("updated", "")
     completed = ticket.get("completed", "")
 
-    body_html = _render_markdown(_strip_empty_sections(body))
+    body_html = render_markdown(body)
 
     # Activity: derived events + activity.jsonl, newest first.
     derived: list[dict] = []
