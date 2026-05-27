@@ -122,45 +122,39 @@ def read_commands(project_path: Path) -> list[dict]:
     return result
 
 
-def read_foreign_agents(project_path: Path) -> list[dict]:
-    """Return agents in .claude/agents/ that are NOT tracked by the manifest.
+def _read_foreign(project_path: Path, kind: str) -> list[dict]:
+    """Shared implementation for read_foreign_agents / read_foreign_commands.
 
     Guard: if the manifest does not exist (project was never compiled with the
     manifest-era holoctl), return [] — we cannot reliably distinguish managed
     from foreign without a manifest, so we emit nothing rather than reporting
-    every .claude/ agent as foreign.
+    every .claude/ item as foreign.
+
+    `kind` must be ``"agents"`` or ``"commands"`` — it is used both as the key
+    into ``scan_unmanaged`` and as the ``.claude/<kind>/`` subdirectory name.
     """
     if not manifest.manifest_path(project_path).exists():
         return []
-    foreign_names = scan_unmanaged(project_path).get("agents", [])
+    foreign_names = scan_unmanaged(project_path).get(kind, [])
     result = []
     for name in foreign_names:
-        f = project_path / ".claude" / "agents" / f"{name}.md"
+        f = project_path / ".claude" / kind / f"{name}.md"
         try:
             data, _ = parse_frontmatter(f.read_text(encoding="utf-8"))
         except Exception:
             continue
         result.append({**data, "file": f"{name}.md", "managed": False})
     return result
+
+
+def read_foreign_agents(project_path: Path) -> list[dict]:
+    """Return agents in .claude/agents/ that are NOT tracked by the manifest."""
+    return _read_foreign(project_path, "agents")
 
 
 def read_foreign_commands(project_path: Path) -> list[dict]:
-    """Return commands in .claude/commands/ that are NOT tracked by the manifest.
-
-    Guard: same as read_foreign_agents — requires an existing manifest.
-    """
-    if not manifest.manifest_path(project_path).exists():
-        return []
-    foreign_names = scan_unmanaged(project_path).get("commands", [])
-    result = []
-    for name in foreign_names:
-        f = project_path / ".claude" / "commands" / f"{name}.md"
-        try:
-            data, _ = parse_frontmatter(f.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        result.append({**data, "file": f"{name}.md", "managed": False})
-    return result
+    """Return commands in .claude/commands/ that are NOT tracked by the manifest."""
+    return _read_foreign(project_path, "commands")
 
 
 def read_context_docs(project_path: Path) -> list[dict]:
