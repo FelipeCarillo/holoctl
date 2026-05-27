@@ -28,7 +28,6 @@ from holoctl.server import app as app_module
 from holoctl.server.app import (
     _avatar_hue,
     _board_page,
-    _format_due,
     _format_iso_datetime,
     _format_relative_date,
     _initials,
@@ -36,9 +35,9 @@ from holoctl.server.app import (
     _list_html,
     _read_ticket_activity,
     _ticket_detail_page,
-    _ticket_preview,
     app,
 )
+from holoctl.server.views.card import format_due, ticket_preview
 
 
 # ── Helpers / fixtures ────────────────────────────────────────────────────────
@@ -125,19 +124,19 @@ class TestAvatarHue:
 
 class TestFormatDue:
     def test_iso_date(self):
-        assert _format_due("2026-05-09") == "May 9"
+        assert format_due("2026-05-09") == "May 9"
 
     def test_iso_datetime(self):
-        assert _format_due("2026-12-25T14:00:00Z") == "Dec 25"
+        assert format_due("2026-12-25T14:00:00Z") == "Dec 25"
 
     def test_invalid(self):
-        assert _format_due("not a date") == ""
+        assert format_due("not a date") == ""
 
     def test_empty(self):
-        assert _format_due("") == ""
+        assert format_due("") == ""
 
     def test_none(self):
-        assert _format_due(None) == ""
+        assert format_due(None) == ""
 
 
 # ── Helpers: _ticket_preview ──────────────────────────────────────────────────
@@ -150,7 +149,7 @@ class TestTicketPreview:
         `(objective criterion)`-style hints."""
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "Plain ticket", "agent": "developer"})
-        assert _ticket_preview(workspace, ticket) == ""
+        assert ticket_preview(workspace, ticket) == ""
 
     def test_substantive_body(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
@@ -159,7 +158,7 @@ class TestTicketPreview:
         b.set_body(ticket["id"], "## Description\n\nAdd JWT-based auth to the public API. Token refresh + revocation.\n")
         # Re-load to pick up the updated file ref.
         ticket = b.get(ticket["id"])
-        out = _ticket_preview(workspace, ticket)
+        out = ticket_preview(workspace, ticket)
         assert out.startswith("Add JWT-based auth")
 
     def test_truncates_long_lines(self, workspace: Path, workspace_config: dict):
@@ -167,7 +166,7 @@ class TestTicketPreview:
         ticket = b.add({"title": "Long", "agent": "developer"})
         b.set_body(ticket["id"], "## Description\n\n" + "x" * 200 + "\n")
         ticket = b.get(ticket["id"])
-        out = _ticket_preview(workspace, ticket, max_chars=80)
+        out = ticket_preview(workspace, ticket, max_chars=80)
         assert len(out) <= 80
         assert out.endswith("…")
 
@@ -176,7 +175,7 @@ class TestTicketPreview:
         ticket = b.add({"title": "Headers", "agent": "developer"})
         b.set_body(ticket["id"], "# Goal\n\n## Sub\n\nReal prose line here.\n")
         ticket = b.get(ticket["id"])
-        out = _ticket_preview(workspace, ticket)
+        out = ticket_preview(workspace, ticket)
         assert out == "Real prose line here."
 
     def test_strips_list_marker(self, workspace: Path, workspace_config: dict):
@@ -184,13 +183,13 @@ class TestTicketPreview:
         ticket = b.add({"title": "List", "agent": "developer"})
         b.set_body(ticket["id"], "## Tasks\n\n- [x] Done item with substance here\n")
         ticket = b.get(ticket["id"])
-        out = _ticket_preview(workspace, ticket)
+        out = ticket_preview(workspace, ticket)
         assert out == "Done item with substance here"
 
     def test_missing_file(self, workspace: Path):
         # Ticket dict without a matching file → empty, no exception.
         ticket = {"id": "TST-999", "file": "tickets/does-not-exist.md"}
-        assert _ticket_preview(workspace, ticket) == ""
+        assert ticket_preview(workspace, ticket) == ""
 
 
 # ── _kanban_html: new Phase-1 markup contract ─────────────────────────────────

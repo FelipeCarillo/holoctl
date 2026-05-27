@@ -61,6 +61,11 @@ app.include_router(_project_detail_router)
 app.include_router(_project_doc_router)
 app.include_router(_project_meta_router)
 
+# Re-export shim: these names are still referenced by the string-building
+# helpers below (_kanban_html, _list_html etc.) which get deleted in a
+# later task. Import from their new canonical home so the names resolve.
+from .views.card import format_due as _format_due, ticket_preview as _ticket_preview  # noqa: E402
+
 # Cache for _get_projects() — git_info subprocess is slow with many repos.
 # TTL is short so the dashboard still feels live.
 _PROJECTS_CACHE: dict = {"data": None, "ts": 0.0}
@@ -215,85 +220,6 @@ def _not_found_html(msg: str = "Not found") -> str:
 
 
 # ── page generators ───────────────────────────────────────────────────────────
-
-def _ticket_preview(project_root: Path, ticket: dict, max_chars: int = 80) -> str:
-    """First non-trivial prose line from a ticket .md, for the kanban card preview.
-
-    Strips frontmatter, drops empty/placeholder sections, then walks the body
-    looking for the first line that isn't a header, blank, list marker, or
-    HTML comment. Returns "" gracefully when the ticket body is template-only.
-    """
-    rel = ticket.get("file")
-    if not rel:
-        return ""
-    # `ticket["file"]` is stored relative to `.holoctl/board/` (e.g.
-    # `tickets/HOL-001-foo.md`). Resolve from there; fall back to a path
-    # treated as workspace-relative for older indices that may have stored it
-    # differently.
-    candidates = [
-        project_root / ".holoctl" / "board" / rel,
-        project_root / rel,
-    ]
-    md_path = next((p for p in candidates if p.exists()), None)
-    if md_path is None:
-        return ""
-    try:
-        raw = md_path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
-    _, body = parse_frontmatter(raw)
-    body = _strip_empty_sections(body)
-    in_html_comment = False
-    for raw_line in body.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        # Multi-line HTML comments — skip until close.
-        if in_html_comment:
-            if "-->" in line:
-                in_html_comment = False
-            continue
-        if line.startswith("<!--"):
-            if "-->" not in line:
-                in_html_comment = True
-            continue
-        # Markdown structural lines.
-        if line.startswith("#") or line.startswith("---"):
-            continue
-        # List / checkbox markers — skip the marker but keep substantive text.
-        m = re.match(r"^(?:[-*+]\s*(?:\[[ xX]\]\s+)?|\d+\.\s+)(.*)$", line)
-        if m:
-            line = m.group(1).strip()
-            if not line:
-                continue
-        # Skip parenthetical placeholder hints.
-        if re.match(r"^\([^)]*\)\s*$", line):
-            continue
-        # Strip basic markdown emphasis / inline code for the preview.
-        line = re.sub(r"`([^`]+)`", r"\1", line)
-        line = re.sub(r"\*\*([^*]+)\*\*", r"\1", line)
-        line = re.sub(r"\*([^*]+)\*", r"\1", line)
-        if len(line) > max_chars:
-            line = line[: max_chars - 1].rstrip() + "…"
-        return line
-    return ""
-
-
-def _format_due(due_iso: str) -> str:
-    """Short due-date label like 'May 9' for ISO dates; empty if unparseable."""
-    if not due_iso:
-        return ""
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(due_iso))
-    if not m:
-        return ""
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    try:
-        mo = int(m.group(2))
-        day = int(m.group(3))
-        return f"{months[mo - 1]} {day}"
-    except (ValueError, IndexError):
-        return ""
-
 
 def _repo_chip_html(projects_list: list[str]) -> str:
     """Compact repo / project pill for the card top row.
