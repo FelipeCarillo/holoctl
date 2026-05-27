@@ -9,6 +9,7 @@ import typer
 from ._console import console
 
 from ..lib.config import find_project_root, load_config
+from ..lib.ecosystem import scan_unmanaged
 from .. import __version__
 
 app = typer.Typer()
@@ -210,13 +211,6 @@ def _info(category: str, message: str) -> None:
     console.print(f"  [blue]·[/blue] [dim]{category:<14}[/dim] {message}")
 
 
-# Bootstrap commands written directly by the compiler (not ledger-tracked).
-_HOLOCTL_BOOTSTRAP_COMMANDS: frozenset[str] = frozenset({
-    ".claude/commands/holoctl.md",
-    ".claude/commands/hctl-upgrade.md",
-})
-
-
 def _check_mcp_health(root: Path, config: dict | None, issues: int) -> int:
     """Check MCP server health and registration; return updated issues count."""
     from ..lib.mcp_config import read_mcp_servers
@@ -253,74 +247,61 @@ def _check_mcp_health(root: Path, config: dict | None, issues: int) -> int:
 
 def _check_ecosystem(root: Path) -> None:
     """Print Ecosystem section: managed vs foreign agents, commands, skills, MCP servers."""
-    from ..lib.compiler import manifest
     from ..lib.mcp_config import read_mcp_servers
 
-    manifest_files: set[str] = set(manifest.load(root)["files"].keys())
+    # Delegate classification to the shared single source of truth.
+    foreign = scan_unmanaged(root)
+    agents_foreign = foreign["agents"]    # list of stems (no extension)
+    cmds_foreign = foreign["commands"]    # list of stems (no extension)
+    skills_foreign = foreign["skills"]    # list of dir names
+    mcp_foreign = foreign["mcp_servers"]  # list of server names
 
-    # ---- agents -------------------------------------------------------
-    agents_managed: list[str] = []
-    agents_foreign: list[str] = []
+    # Compute managed counts: (total on-disk of that type) − (foreign count).
     claude_agents = root / ".claude" / "agents"
-    if claude_agents.exists():
-        for f in sorted(claude_agents.glob("*.md")):
-            rel = f".claude/agents/{f.name}"
-            if rel in manifest_files:
-                agents_managed.append(f.name)
-            else:
-                agents_foreign.append(f.name)
+    total_agents = len(list(claude_agents.glob("*.md"))) if claude_agents.exists() else 0
+    agents_managed_count = total_agents - len(agents_foreign)
 
-    # ---- commands -----------------------------------------------------
-    cmds_managed: list[str] = []
-    cmds_foreign: list[str] = []
     claude_commands = root / ".claude" / "commands"
-    if claude_commands.exists():
-        for f in sorted(claude_commands.glob("*.md")):
-            rel = f".claude/commands/{f.name}"
-            if rel in manifest_files or rel in _HOLOCTL_BOOTSTRAP_COMMANDS:
-                cmds_managed.append(f.name)
-            else:
-                cmds_foreign.append(f.name)
+    # Total on-disk commands minus the bootstrap commands (which are never counted
+    # as foreign by scan_unmanaged, but are on-disk).
+    from ..lib.ecosystem import _BOOTSTRAP_COMMANDS as _BS
+    total_cmds = (
+        sum(1 for f in claude_commands.glob("*.md") if f.name not in _BS)
+        if claude_commands.exists() else 0
+    )
+    cmds_managed_count = total_cmds - len(cmds_foreign)
 
-    # ---- skills -------------------------------------------------------
-    skills_managed: list[str] = []
-    skills_foreign: list[str] = []
     claude_skills = root / ".claude" / "skills"
-    if claude_skills.exists():
-        for skill_dir in sorted(d for d in claude_skills.iterdir() if d.is_dir()):
-            skill_rel = f".claude/skills/{skill_dir.name}/SKILL.md"
-            # A skill is managed if its SKILL.md is in the manifest (either from
-            # builtin emit or custom skill emit).
-            if skill_rel in manifest_files:
-                skills_managed.append(skill_dir.name)
-            else:
-                skills_foreign.append(skill_dir.name)
+    total_skills = (
+        sum(1 for d in claude_skills.iterdir() if d.is_dir())
+        if claude_skills.exists() else 0
+    )
+    skills_managed_count = total_skills - len(skills_foreign)
 
-    # ---- MCP servers --------------------------------------------------
+    # MCP: holoctl registered status from all configured servers.
     all_servers = read_mcp_servers(root)
-    mcp_managed = sorted(s for s in all_servers if s == "holoctl")
-    mcp_foreign = sorted(s for s in all_servers if s != "holoctl")
+    holoctl_registered = "holoctl" in all_servers
 
     # ---- Print ---------------------------------------------------------
     _info(
         "Ecosystem",
-        f"Agents: {len(agents_managed)} managed, {len(agents_foreign)} foreign",
+        f"Agents: {agents_managed_count} managed, {len(agents_foreign)} foreign",
     )
     if agents_foreign:
         for name in agents_foreign:
-            _info("Ecosystem", f"  foreign agent: {name}")
+            _info("Ecosystem", f"  foreign agent: {name}.md")
 
     _info(
         "Ecosystem",
-        f"Commands: {len(cmds_managed)} managed, {len(cmds_foreign)} foreign",
+        f"Commands: {cmds_managed_count} managed, {len(cmds_foreign)} foreign",
     )
     if cmds_foreign:
         for name in cmds_foreign:
-            _info("Ecosystem", f"  foreign command: {name}")
+            _info("Ecosystem", f"  foreign command: {name}.md")
 
     _info(
         "Ecosystem",
-        f"Skills: {len(skills_managed)} managed, {len(skills_foreign)} foreign",
+        f"Skills: {skills_managed_count} managed, {len(skills_foreign)} foreign",
     )
     if skills_foreign:
         for name in skills_foreign:
@@ -328,7 +309,7 @@ def _check_ecosystem(root: Path) -> None:
 
     _info(
         "Ecosystem",
-        f"MCP servers: holoctl {'registered' if mcp_managed else 'not registered'}, {len(mcp_foreign)} third-party"
+        f"MCP servers: holoctl {'registered' if holoctl_registered else 'not registered'}, {len(mcp_foreign)} third-party"
         + (f" ({', '.join(mcp_foreign)})" if mcp_foreign else ""),
     )
 

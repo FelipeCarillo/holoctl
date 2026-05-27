@@ -18,6 +18,7 @@ Non-interactive (no blocking prompts):
 """
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -236,6 +237,10 @@ def _adopt_skill(root: Path, name: str, force: bool, new_entries: dict) -> bool:
         console.print(f"  [yellow]skip[/yellow] skill {name} — no SKILL.md found")
         return False
 
+    # On --force re-adopt of an existing destination, clear it first so stale
+    # support files from a previous adopt don't linger.
+    if src_dir.exists():
+        shutil.rmtree(src_dir)
     src_dir.mkdir(parents=True, exist_ok=True)
     # SKILL.md — text channel (matches how the compiler emits it).
     skill_text = skill_md.read_text(encoding="utf-8")
