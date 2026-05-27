@@ -1381,6 +1381,19 @@ class TestControlsHiddenByView:
 # ── Timeline view is removed — `?view=timeline` falls back to kanban ─────────
 
 
+class TestFilterAxes:
+    def test_kind_and_source_filter_axes_present(self, client: TestClient, alias: str):
+        html = client.get(f"/project/{alias}/board").text
+        assert 'data-axis="kind"' in html
+        assert 'data-axis="source"' in html
+
+    def test_group_by_project_and_kind_present(self, client: TestClient, alias: str):
+        html = client.get(f"/project/{alias}/board").text
+        # Group-by select options
+        assert '<option value="project"' in html
+        assert '<option value="kind"' in html
+
+
 class TestTimelineRemoved:
     def test_view_timeline_falls_back_to_kanban(self, client: TestClient, alias: str):
         r = client.get(f"/project/{alias}/board?view=timeline")
