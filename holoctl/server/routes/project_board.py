@@ -24,15 +24,15 @@ _PROJECT_TABS = [
 
 @router.get("/project/{alias}/board", response_class=HTMLResponse)
 def project_board(alias: str, view: str = "kanban"):
-    # Lazy import: project lookup helpers live in projects.py; not_found stays in app.py.
+    # Lazy import: project lookup helpers live in projects.py.
     from ..projects import get_project
-    from ..app import _not_found_html
     from ...lib.board import Board
 
     project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     if view not in _VALID_VIEWS:
@@ -69,12 +69,11 @@ def project_board(alias: str, view: str = "kanban"):
 def api_board_html(alias: str):
     """Kanban fragment for the SSE board-update swap."""
     from ..projects import get_project
-    from ..app import _not_found_html
     from ...lib.board import Board
 
     project = get_project(alias)
     if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+        return HTMLResponse(render("partials/_empty_state.html", msg="Project not found"), status_code=404)
     board = Board(Path(project["path"]), project["config"])
     tickets = board.ls()
     ctx = board_context(project, tickets, project["config"], view="kanban")
@@ -85,12 +84,11 @@ def api_board_html(alias: str):
 def api_list_html(alias: str):
     """List view fragment for SSE swap. Mirrors api_board_html for list mode."""
     from ..projects import get_project
-    from ..app import _not_found_html
     from ...lib.board import Board
 
     project = get_project(alias)
     if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+        return HTMLResponse(render("partials/_empty_state.html", msg="Project not found"), status_code=404)
     board = Board(Path(project["path"]), project["config"])
     tickets = board.ls()
     statuses = project["config"]["board"]["statuses"]

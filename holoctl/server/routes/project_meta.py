@@ -27,12 +27,12 @@ def _project_breadcrumbs(project: dict, label: str) -> list[dict]:
 @router.get("/project/{alias}/agents", response_class=HTMLResponse)
 def project_agents(alias: str):
     from ..projects import get_project, read_agents
-    from ..app import _not_found_html
 
     project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     agents = read_agents(Path(project["path"]))
@@ -52,12 +52,12 @@ def project_agents(alias: str):
 @router.get("/project/{alias}/commands", response_class=HTMLResponse)
 def project_commands(alias: str):
     from ..projects import get_project, read_commands
-    from ..app import _not_found_html
 
     project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     commands = read_commands(Path(project["path"]))
@@ -77,12 +77,12 @@ def project_commands(alias: str):
 @router.get("/project/{alias}/context", response_class=HTMLResponse)
 def project_context(alias: str):
     from ..projects import get_project, read_context_docs
-    from ..app import _not_found_html
 
     project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     docs = read_context_docs(Path(project["path"]))
@@ -102,14 +102,14 @@ def project_context(alias: str):
 @router.get("/project/{alias}/repos", response_class=HTMLResponse)
 def project_repos(alias: str):
     from ..projects import get_project
-    from ..app import _not_found_html
     from ...lib.board import Board
     from ...lib.discover import discover_repos
 
     project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     # Dirty-flag check is opt-in via config.git.checkDirty (default false).

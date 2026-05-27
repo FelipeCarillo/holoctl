@@ -39,13 +39,13 @@ def _project_breadcrumbs(project: dict, listing_label: str, listing_path: str,
 @router.get("/project/{alias}/agents/{slug}", response_class=HTMLResponse)
 def project_agent_detail(alias: str, slug: str):
     from ..projects import get_project
-    from ..app import _not_found_html
     from ...lib.markdown import parse_frontmatter
 
     project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     root = (Path(project["path"]) / ".holoctl" / "agents").resolve()
@@ -53,7 +53,7 @@ def project_agent_detail(alias: str, slug: str):
     if not f.exists():
         return HTMLResponse(
             render("base.html", title="Not Found",
-                   content=_not_found_html("Agent not found")),
+                   content=render("partials/_empty_state.html", msg="Agent not found")),
             status_code=404,
         )
     fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
@@ -83,13 +83,13 @@ def project_agent_detail(alias: str, slug: str):
 @router.get("/project/{alias}/commands/{slug}", response_class=HTMLResponse)
 def project_command_detail(alias: str, slug: str):
     from ..projects import get_project
-    from ..app import _not_found_html
     from ...lib.markdown import parse_frontmatter
 
     project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     root = (Path(project["path"]) / ".holoctl" / "commands").resolve()
@@ -97,7 +97,7 @@ def project_command_detail(alias: str, slug: str):
     if not f.exists():
         return HTMLResponse(
             render("base.html", title="Not Found",
-                   content=_not_found_html("Command not found")),
+                   content=render("partials/_empty_state.html", msg="Command not found")),
             status_code=404,
         )
     fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
@@ -122,13 +122,13 @@ def project_command_detail(alias: str, slug: str):
 @router.get("/project/{alias}/context/{filename}", response_class=HTMLResponse)
 def project_context_detail(alias: str, filename: str):
     from ..projects import get_project
-    from ..app import _not_found_html
     from ...lib.markdown import parse_frontmatter
 
     project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     root = (Path(project["path"]) / ".holoctl" / "context").resolve()
@@ -136,7 +136,7 @@ def project_context_detail(alias: str, filename: str):
     if not f.exists() or not f.is_file():
         return HTMLResponse(
             render("base.html", title="Not Found",
-                   content=_not_found_html("Context document not found")),
+                   content=render("partials/_empty_state.html", msg="Context document not found")),
             status_code=404,
         )
     raw = f.read_text(encoding="utf-8")

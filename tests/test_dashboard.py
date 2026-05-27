@@ -26,13 +26,9 @@ import re
 
 from holoctl.lib.board import Board
 import holoctl.server.projects as projects_module
-from holoctl.server.app import (
-    _avatar_hue,
-    _format_iso_datetime,
-    _format_relative_date,
-    _initials,
-    app,
-)
+from holoctl.server.app import app
+from holoctl.server.views.avatars import avatar_hue as _avatar_hue, initials as _initials
+from holoctl.server.views.dates import format_iso_datetime as _format_iso_datetime, format_relative_date as _format_relative_date
 from holoctl.server.jinja import render
 from holoctl.server.views.board import board_context
 from holoctl.server.views.list import list_context
