@@ -19,8 +19,8 @@ from .compiler import manifest
 from .mcp_config import read_mcp_servers
 
 # Bootstrap commands the compiler writes directly (NOT ledger-tracked) — they
-# are holoctl's own, never foreign. Kept in sync with
-# ``cli/doctor.py:_HOLOCTL_BOOTSTRAP_COMMANDS``.
+# are holoctl's own, never foreign. This is the single source of truth;
+# ``cli/doctor.py`` imports ``_BOOTSTRAP_COMMANDS`` from here.
 _BOOTSTRAP_COMMANDS: frozenset[str] = frozenset({"holoctl.md", "hctl-upgrade.md"})
 
 

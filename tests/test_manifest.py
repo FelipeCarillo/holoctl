@@ -242,8 +242,12 @@ def test_ledger_write_preserves_hand_edited_file(tmp_path: Path):
     assert result is False
     # File on disk still has hand-edited content.
     assert (tmp_path / ".claude" / "test.md").read_text(encoding="utf-8") == "HAND EDITED"
-    # Not in written.
-    assert ".claude/test.md" not in ledger2.written
+    # A hand-edited file that WAS holoctl-managed (in prev) carries its previous
+    # manifest entry forward (the OLD hash) so the manifest keeps recording it —
+    # this lets drift classify it as hand-edited (not stale) and stops a second
+    # skip note from prune_orphans.
+    assert ".claude/test.md" in ledger2.written
+    assert ledger2.written[".claude/test.md"] == ledger2.prev[".claude/test.md"]
     # In skipped.
     assert any(e["path"] == ".claude/test.md" for e in ledger2.skipped)
 
@@ -504,7 +508,10 @@ def test_write_bytes_hand_edit_preserved(tmp_path: Path):
     result = ledger2.write_bytes(".claude/support/file.bin", src, source="s", target="t")
     assert result is False
     assert (tmp_path / ".claude" / "support" / "file.bin").read_bytes() == b"mutated"
-    assert ".claude/support/file.bin" not in ledger2.written
+    # Was holoctl-managed (in prev) → carry the previous entry (old hash) forward
+    # so the manifest keeps recording it (drift labels it hand-edited, not stale).
+    assert ".claude/support/file.bin" in ledger2.written
+    assert ledger2.written[".claude/support/file.bin"] == ledger2.prev[".claude/support/file.bin"]
 
 
 # ---------------------------------------------------------------------------

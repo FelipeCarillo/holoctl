@@ -351,10 +351,23 @@ class CompileLedger:
             self.skipped.append({"path": rel, "reason": "overwritten (--force)"})
             return True
 
-        self.skipped.append({
-            "path": rel,
-            "reason": "external or hand-edited; left as-is (pass --force to overwrite)",
-        })
+        # Present but not owned and not forced → leave on disk.
+        #
+        # If this path WAS previously holoctl-managed (rel in self.prev), it's a
+        # HAND-EDIT of a file we used to own. Carry the previous manifest entry
+        # forward (its OLD hash) so finalize keeps recording it. That keeps
+        # ``_doctor_compile_drift`` classifying it as hand-edited (rel in manifest,
+        # on-disk hash != recorded hash) rather than stale, and stops
+        # ``prune_orphans`` from emitting a SECOND skip note (rel now in written).
+        #
+        # A genuinely FOREIGN file (rel not in self.prev) is NOT recorded —
+        # holoctl doesn't own it — so it stays out of the manifest and preserved.
+        if rel in self.prev:
+            self.written[rel] = self.prev[rel]
+            reason = "hand-edited (was holoctl-managed); left as-is (pass --force to overwrite)"
+        else:
+            reason = "external (not holoctl-managed); left as-is (pass --force to overwrite)"
+        self.skipped.append({"path": rel, "reason": reason})
         return False
 
     # ------------------------------------------------------------------

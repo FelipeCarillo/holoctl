@@ -119,6 +119,75 @@ def test_legacy_headered_file_is_migrated(tmp_path: Path):
     assert ".claude/agents/boardmaster.md" in result["migrated"]
 
 
+def test_hand_edited_managed_agent_keeps_manifest_entry_single_skip(tmp_path: Path):
+    """Hand-editing a MANAGED agent and recompiling must:
+    (a) keep its manifest entry (with the PRE-edit hash) so drift can label it
+        hand-edited rather than stale;
+    (b) emit exactly ONE skip note for it (write's skip, not a duplicate from
+        prune_orphans).
+    """
+    config = _seed(tmp_path)
+    compile_project(tmp_path, config, "claude")
+
+    dev_out = tmp_path / ".claude" / "agents" / "dev.md"
+    assert dev_out.exists()
+    pre_edit_hash = load(tmp_path)["files"][".claude/agents/dev.md"]["sha256"]
+
+    # Hand-edit the managed output (it's owned, now diverges from the manifest).
+    dev_out.write_text("# hand-edited by the user\n", encoding="utf-8")
+
+    result = compile_project(tmp_path, config, "claude")
+
+    # (a) Manifest still records dev.md, carrying the OLD (pre-edit) hash.
+    tracked = load(tmp_path)["files"]
+    assert ".claude/agents/dev.md" in tracked
+    assert tracked[".claude/agents/dev.md"]["sha256"] == pre_edit_hash
+
+    # The hand-edit on disk is preserved (not clobbered, not pruned).
+    assert dev_out.read_text(encoding="utf-8") == "# hand-edited by the user\n"
+    assert ".claude/agents/dev.md" not in result["removed"]
+
+    # (b) Exactly ONE skip note for dev.md (no duplicate from prune_orphans).
+    dev_notes = [s for s in result["skipped"] if s["path"] == ".claude/agents/dev.md"]
+    assert len(dev_notes) == 1, dev_notes
+    assert "hand-edited" in dev_notes[0]["reason"]
+
+
+def test_foreign_file_still_unrecorded_and_preserved(tmp_path: Path):
+    """A genuinely foreign file (never in prev) is NOT recorded in the manifest
+    and is preserved — the carry-forward must not leak to foreign files."""
+    config = _seed(tmp_path)
+    compile_project(tmp_path, config, "claude")
+
+    foreign = tmp_path / ".claude" / "agents" / "stranger.md"
+    foreign.write_text("# not holoctl's\n", encoding="utf-8")
+
+    result = compile_project(tmp_path, config, "claude")
+
+    assert foreign.read_text(encoding="utf-8") == "# not holoctl's\n"
+    assert ".claude/agents/stranger.md" not in load(tmp_path)["files"]
+    assert ".claude/agents/stranger.md" not in result["removed"]
+
+
+def test_hand_edit_no_other_changes_avoids_manifest_churn(tmp_path: Path):
+    """Carrying prev[rel] forward unchanged keeps merged==prev when nothing else
+    changed → finalize skips the rewrite (mtime preserved)."""
+    config = _seed(tmp_path)
+    compile_project(tmp_path, config, "claude")
+
+    mp = manifest_path(tmp_path)
+    mtime_before = mp.stat().st_mtime_ns
+
+    # Hand-edit a managed agent, then recompile. Only this file diverges; all
+    # other managed outputs stay owned-unmodified → merged should equal prev.
+    (tmp_path / ".claude" / "agents" / "dev.md").write_text(
+        "# hand-edited\n", encoding="utf-8"
+    )
+    compile_project(tmp_path, config, "claude")
+
+    assert mp.stat().st_mtime_ns == mtime_before, "manifest rewritten despite no change"
+
+
 def test_multi_target_manifest_keeps_both(tmp_path: Path):
     """Compiling claude then agents must leave BOTH targets' entries in the manifest
     (the merge-preserving finalize), and prune must not cross targets."""
