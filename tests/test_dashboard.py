@@ -27,17 +27,70 @@ from holoctl.lib.board import Board
 import holoctl.server.projects as projects_module
 from holoctl.server.app import (
     _avatar_hue,
-    _board_page,
     _format_iso_datetime,
     _format_relative_date,
     _initials,
-    _kanban_html,
-    _list_html,
-    _ticket_detail_page,
     app,
 )
+from holoctl.server.jinja import render
+from holoctl.server.views.board import board_context
+from holoctl.server.views.list import list_context
+from holoctl.server.views.tree import tree_context
 from holoctl.server.views.card import format_due, ticket_preview
-from holoctl.server.views.detail import read_ticket_activity
+from holoctl.server.views.detail import read_ticket_activity, detail_context
+
+
+# ── Module-level rendering helpers ───────────────────────────────────────────
+
+
+def _render_kanban(project_root: Path, config: dict) -> str:
+    """Render the kanban partial directly via Jinja (no HTTP round-trip)."""
+    b = Board(project_root, config)
+    project = {"alias": project_root.name, "name": "T", "path": str(project_root)}
+    return render(
+        "partials/board/_kanban.html",
+        **board_context(project, b.ls(), config, view="kanban"),
+    )
+
+
+def _render_list(project_root: Path, config: dict) -> str:
+    """Render the list partial directly via Jinja."""
+    b = Board(project_root, config)
+    return render(
+        "partials/board/_list.html",
+        **list_context(b.ls(), config["board"]["statuses"], project_root.name),
+    )
+
+
+def _render_tree(project_root: Path, config: dict) -> str:
+    """Render the tree partial directly via Jinja."""
+    b = Board(project_root, config)
+    return render(
+        "partials/board/_tree.html",
+        **tree_context(b.ls(), project_root.name),
+    )
+
+
+def _render_detail(ticket: dict, body: str, alias: str,
+                   workspace: Path, config: dict,
+                   all_tickets=None, statuses=None) -> str:
+    """Render the full detail page HTML via Jinja (no HTTP round-trip)."""
+    ctx = detail_context(
+        ticket, body, alias,
+        all_tickets=all_tickets,
+        project_root=workspace,
+        statuses=statuses or config["board"]["statuses"],
+    )
+    return render(
+        "project/detail.html",
+        title=ticket.get("id", ""),
+        current_alias=alias,
+        current_tab="board",
+        breadcrumbs=[],
+        tabs=None,
+        tab_base=f"/project/{alias}",
+        **ctx,
+    )
 
 
 # ── Helpers / fixtures ────────────────────────────────────────────────────────
@@ -192,16 +245,14 @@ class TestTicketPreview:
         assert ticket_preview(workspace, ticket) == ""
 
 
-# ── _kanban_html: new Phase-1 markup contract ─────────────────────────────────
+# ── TestKanbanHtml: rendered Jinja partial ────────────────────────────────────
 
 
 class TestKanbanHtml:
     def test_emits_priority_dot_with_data_attr(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "T1", "priority": "p1", "agent": "developer"})
-        tickets = b.ls()
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(tickets, statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert 'class="kc-prio-dot" data-p="p1"' in html
         # Old stripe / p-badge in the card top row are gone.
         assert "kanban-card-top" not in html  # legacy top row class
@@ -210,9 +261,7 @@ class TestKanbanHtml:
     def test_emits_avatar_initials_with_hue(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "T1", "agent": "developer"})
-        tickets = b.ls()
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(tickets, statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert 'class="avatar-initials"' in html
         assert "data-hue=" in html
         # Initials of "developer" are "DE".
@@ -221,23 +270,19 @@ class TestKanbanHtml:
     def test_emits_inline_add_ticket(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "T1", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         # Each column gets its own [+ Add ticket] button.
-        for s in statuses:
+        for s in workspace_config["board"]["statuses"]:
             assert f'data-add-ticket data-status="{s}"' in html
 
     def test_emits_card_menu(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "T1", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert "data-card-menu" in html
 
     def test_friendly_empty_state(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert "No tickets here" in html
         assert "kanban-empty-glyph" in html
 
@@ -245,8 +290,7 @@ class TestKanbanHtml:
         b = Board(workspace, workspace_config)
         b.add({"title": "T1", "priority": "p1", "agent": "developer",
                "sprint": "s1", "tags": "alpha"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert 'data-status="backlog"' in html
         assert 'data-p="p1"' in html
         assert 'data-agent="developer"' in html
@@ -254,34 +298,37 @@ class TestKanbanHtml:
         assert 'data-tags="alpha"' in html
 
 
-# ── _board_page: header + LIVE relocation ─────────────────────────────────────
+# ── TestBoardPage: full route response ────────────────────────────────────────
 
 
 class TestBoardPage:
-    def test_header_has_h1_title_and_path(self, workspace: Path, workspace_config: dict):
-        project = {"alias": workspace.name, "name": "MyProject", "path": str(workspace)}
-        b = Board(workspace, workspace_config)
-        html = _board_page(project, b.ls(), workspace_config)
-        assert '<h1 class="board-title">MyProject</h1>' in html
-        assert f'<div class="board-path">{workspace}</div>' in html
+    def test_header_has_board_title_and_path(self, client: TestClient, alias: str, workspace: Path):
+        html = client.get(f"/project/{alias}/board").text
+        # The board header is rendered by partials/board/_header.html.
+        # project_name comes from the project config ("TestProject").
+        assert 'class="board-title"' in html
+        assert 'class="board-path"' in html
+        # The workspace path appears somewhere in the page.
+        assert str(workspace) in html
 
-    def test_new_ticket_cta_is_active(self, workspace: Path, workspace_config: dict):
-        project = {"alias": workspace.name, "name": "MyProject", "path": str(workspace)}
-        b = Board(workspace, workspace_config)
-        html = _board_page(project, b.ls(), workspace_config)
+    def test_new_ticket_cta_is_active(self, client: TestClient, alias: str):
+        html = client.get(f"/project/{alias}/board").text
         # CTA renders, hooked to data-new-ticket — JS routes it to the
         # first column's inline form.
         assert "data-new-ticket" in html
         # No more aria-disabled placeholder.
         assert 'aria-disabled="true"' not in html
 
-    def test_live_indicator_not_in_board_header(self, workspace: Path, workspace_config: dict):
-        # LIVE moved to the topbar (rendered by the route, not _board_page),
-        # so the body-level board-header should not contain it.
-        project = {"alias": workspace.name, "name": "MyProject", "path": str(workspace)}
-        b = Board(workspace, workspace_config)
-        html = _board_page(project, b.ls(), workspace_config)
-        assert "live-indicator" not in html
+    def test_live_indicator_in_topbar_not_board_header(self, client: TestClient, alias: str):
+        # LIVE moved to the topbar (rendered by the route via `actions=`),
+        # so it appears before the board-header in the document.
+        html = client.get(f"/project/{alias}/board").text
+        assert "topbar-actions" in html
+        idx_topbar = html.find("topbar-actions")
+        idx_live = html.find("live-indicator")
+        idx_board_header = html.find('class="board-header"')
+        # topbar-actions → live-indicator appear before board-header.
+        assert 0 <= idx_topbar < idx_live < idx_board_header
 
 
 # ── Routes: read-only ─────────────────────────────────────────────────────────
@@ -555,7 +602,7 @@ class TestFormatRelativeDate:
         assert full == "not a date"
 
 
-# ── _list_html: markup contract ───────────────────────────────────────────────
+# ── TestListHtml: rendered Jinja partial ──────────────────────────────────────
 
 
 class TestListHtml:
@@ -563,18 +610,16 @@ class TestListHtml:
         b = Board(workspace, workspace_config)
         b.add({"title": "A", "agent": "developer"})
         b.add({"title": "B", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _list_html(b.ls(), statuses, "test")
+        html = _render_list(workspace, workspace_config)
         assert html.count('class="ticket-row kanban-card"') == 2
 
     def test_groups_by_status(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "A", "agent": "developer"})
         b.add({"title": "B", "agent": "developer", "status": "doing"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _list_html(b.ls(), statuses, "test")
+        html = _render_list(workspace, workspace_config)
         # One group div per status, in config order.
-        for s in statuses:
+        for s in workspace_config["board"]["statuses"]:
             assert f'data-bucket="{s}"' in html
         # Backlog group has 1, doing group has 1.
         assert html.find('data-bucket="backlog"') < html.find('data-bucket="doing"')
@@ -582,23 +627,19 @@ class TestListHtml:
     def test_emits_select_checkbox_per_row(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "A", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _list_html(b.ls(), statuses, "test")
+        html = _render_list(workspace, workspace_config)
         assert "data-ticket-select" in html
         assert "data-ticket-select-all" in html
 
     def test_emits_inline_edit_buttons(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "A", "priority": "p1", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _list_html(b.ls(), statuses, "test")
+        html = _render_list(workspace, workspace_config)
         assert 'data-edit-field="status"' in html
         assert 'data-edit-field="priority"' in html
 
     def test_emits_bulk_bar(self, workspace: Path, workspace_config: dict):
-        b = Board(workspace, workspace_config)
-        statuses = workspace_config["board"]["statuses"]
-        html = _list_html(b.ls(), statuses, "test")
+        html = _render_list(workspace, workspace_config)
         assert 'id="list-bulk-bar"' in html
         assert "data-bulk-move" in html
         assert "data-bulk-archive" in html
@@ -606,8 +647,7 @@ class TestListHtml:
     def test_carries_filter_data_attrs(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "A", "priority": "p1", "agent": "developer", "sprint": "s1", "tags": "auth"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _list_html(b.ls(), statuses, "test")
+        html = _render_list(workspace, workspace_config)
         # Same data-* contract as kanban cards so filter/search/sort
         # logic on .kanban-card works in both views.
         assert 'data-status="backlog"' in html
@@ -621,12 +661,14 @@ class TestListHtml:
         # config change that left old tickets behind).
         b = Board(workspace, workspace_config)
         b.add({"title": "A", "agent": "developer"})
-        # Direct edit of the index to inject an off-config status.
-        from holoctl.server.app import _list_html as _list
         tickets = b.ls()
+        # Inject off-config status directly into the context.
         tickets[0] = {**tickets[0], "status": "rogue"}
         statuses = workspace_config["board"]["statuses"]
-        html = _list(tickets, statuses, "test")
+        html = render(
+            "partials/board/_list.html",
+            **list_context(tickets, statuses, workspace.name),
+        )
         assert "(unsorted)" in html
 
 
@@ -678,18 +720,23 @@ class TestViewSwitcher:
         assert 'data-view="tree" role="tab" aria-selected="true"' in r.text
 
 
+# ── TestTreeHtml: rendered Jinja partial ──────────────────────────────────────
+
+
 class TestTreeHtml:
     def test_renders_root_and_children_with_data_attrs(
         self, workspace: Path, workspace_config: dict
     ):
-        from holoctl.server.app import _tree_html
         b = Board(workspace, workspace_config)
         spec = b.add({"title": "Auth flow", "kind": "spec"})
         c1 = b.add({"title": "Sign", "agent": "developer", "parent": spec["id"]})
         c2 = b.add({"title": "Verify", "agent": "developer", "parent": spec["id"]})
 
         tickets = b.ls()
-        html = _tree_html(tickets, workspace_config["board"]["statuses"], "x")
+        html = render(
+            "partials/board/_tree.html",
+            **tree_context(tickets, workspace.name),
+        )
         # Every ticket has its own row…
         assert f'data-id="{spec["id"]}"' in html
         assert f'data-id="{c1["id"]}"' in html
@@ -707,7 +754,6 @@ class TestTreeHtml:
     ):
         """A ticket whose declared parent is absent from the board still renders —
         as a root, not as a dangling row that disappears from the tree."""
-        from holoctl.server.app import _tree_html
         b = Board(workspace, workspace_config)
         # Build directly: an orphan whose parent ID was never created.
         b.add({"title": "Orphan", "agent": "developer"})
@@ -720,7 +766,10 @@ class TestTreeHtml:
         idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
 
         tickets = b.ls()
-        html = _tree_html(tickets, workspace_config["board"]["statuses"], "x")
+        html = render(
+            "partials/board/_tree.html",
+            **tree_context(tickets, workspace.name),
+        )
         # The orphan still appears at depth 0 (no glyph gutter).
         assert 'data-depth="0"' in html
         assert "Orphan" in html
@@ -728,8 +777,10 @@ class TestTreeHtml:
     def test_empty_workspace_shows_friendly_message(
         self, workspace: Path, workspace_config: dict
     ):
-        from holoctl.server.app import _tree_html
-        html = _tree_html([], workspace_config["board"]["statuses"], "x")
+        html = render(
+            "partials/board/_tree.html",
+            **tree_context([], workspace.name),
+        )
         assert "tree-empty" in html or "No tickets" in html
 
 
@@ -808,14 +859,15 @@ class TestReadTicketActivity:
         assert read_ticket_activity(tmp_path, "TST-001") == []
 
 
-# ── _ticket_detail_page: markup contract ──────────────────────────────────────
+# ── TestTicketDetailPage: rendered Jinja output ───────────────────────────────
 
 
 class TestTicketDetailPage:
     def test_renders_toolbar_header_grid(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "T", "agent": "developer", "priority": "p1"})
-        html = _ticket_detail_page(ticket, "## Description\n\nReal body.\n", "test", project_root=workspace)
+        html = _render_detail(ticket, "## Description\n\nReal body.\n",
+                              workspace.name, workspace, workspace_config)
         # Wrapper carries the data-flag the CSS uses to swap layout mode.
         assert "data-detail-page" in html
         assert 'class="detail-toolbar"' in html
@@ -828,7 +880,7 @@ class TestTicketDetailPage:
     def test_header_has_dot_id_pills_title(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "Hello world", "priority": "p1", "agent": "developer"})
-        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config)
         # Priority dot, ID, status pill, priority pill, h1 title.
         assert 'class="kc-prio-dot" data-p="p1"' in html
         assert f'>{ticket["id"]}</span>' in html
@@ -839,8 +891,9 @@ class TestTicketDetailPage:
     def test_toolbar_has_back_link_and_actions(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "T", "agent": "developer"})
-        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
-        assert 'href="/project/test/board"' in html
+        alias = workspace.name
+        html = _render_detail(ticket, "", alias, workspace, workspace_config)
+        assert f'href="/project/{alias}/board"' in html
         assert 'data-edit-field="status"' in html  # Move ▾
         assert 'data-card-menu' in html             # ⋯ menu
 
@@ -850,7 +903,7 @@ class TestTicketDetailPage:
             "title": "T", "agent": "developer", "priority": "p1",
             "sprint": "s1", "tags": "auth,api",
         })
-        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config)
         # Status/priority via .lr-edit; agents/sprint/tags via the new
         # text popover.
         assert 'data-edit-field="status"' in html
@@ -866,7 +919,7 @@ class TestTicketDetailPage:
     def test_properties_dates_pretty_formatted(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "T", "agent": "developer"})
-        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config)
         # Pretty `YYYY-MM-DD HH:MM` shows up; full ISO sits in the title attr.
         assert "Created" in html
         assert "Updated" in html
@@ -877,9 +930,11 @@ class TestTicketDetailPage:
         a = b.add({"title": "A", "agent": "developer"})
         ticket_b = b.add({"title": "B", "agent": "developer", "depends": a["id"]})
         all_t = b.ls()
-        html = _ticket_detail_page(ticket_b, "", "test", all_tickets=all_t, project_root=workspace)
+        alias = workspace.name
+        html = _render_detail(ticket_b, "", alias, workspace, workspace_config,
+                              all_tickets=all_t)
         assert "depends on" in html
-        assert f'href="/project/test/board/{a["id"]}"' in html
+        assert f'href="/project/{alias}/board/{a["id"]}"' in html
 
     def test_linked_card_renders_blocks_reverse(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
@@ -888,20 +943,23 @@ class TestTicketDetailPage:
         # Detail page for A should surface "blocks B" via reverse scan.
         a_full = b.get(a["id"])
         all_t = b.ls()
-        html = _ticket_detail_page(a_full, "", "test", all_tickets=all_t, project_root=workspace)
+        alias = workspace.name
+        html = _render_detail(a_full, "", alias, workspace, workspace_config,
+                              all_tickets=all_t)
         assert "blocks" in html
-        assert f'href="/project/test/board/{ticket_b["id"]}"' in html
+        assert f'href="/project/{alias}/board/{ticket_b["id"]}"' in html
 
     def test_linked_card_empty_state(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "T", "agent": "developer"})
-        html = _ticket_detail_page(ticket, "", "test", all_tickets=b.ls(), project_root=workspace)
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config,
+                              all_tickets=b.ls())
         assert "No linked tickets" in html
 
     def test_activity_card_includes_created(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "T", "agent": "developer"})
-        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config)
         assert 'class="dr-activity"' in html
         assert "Created" in html  # derived event always present
 
@@ -910,12 +968,11 @@ class TestTicketDetailPage:
         ticket = b.add({"title": "T", "agent": "developer"})
         b.move(ticket["id"], "done")
         ticket = b.get(ticket["id"])
-        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config)
         assert "Marked done" in html
         # Activity is sorted newest-first; scope the position check to the
         # <ol class="dr-activity"> block so the Properties card's "Created"
         # date label doesn't muddy the comparison.
-        import re
         m = re.search(r'<ol class="dr-activity">(.*?)</ol>', html, re.S)
         assert m, "activity ol not found"
         activity = m.group(1)
@@ -931,16 +988,16 @@ class TestTicketDetailPage:
             f'{{"ts":"2026-05-08T10:00:00Z","type":"ticket.body_updated","ticket":"{ticket["id"]}","actor":"cli"}}\n',
             encoding="utf-8",
         )
-        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config)
         assert "Body edited" in html
 
     def test_renders_markdown_body(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "T", "agent": "developer"})
-        html = _ticket_detail_page(
+        html = _render_detail(
             ticket,
             "## Description\n\nThis is the **body**.\n",
-            "test", project_root=workspace,
+            workspace.name, workspace, workspace_config,
         )
         assert "<strong>body</strong>" in html
 
@@ -1081,8 +1138,7 @@ class TestRepoChip:
         b = Board(workspace, workspace_config)
         b.add({"title": "T", "agent": "developer",
                "projects": ["backend"]})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert 'class="kc-repo"' in html
         # Single-project chip closes immediately after the name; multi adds
         # a trailing `<span class="kc-repo-extra">`.
@@ -1091,16 +1147,14 @@ class TestRepoChip:
     def test_kanban_card_no_chip_when_empty(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "T", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert 'class="kc-repo"' not in html
 
     def test_kanban_card_extra_count_when_multiple(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "T", "agent": "developer",
                "projects": ["backend", "web", "shared"]})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         # Head project + `+N` indicator for the rest.
         assert ">backend " in html
         assert "+2" in html
@@ -1110,8 +1164,7 @@ class TestRepoChip:
     def test_list_view_has_repo_column(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "T", "agent": "developer", "projects": ["backend"]})
-        statuses = workspace_config["board"]["statuses"]
-        html = _list_html(b.ls(), statuses, "test")
+        html = _render_list(workspace, workspace_config)
         # New column header + cell.
         assert "lr-cell-repo" in html
         assert ">Repo<" in html
@@ -1121,7 +1174,7 @@ class TestRepoChip:
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "T", "agent": "developer",
                         "projects": ["backend", "web"]})
-        html = _ticket_detail_page(ticket, "", "test", project_root=workspace)
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config)
         assert 'data-edit-text-field="projects"' in html
         assert 'data-current="backend,web"' in html
         # Visible label.
@@ -1141,8 +1194,7 @@ class TestDependsChip:
         first = b.add({"title": "First", "agent": "developer"})
         b.add({"title": "Second", "agent": "developer",
                "depends": [first["id"]]})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert 'class="kc-deps"' in html
         assert first["id"] in html  # the dep ID itself
         assert "↳" in html
@@ -1153,8 +1205,7 @@ class TestDependsChip:
         c = b.add({"title": "C", "agent": "developer"})
         b.add({"title": "B", "agent": "developer",
                "depends": [a["id"], c["id"]]})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         # First dep visible, +1 indicator for the second.
         assert "+1" in html
         assert f"depends on: {a['id']}, {c['id']}" in html
@@ -1162,16 +1213,14 @@ class TestDependsChip:
     def test_kanban_card_no_deps_chip_when_empty(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         b.add({"title": "T", "agent": "developer"})
-        statuses = workspace_config["board"]["statuses"]
-        html = _kanban_html(b.ls(), statuses, "test", project_root=workspace)
+        html = _render_kanban(workspace, workspace_config)
         assert 'class="kc-deps"' not in html
 
     def test_list_view_has_deps_column(self, workspace: Path, workspace_config: dict):
         b = Board(workspace, workspace_config)
         a = b.add({"title": "A", "agent": "developer"})
         b.add({"title": "B", "agent": "developer", "depends": [a["id"]]})
-        statuses = workspace_config["board"]["statuses"]
-        html = _list_html(b.ls(), statuses, "test")
+        html = _render_list(workspace, workspace_config)
         assert "lr-cell-deps" in html
         assert ">Deps<" in html
         assert a["id"] in html
@@ -1182,11 +1231,10 @@ class TestDependsChip:
         b = Board(workspace, workspace_config)
         a = b.add({"title": "A", "agent": "developer"})
         b.add({"title": "B", "agent": "developer", "depends": [a["id"]]})
-        statuses = workspace_config["board"]["statuses"]
-        for renderer in (_kanban_html, _list_html):
-            html = renderer(b.ls(), statuses, "test") if renderer is not _kanban_html \
-                else renderer(b.ls(), statuses, "test", project_root=workspace)
-            assert f'data-depends="{a["id"]}"' in html, f"{renderer.__name__} missed data-depends"
+        kanban_html = _render_kanban(workspace, workspace_config)
+        list_html = _render_list(workspace, workspace_config)
+        for html, label in ((kanban_html, "kanban"), (list_html, "list")):
+            assert f'data-depends="{a["id"]}"' in html, f"{label} missed data-depends"
 
 
 # ── Post-merge follow-up #2: detail scroll, Move popover, Day zoom ────────────
@@ -1255,9 +1303,8 @@ class TestDetailPageStatusList:
         b = Board(workspace, workspace_config)
         ticket = b.add({"title": "T", "agent": "developer"})
         statuses = workspace_config["board"]["statuses"]
-        html = _ticket_detail_page(
-            ticket, "", "test", project_root=workspace, statuses=statuses,
-        )
+        html = _render_detail(ticket, "", workspace.name, workspace, workspace_config,
+                              statuses=statuses)
         assert f'data-statuses="{",".join(statuses)}"' in html
 
     def test_status_list_js_prefers_data_statuses(self, dashboard_js: str):
@@ -1334,4 +1381,3 @@ class TestTimelineRemoved:
     def test_timeline_html_fragment_route_gone(self, client: TestClient, alias: str):
         r = client.get(f"/api/project/{alias}/timeline-html")
         assert r.status_code == 404
-
