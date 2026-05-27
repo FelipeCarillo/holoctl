@@ -8,6 +8,7 @@ from pathlib import Path
 from holoctl.lib.compiler.manifest import (
     MANIFEST_REL,
     CompileLedger,
+    add_entries,
     load,
     manifest_path,
     save,
@@ -76,6 +77,50 @@ def test_load_empty_file_returns_default(tmp_path: Path):
     p.write_text("", encoding="utf-8")
     result = load(tmp_path)
     assert result == {"version": 1, "files": {}}
+
+
+# ---------------------------------------------------------------------------
+# 2b. add_entries — merge new entries into the manifest (adoption hook)
+# ---------------------------------------------------------------------------
+
+
+def test_add_entries_into_empty_manifest(tmp_path: Path):
+    add_entries(
+        tmp_path,
+        {".claude/agents/foo.md": {"sha256": "abc", "source": "s", "target": "claude"}},
+        holoctl_version="0.20.0",
+    )
+    tracked = load(tmp_path)["files"]
+    assert tracked == {
+        ".claude/agents/foo.md": {"sha256": "abc", "source": "s", "target": "claude"}
+    }
+
+
+def test_add_entries_merges_and_preserves_existing(tmp_path: Path):
+    save(
+        tmp_path,
+        {".claude/agents/dev.md": {"sha256": "old", "source": "s1", "target": "claude"}},
+        holoctl_version="0.20.0",
+    )
+    add_entries(
+        tmp_path,
+        {".claude/commands/x.md": {"sha256": "new", "source": "s2", "target": "claude"}},
+        holoctl_version="0.20.0",
+    )
+    tracked = load(tmp_path)["files"]
+    # Existing entry preserved + new entry added.
+    assert ".claude/agents/dev.md" in tracked
+    assert ".claude/commands/x.md" in tracked
+
+
+def test_add_entries_normalises_windows_keys(tmp_path: Path):
+    add_entries(
+        tmp_path,
+        {".claude\\agents\\foo.md": {"sha256": "abc", "source": "s", "target": "claude"}},
+        holoctl_version="0.20.0",
+    )
+    tracked = load(tmp_path)["files"]
+    assert ".claude/agents/foo.md" in tracked
 
 
 # ---------------------------------------------------------------------------

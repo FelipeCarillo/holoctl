@@ -83,6 +83,26 @@ def load(root: Path) -> dict:
         return _default_manifest()
 
 
+def add_entries(root: Path, new_entries: dict[str, dict], *, holoctl_version: str) -> None:
+    """Merge *new_entries* into the manifest and save.
+
+    *new_entries* maps a relative path → ``{"sha256", "source", "target"}``.
+    Loads the current manifest, updates ``files`` with *new_entries* (keys
+    POSIX-normalised so they match the compiler's keys), and persists via
+    :func:`save`.
+
+    This is the adoption hook: ``hctl adopt`` records the CURRENT ``.claude/``
+    file's hash here as managed so that the next ``hctl compile`` recognises it
+    as owned and regenerates it from ``.holoctl/`` (instead of preserving it as
+    foreign).
+    """
+    current = load(root).get("files", {})
+    merged: dict = dict(current)
+    for rel, entry in new_entries.items():
+        merged[_to_posix(rel)] = entry
+    save(root, merged, holoctl_version=holoctl_version)
+
+
 def save(root: Path, files: dict, *, holoctl_version: str) -> None:
     """Persist a manifest to *root*.
 

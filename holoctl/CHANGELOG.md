@@ -4,6 +4,24 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+### Added — `hctl adopt`: bring foreign config under holoctl management
+
+- **`hctl adopt`** brings externally-authored Claude config (agents, skills,
+  commands not in the manifest) under holoctl management. With no args it
+  previews unmanaged items and adopts nothing; `--all` adopts everything;
+  `--type {agent,skill,command}` (optionally `--name <x>`) adopts selectively.
+  Foreign MCP servers are reported as external (not adoptable). Non-interactive.
+- Adoption (1) copies the `.claude/` file into `.holoctl/` source — for agents,
+  reverse-mapping Claude `tools`/`model` frontmatter back to holoctl categories
+  /tiers — and (2) records the **current** `.claude/` file in the manifest as
+  managed. The manifest record is load-bearing: the next `hctl compile`
+  recognises the file as owned and regenerates it from `.holoctl/` instead of
+  preserving it as foreign. Adoption never auto-compiles.
+- New `holoctl/lib/ecosystem.py:scan_unmanaged(root)` returns foreign items by
+  type (the single source of "what's foreign", mirroring `doctor`'s logic).
+- New `manifest.add_entries(root, new_entries, *, holoctl_version)` merges
+  adoption records into the manifest.
+
 ### Changed — skills are first-class manifest citizens
 
 - **Built-in skill override**: placing a `SKILL.md` in `.holoctl/skills/<name>/`

@@ -13,6 +13,7 @@ from .cli.compile_ import compile_cmd
 from .cli.sync_ import sync_cmd
 from .cli.upgrade_ import upgrade_cmd
 from .cli.doctor import doctor_cmd
+from .cli.adopt import adopt_cmd
 from .cli.agent import app as _agent_app
 from .cli.memory import app as _memory_app
 from .cli.journal import app as _journal_app
@@ -51,6 +52,7 @@ app.command("compile")(compile_cmd)
 app.command("sync")(sync_cmd)
 app.command("upgrade")(upgrade_cmd)
 app.command("doctor")(doctor_cmd)
+app.command("adopt")(adopt_cmd)
 app.command("serve")(serve_cmd)
 app.command("overview")(overview_cmd)
 app.command("boot")(boot_cmd)
