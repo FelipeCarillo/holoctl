@@ -1,6 +1,8 @@
 from __future__ import annotations
 import json
+import os
 import re
+import shutil
 from pathlib import Path
 
 import typer
@@ -185,6 +187,12 @@ def doctor_cmd(
             else:
                 _check("Compile", f"target '{tgt}' compiled", True)
 
+    # MCP health
+    issues = _check_mcp_health(root, config, issues)
+
+    # Ecosystem awareness (managed vs foreign)
+    _check_ecosystem(root)
+
     console.print("")
     if issues == 0:
         console.print("[green]  All checks passed. Project is healthy.[/green]\n")
@@ -195,6 +203,145 @@ def doctor_cmd(
 def _check(category: str, message: str, ok: bool) -> None:
     icon = "[green]✓[/green]" if ok else "[red]✗[/red]"
     console.print(f"  {icon} [dim]{category:<14}[/dim] {message}")
+
+
+def _info(category: str, message: str) -> None:
+    """Neutral / informational check line (no pass/fail colouring)."""
+    console.print(f"  [blue]·[/blue] [dim]{category:<14}[/dim] {message}")
+
+
+# Bootstrap commands written directly by the compiler (not ledger-tracked).
+_HOLOCTL_BOOTSTRAP_COMMANDS: frozenset[str] = frozenset({
+    ".claude/commands/holoctl.md",
+    ".claude/commands/hctl-upgrade.md",
+})
+
+
+def _check_mcp_health(root: Path, config: dict | None, issues: int) -> int:
+    """Check MCP server health and registration; return updated issues count."""
+    from ..lib.mcp_config import _read_json_safe
+
+    hctl_bin = os.environ.get("HOLOCTL_BIN") or "hctl"
+    bin_path = shutil.which(hctl_bin)
+    if bin_path is None:
+        _check(
+            "MCP",
+            "hctl not on PATH — MCP tools (mcp__holoctl__*) will fail; "
+            "install hctl or set HOLOCTL_BIN",
+            False,
+        )
+        issues += 1
+    else:
+        _check("MCP", f"hctl resolvable ({bin_path})", True)
+
+    # Check that mcpServers.holoctl is present in .claude/settings.json when
+    # the 'claude' target is active (the claude compiler emits it there).
+    targets = (config or {}).get("targets", [])
+    if "claude" in targets:
+        settings_path = root / ".claude" / "settings.json"
+        settings = _read_json_safe(settings_path)
+        mcp_servers = settings.get("mcpServers", {})
+        if "holoctl" not in mcp_servers:
+            _check(
+                "MCP",
+                "mcpServers.holoctl missing from .claude/settings.json — run `hctl compile`",
+                False,
+            )
+            issues += 1
+        else:
+            _check("MCP", "mcpServers.holoctl registered in .claude/settings.json", True)
+
+    return issues
+
+
+def _check_ecosystem(root: Path) -> None:
+    """Print Ecosystem section: managed vs foreign agents, commands, skills, MCP servers."""
+    from ..lib.compiler import manifest
+    from ..lib.mcp_config import read_mcp_servers
+
+    manifest_files: set[str] = set(manifest.load(root)["files"].keys())
+
+    # ---- agents -------------------------------------------------------
+    agents_managed: list[str] = []
+    agents_foreign: list[str] = []
+    claude_agents = root / ".claude" / "agents"
+    if claude_agents.exists():
+        for f in sorted(claude_agents.glob("*.md")):
+            rel = f".claude/agents/{f.name}"
+            if rel in manifest_files:
+                agents_managed.append(f.name)
+            else:
+                agents_foreign.append(f.name)
+
+    # ---- commands -----------------------------------------------------
+    cmds_managed: list[str] = []
+    cmds_foreign: list[str] = []
+    claude_commands = root / ".claude" / "commands"
+    if claude_commands.exists():
+        for f in sorted(claude_commands.glob("*.md")):
+            rel = f".claude/commands/{f.name}"
+            if rel in manifest_files or rel in _HOLOCTL_BOOTSTRAP_COMMANDS:
+                cmds_managed.append(f.name)
+            else:
+                cmds_foreign.append(f.name)
+
+    # ---- skills -------------------------------------------------------
+    skills_managed: list[str] = []
+    skills_foreign: list[str] = []
+    claude_skills = root / ".claude" / "skills"
+    if claude_skills.exists():
+        for skill_dir in sorted(d for d in claude_skills.iterdir() if d.is_dir()):
+            skill_rel = f".claude/skills/{skill_dir.name}/SKILL.md"
+            # A skill is managed if its SKILL.md is in the manifest (either from
+            # builtin emit or custom skill emit).
+            if skill_rel in manifest_files:
+                skills_managed.append(skill_dir.name)
+            else:
+                skills_foreign.append(skill_dir.name)
+
+    # ---- MCP servers --------------------------------------------------
+    all_servers = read_mcp_servers(root)
+    mcp_managed = sorted(s for s in all_servers if s == "holoctl")
+    mcp_foreign = sorted(s for s in all_servers if s != "holoctl")
+
+    # ---- Print ---------------------------------------------------------
+    _info(
+        "Ecosystem",
+        f"Agents: {len(agents_managed)} managed, {len(agents_foreign)} foreign",
+    )
+    if agents_foreign:
+        for name in agents_foreign:
+            _info("Ecosystem", f"  foreign agent: {name}")
+
+    _info(
+        "Ecosystem",
+        f"Commands: {len(cmds_managed)} managed, {len(cmds_foreign)} foreign",
+    )
+    if cmds_foreign:
+        for name in cmds_foreign:
+            _info("Ecosystem", f"  foreign command: {name}")
+
+    _info(
+        "Ecosystem",
+        f"Skills: {len(skills_managed)} managed, {len(skills_foreign)} foreign",
+    )
+    if skills_foreign:
+        for name in skills_foreign:
+            _info("Ecosystem", f"  foreign skill: {name}")
+
+    _info(
+        "Ecosystem",
+        f"MCP servers: {len(mcp_managed)} holoctl, {len(mcp_foreign)} third-party"
+        + (f" ({', '.join(mcp_foreign)})" if mcp_foreign else ""),
+    )
+
+    # Hint when foreign items exist.
+    has_foreign = bool(agents_foreign or cmds_foreign or skills_foreign or mcp_foreign)
+    if has_foreign:
+        _info(
+            "Ecosystem",
+            "→ run 'hctl adopt' to bring foreign config under holoctl management",
+        )
 
 
 def _doctor_compile_drift() -> None:
