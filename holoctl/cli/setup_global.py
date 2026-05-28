@@ -26,16 +26,19 @@ from ..lib.compiler.template import load_bootstrap
 
 app = typer.Typer()
 
+# `all` is a legacy alias from when holoctl shipped multiple compilers; it
+# now resolves to `claude` (the only supported target since 0.20.0). Kept
+# for backward compatibility with scripts that still pass `--target all`.
 _VALID_TARGETS = ("claude", "all")
 
 
 @app.command("setup-global")
 def setup_global_cmd(
     target: str = typer.Option(
-        "all",
+        "claude",
         "--target",
         "-t",
-        help="Which tool to install for: claude (or all — only Claude is supported).",
+        help="Which tool to install for. Only `claude` is supported (since 0.20.0).",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Print what would change without writing."

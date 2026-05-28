@@ -4,6 +4,30 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.20.4] — 2026-05-28
+
+Doc + help refresh: bring README and a few stale `--help` strings in
+line with what holoctl has actually been since 0.20.0 (Claude-only
+compiler, dashboard with a Metrics tab, expandable Context tree).
+No behavior changes.
+
+### Changed
+
+- `hctl setup-global --target` now defaults to `claude` (was `all`,
+  which only ever resolved to `claude` after the 0.20.0 collapse).
+  `--target all` is still accepted as a backward-compatible alias.
+- `hctl setup` docstring no longer implies it plants the skill in
+  every assistant — since 0.20.0 it's effectively Claude-only; the
+  others self-configure via the `holoctl-foreign-bootstrap` skill.
+
+### Docs
+
+- README (EN + pt-BR): dashboard tabs list now includes **Metrics**
+  (added in 0.20.0) and notes that Context is an expandable tree.
+- README (EN + pt-BR): refreshed stale `v0.17` / `0.14` version
+  references — install verifier hint, persona library line, MCP
+  preference note, `holoctlVersion` example, `handoff --note` example.
+
 ## [0.20.3] — 2026-05-28
 
 UTF-8 hygiene pass: accented titles (and any non-ASCII text) now survive
