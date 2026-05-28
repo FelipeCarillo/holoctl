@@ -4,6 +4,29 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.20.2] — 2026-05-28
+
+Two follow-ups to the 0.20.1 UI patch:
+
+### Fixed
+
+- **Metrics page crashed on naive timestamps.** `_parse_ts` in
+  `holoctl/lib/metrics.py` returned a tz-naive `datetime` when the input ISO
+  string had no `Z` / no `+offset` suffix. Comparing that against the
+  tz-aware `now` later in the pipeline raised
+  `TypeError: can't compare offset-naive and offset-aware datetimes`,
+  breaking `cycle_time`, `wip`, `throughput`, and the stalled view on any
+  workspace with externally-imported tickets (`Board._now()` itself always
+  emits Z, so it didn't show up in fresh workspaces). Defensive fix: bare
+  ISO timestamps are now assumed UTC and returned tz-aware. Mirrors the
+  identical fix applied to `holoctl/server/filters.py` in 0.20.0.
+- **Doc-detail pages (`/agents/{slug}`, `/commands/{slug}`,
+  `/context/{file}`) now horizontally center.** `.detail-page` had
+  `max-width: 960px` but no `margin-inline: auto`, so on wide screens the
+  card hugged the left edge instead of sitting in the middle. The ticket
+  detail (`[data-detail-page] { max-width: none }`) is unaffected — the
+  auto-margin is a no-op when content fills the available width.
+
 ## [0.20.1] — 2026-05-28
 
 Dashboard UI patch: the left-edge "sliver clip" that 0.20.0 fixed only on

@@ -2,7 +2,11 @@
 /* `padding-inline` gives the cards' box-shadow a few px of breathing room so
    the left edge isn't clipped by the scroll containers' computed overflow-x
    (`.content-body` for doc detail; `.detail-main`/`.detail-rail` for tickets). */
-.detail-page { max-width: 960px; padding-inline: 4px; }
+/* `margin-inline: auto` centers doc detail (`.detail-page` with max-width:
+   960px — agent/skill/command/context file). Ticket detail overrides with
+   `[data-detail-page] { max-width: none }`, so the auto-margin is a no-op
+   there (full-width content has no slack to distribute). */
+.detail-page { max-width: 960px; margin-inline: auto; padding-inline: 4px; }
 
 .detail-header { margin-bottom: 28px; }
 

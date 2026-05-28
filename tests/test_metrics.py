@@ -94,6 +94,15 @@ class TestParseTs:
         result = _parse_ts(None)  # type: ignore[arg-type]
         assert result is None
 
+    def test_naive_iso_assumed_utc_aware(self):
+        # Regression: a bare ISO with no Z and no +offset must come back
+        # tz-aware (assumed UTC) so downstream comparisons against
+        # `datetime.now(timezone.utc)` don't raise
+        # "can't compare offset-naive and offset-aware datetimes".
+        dt = _parse_ts("2026-05-20T10:00:00")
+        assert dt is not None
+        assert dt.tzinfo == timezone.utc
+
 
 # ── throughput ────────────────────────────────────────────────────────────────
 
