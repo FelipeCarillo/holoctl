@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="page-shell">
 {% if is_empty %}
 <div class="empty-state"><p>No agents defined.</p></div>
 {% else %}
@@ -24,4 +25,5 @@
   {% endfor %}
 </div>
 {% endif %}
+</div>
 {% endblock %}

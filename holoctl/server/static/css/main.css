@@ -115,12 +115,25 @@
 
 /* Wrapper around every page's content. Default behavior: scroll vertically
    inside this box so the page itself never grows past the viewport.
-   Overridden below for the board page (kanban handles its own layout). */
+   Overridden below for the board page (kanban handles its own layout).
+   `padding-inline: 4px` gives cards' box-shadow a few px of breathing room
+   so the left edge isn't clipped by overflow-x on this container. */
 .content-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding-inline: 4px;
+}
+
+/* Consistent framing for non-board pages: caps width on wide screens and
+   centres the content, mirroring the focused feel of the ticket detail layout.
+   Does NOT affect overflow — sticky children (e.g. .metrics-filter-toolbar)
+   still scroll relative to .content-body, not .page-shell. */
+.page-shell {
+  max-width: 1200px;
+  margin-inline: auto;
+  width: 100%;
 }
 
 /* Board page: kanban needs to be full-height with horizontal scroll INSIDE
