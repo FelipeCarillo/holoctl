@@ -384,7 +384,6 @@
   background: var(--green);
   border-radius: 3px;
   transition: width 0.3s var(--ease);
-  min-width: 2px;
 }
 
 .mgt-cell-count {

@@ -41,7 +41,7 @@ def metrics_context(
     Dict with keys:
         ``throughput``  – ``{"days": [...buckets], "max_count": int}``
         ``cycle``       – ``{"count", "mean", "median", "p95"}`` (rounded)
-        ``wip_view``    – ``{"count", "stale_count", "items": [...top N]}``
+        ``wip_view``    – ``{"count", "stale_count", "tickets": [...top N]}``
         ``by_agent``    – list of group rows (top N by completed)
         ``by_project``  – same, keyed on "projects"
         ``since_days``  – passed through for display

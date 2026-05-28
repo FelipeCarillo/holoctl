@@ -2131,8 +2131,8 @@ class TestMetricsRoute:
         # No tickets — all empty states should appear, page must not 500.
         r = client.get(f"/project/{alias}/metrics")
         assert r.status_code == 200
-        # All four empty-state messages appear.
-        assert "metrics-empty" in r.text
+        # Three of the four sections show the empty state (by-project is hidden when there are no project labels).
+        assert r.text.count("metrics-empty") >= 3
 
     def test_board_with_tickets_shows_data(
         self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
@@ -2197,7 +2197,7 @@ class TestMetricsTab:
 class TestMetricsCss:
     """Verify metrics.css is included in the bundle and has key selectors."""
 
-    def test_metrics_css_importted_in_index(self, dashboard_css: str):
+    def test_metrics_css_imported_in_index(self, dashboard_css: str):
         # dashboard_css fixture resolves @imports — metrics.css content must be present.
         assert ".metrics-card" in dashboard_css
 
