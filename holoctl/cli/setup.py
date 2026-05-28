@@ -169,6 +169,11 @@ def setup_cmd(
 ):
     """Plant the /holoctl skill in every detected AI assistant.
 
+    Since 0.20.0, "every detected" is effectively just Claude Code — the
+    other assistants self-configure via the `holoctl-foreign-bootstrap`
+    skill triggered from the per-project `AGENTS.md`, so they don't need
+    a user-level skill installed here.
+
     Idempotent — re-running updates content. Use --force to overwrite even
     when the user has hand-edited the skill (rare).
     """

@@ -210,7 +210,7 @@ uv tool install "holoctl[ml]"        # ~250MB — adiciona detecção de paráfr
 ### Verificando a instalação
 
 ```bash
-hctl --version              # 0.17.0+
+hctl --version              # 0.20.3 ou mais novo
 hctl --help                 # lista completa de comandos
 hctl doctor --global        # checa o roteador em ~/.claude (vai reportar 'missing' até o passo 2)
 ```
@@ -363,7 +363,7 @@ hctl compile                              # ambos (config.targets[] default é [
 
 ### Design atual: skills e agentes preferem MCP, com fallback pra CLI / paste
 
-Desde a v0.17, slash commands, agentes e skills reativas **preferem o servidor MCP quando está rodando**, caindo pra `hctl` CLI (ou paste, pra conteúdo externo) quando não. Exemplos:
+Slash commands, agentes e skills reativas **preferem o servidor MCP quando está rodando**, caindo pra `hctl` CLI (ou paste, pra conteúdo externo) quando não. Exemplos:
 
 - Boardmaster chama `mcp__holoctl__board_create({...})` primeiro; CLI `hctl board add '<json>'` é o fallback documentado.
 - `/spec` invoca a skill `holoctl-provider-mcp` pra buscar o corpo do card externo via MCP do provider (Linear / GitHub / Trello / Azure DevOps / Jira / Slack — ou um board interno custom registrado via `hctl provider add`); paste é o fallback, com `source_*` preservados em qualquer caso. O servidor MCP é auto-spawnado pelo Claude (via `.claude/settings.json:mcpServers`). Assistentes não-Claude conectam ele na própria config MCP como parte do passo `holoctl-foreign-bootstrap`.
@@ -518,7 +518,7 @@ hctl agent add custom --from developer   # copia de uma persona ativa como base
 hctl agent remove developer              # desativa (continua na library)
 ```
 
-Library (v0.17): `developer`, `reviewer`, `architect`, `researcher`, `dba`, `devops`, `security-auditor`, `tech-writer`, `agent-designer`. `hctl agent suggest` casa globs do `paths:` contra seu repo (ex.: `**/*.sql` → `dba`, `**/.github/workflows/**` → `devops`).
+Library: `developer`, `reviewer`, `architect`, `researcher`, `dba`, `devops`, `security-auditor`, `tech-writer`, `agent-designer`. `hctl agent suggest` casa globs do `paths:` contra seu repo (ex.: `**/*.sql` → `dba`, `**/.github/workflows/**` → `devops`).
 
 Quando nenhuma persona da library cabe no repo, desenhe uma sob medida:
 
@@ -532,7 +532,7 @@ O slash command delega pra persona `agent-designer`, que lê o repo (README, pac
 
 ```bash
 hctl handoff                             # adiciona 1 linha em memory/topics/session-trail.md
-hctl handoff --note "Fechei a 0.14"      # com nota custom
+hctl handoff --note "Fechei a 0.20.3"    # com nota custom
 ```
 
 Se os hooks de lifecycle estão instalados (o `hctl init` faz isso pro Claude), o `Stop` roda `hctl handoff --auto` automaticamente — você não precisa lembrar.
@@ -573,7 +573,7 @@ hctl serve                               # http://127.0.0.1:4242
 hctl serve --host 0.0.0.0 --port 8000    # exposição de rede opt-in (avisa: sem auth)
 ```
 
-Abas: **Board** (Kanban / Lista / Timeline com SSE), **Repos**, **Agents**, **Commands**, **Context**.
+Abas: **Board** (Kanban / Lista / Árvore com SSE), **Metrics** (throughput, cycle time, WIP & aging, flow efficiency, forecast — por projeto), **Repos**, **Agents**, **Commands**, **Context** (árvore de diretório expansível). A home do workspace (`/`) faz rollup de board + métricas de todos os projetos.
 
 ### Servidor MCP
 
@@ -618,7 +618,7 @@ Todo comando aceita `--help`.
 
 ```json
 {
-  "holoctlVersion": "0.17.0",
+  "holoctlVersion": "0.20.3",
   "project": {
     "name": "Meu Projeto",
     "prefix": "MP",
