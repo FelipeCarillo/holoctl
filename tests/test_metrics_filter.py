@@ -315,6 +315,25 @@ class TestApplyFilter:
         ids = {t["id"] for t in out}
         assert ids == {"T-task", "T-spec"}
 
+    def test_naive_created_iso_does_not_crash_apply_filter(self):
+        """Tickets with a bare (tz-naive) ISO ``created`` must not raise TypeError.
+
+        Regression guard: _parse_ts must always return a tz-aware datetime so
+        that comparing it against a tz-aware ``since`` never raises
+        ``TypeError: can't compare offset-naive and offset-aware datetimes``.
+        """
+        # Bare ISO — no 'Z' and no UTC offset.
+        naive_ticket = _ticket(id="T-naive", created="2026-05-20T10:00:00")
+        aware_ticket = _ticket(id="T-aware", created="2026-05-20T10:00:00Z")
+
+        f = parse_filter_from_query(_qp({"since": "30d"}), now=NOW)
+
+        # Must not raise; both tickets are within the 30-day window.
+        result = apply_filter([naive_ticket, aware_ticket], f, now=NOW)
+        ids = {t["id"] for t in result}
+        assert "T-naive" in ids
+        assert "T-aware" in ids
+
 
 # ── filter_to_query_string ────────────────────────────────────────────────────
 

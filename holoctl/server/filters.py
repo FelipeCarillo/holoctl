@@ -52,11 +52,20 @@ class MetricsFilter(TypedDict, total=False):
 
 
 def _parse_ts(value: str | None) -> datetime | None:
-    """Parse an ISO-8601 UTC string to a tz-aware datetime (silent on errors)."""
+    """Parse an ISO-8601 UTC string to a tz-aware datetime (silent on errors).
+
+    Always returns a tz-aware datetime (UTC) so callers can safely compare
+    against other tz-aware values without risking a TypeError on naive vs
+    aware comparisons.  Bare ISO strings without any offset (e.g. from
+    externally-imported tickets or test fixtures) are assumed to be UTC.
+    """
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except (ValueError, AttributeError):
         return None
 
