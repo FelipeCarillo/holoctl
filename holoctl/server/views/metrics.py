@@ -6,6 +6,7 @@ a thin presenter — rounding, slicing, SVG-geometry pre-computation.
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
@@ -14,6 +15,132 @@ from ...lib import metrics as _m
 # Maximum items to surface in WIP list and by-group tables.
 _WIP_TOP_N = 10
 _GROUP_TOP_N = 10
+
+# Stale threshold for stalled detection (active tickets with no updates).
+_STALE_DAYS_DEFAULT = 5
+
+# Statuses that are "active" (doing / review) — tickets should be moving here.
+_ACTIVE_STATUSES: frozenset[str] = frozenset({"doing", "review"})
+# Statuses that are terminal (done, cancelled).
+_TERMINAL_STATUSES: frozenset[str] = frozenset({"done", "cancelled"})
+
+
+def stalled_view(
+    tickets: list[dict],
+    *,
+    now: datetime | None = None,
+    stale_days: int = _STALE_DAYS_DEFAULT,
+    project_alias: str = "",
+) -> dict:
+    """Identify tickets that are stalled and explain why.
+
+    A ticket is "stalled" if ANY of:
+    - It is in an active status (doing/review) AND its ``updated`` timestamp is
+      more than *stale_days* old (aging — work started but not progressing).
+    - It is in ``backlog`` AND has no ``agent`` assigned (orphaned).
+    - It is in ``backlog`` AND has no ``priority`` set (or priority is empty/None).
+    - It is ``done`` but ``completed`` is null (data hygiene — shouldn't happen
+      post-Task B but worth catching).
+
+    Parameters
+    ----------
+    tickets:
+        Raw ticket dicts as returned by ``Board.ls()``.
+    now:
+        Reference time.  Defaults to ``datetime.now(timezone.utc)``.
+    stale_days:
+        Threshold for active-status stale detection.
+    project_alias:
+        Alias used to build per-ticket detail links.  When empty, links use
+        ``/board/{id}`` (relative).
+
+    Returns
+    -------
+    ::
+
+        {
+            "count": int,
+            "items": [
+                {
+                    "id": str,
+                    "title": str,
+                    "status": str,
+                    "age_days": float,
+                    "reasons": [str, ...],
+                    "link": str,
+                },
+                ...  # sorted by age_days descending
+            ],
+            "is_empty": bool,
+        }
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    def _age(updated: str | None) -> float:
+        dt = _m._parse_ts(updated)
+        if dt is None:
+            return 0.0
+        return max(0.0, (now - dt).total_seconds() / 86400.0)  # type: ignore[operator]
+
+    items: list[dict] = []
+
+    for t in tickets:
+        status = t.get("status", "")
+        if status in _TERMINAL_STATUSES and status != "done":
+            continue  # cancelled etc — skip entirely
+
+        reasons: list[str] = []
+        age_days = _age(t.get("updated"))
+
+        if status in _ACTIVE_STATUSES:
+            if age_days > stale_days:
+                reasons.append(f"no update in {math.floor(age_days)}d (threshold {stale_days}d)")
+
+        elif status == "backlog":
+            agents = t.get("agent") or []
+            if isinstance(agents, str):
+                agents = [agents] if agents else []
+            if not agents:
+                reasons.append("no agent assigned")
+            priority = t.get("priority") or ""
+            if not priority:
+                reasons.append("no priority set")
+
+        elif status == "done":
+            if not t.get("completed"):
+                reasons.append("done status but completed timestamp is missing")
+
+        if not reasons:
+            continue
+
+        # Build the detail link.
+        tid = t.get("id", "")
+        if project_alias:
+            link = f"/project/{project_alias}/board/{tid}"
+        else:
+            link = f"/board/{tid}"
+
+        items.append(
+            {
+                "id": tid,
+                "title": t.get("title", ""),
+                "status": status,
+                "age_days": round(age_days, 1),
+                "reasons": reasons,
+                "link": link,
+            }
+        )
+
+    items.sort(key=lambda x: x["age_days"], reverse=True)
+
+    return {
+        "count": len(items),
+        "tickets": items,
+        "is_empty": len(items) == 0,
+    }
 
 
 def _arrow(delta_pct: float | None, *, lower_is_better: bool = False) -> str:
@@ -51,6 +178,7 @@ def metrics_context(
     now: datetime | None = None,
     active_statuses: Sequence[str] | None = None,
     activity_events: list[dict] | None = None,
+    project_alias: str = "",
 ) -> dict:
     """Build a template-ready metrics dict from raw ticket dicts.
 
@@ -180,6 +308,9 @@ def metrics_context(
         "delta_pct": trend_delta,
     }
 
+    # ── F3: Stalled tickets ───────────────────────────────────────────────────
+    stalled = stalled_view(tickets, now=now, project_alias=project_alias)
+
     kpis = {
         # Throughput 30d
         "throughput_30d_count": raw_trend["current"],
@@ -231,4 +362,6 @@ def metrics_context(
         "time_in_status_view": raw_tis,
         "cycle_dist": cycle_dist,
         "trend_throughput_overlay": trend_throughput_overlay,
+        # F3 additions
+        "stalled_view": stalled,
     }

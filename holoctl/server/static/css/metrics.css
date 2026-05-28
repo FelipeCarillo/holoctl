@@ -909,6 +909,325 @@ ul.metrics-scrollable {
   opacity: 0.8;
 }
 
+/* ── F3: WIP + Stalled side-by-side row ───────────────────────────────────── */
+
+.metrics-wip-stalled-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* When one column is missing, let the remaining one span full width. */
+.metrics-wip-stalled-row > .metrics-card:only-child {
+  grid-column: 1 / -1;
+}
+
+/* ── F3: Cycle-time distribution histogram ────────────────────────────────── */
+
+.mcd-chart-wrap {
+  position: relative;
+  padding-bottom: 24px;
+}
+
+.mcd-svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+  overflow: visible;
+}
+
+.mcd-bar {
+  fill: var(--accent);
+  opacity: 0.55;
+  transition: opacity 0.14s;
+}
+
+.mcd-bar:hover {
+  opacity: 1;
+}
+
+.mcd-bar-peak {
+  opacity: 0.85;
+}
+
+/* X-axis labels */
+.mcd-axis-x {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+}
+
+.mcd-axis-label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  letter-spacing: -0.2px;
+}
+
+/* Percentile chips row */
+.mcd-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.mcd-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.mcd-chip-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+.mcd-chip-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-0);
+}
+
+.mcd-chip-p95 {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
+
+.mcd-chip-p95 .mcd-chip-value {
+  color: var(--accent);
+}
+
+.mcd-chip-count {
+  margin-left: auto;
+}
+
+/* ── F3: Throughput trend overlay chart ───────────────────────────────────── */
+
+/* Previous-period ghost bars */
+.mto-bar-prev {
+  fill: var(--accent);
+  opacity: 0.18;
+}
+
+/* Current bars inherit .metrics-bar styles */
+.mto-bar-curr {
+  /* Additional override if needed — inherits from .metrics-bar */
+}
+
+/* Legend row */
+.mto-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.mto-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.mto-swatch-curr {
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.mto-swatch-prev {
+  background: var(--accent);
+  opacity: 0.25;
+}
+
+.mto-legend-label {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.mto-legend-count {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.mto-legend-count-prev {
+  color: var(--text-2);
+}
+
+.mto-legend-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 4px;
+  display: inline-block;
+}
+
+/* Delta arrow chip */
+.mto-delta {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 2px;
+}
+
+.mto-delta-up {
+  background: var(--green-subtle);
+  color: var(--green);
+}
+
+.mto-delta-down {
+  background: var(--red-subtle);
+  color: var(--red);
+}
+
+.mto-delta-flat {
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+
+/* ── F3: Stalled tickets list ─────────────────────────────────────────────── */
+
+.mst-count-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--yellow-subtle);
+  color: var(--yellow);
+}
+
+.mst-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mst-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  flex-wrap: wrap;
+  transition: background 0.12s var(--ease);
+}
+
+.mst-item:hover {
+  background: var(--bg-hover);
+}
+
+/* Status chip */
+.mst-status-chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  letter-spacing: -0.1px;
+  flex-shrink: 0;
+}
+
+.mst-status-chip[data-status="doing"] {
+  background: var(--blue-subtle);
+  color: var(--blue);
+}
+
+.mst-status-chip[data-status="review"] {
+  background: var(--purple-subtle);
+  color: var(--purple);
+}
+
+.mst-status-chip[data-status="backlog"] {
+  background: var(--bg-2);
+  color: var(--text-3);
+}
+
+/* Ticket ID link */
+.mst-ticket-id {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: opacity 0.12s var(--ease);
+}
+
+.mst-ticket-id:hover {
+  opacity: 0.75;
+}
+
+/* Ticket title */
+.mst-ticket-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Age indicator */
+.mst-age {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Reason chips container */
+.mst-reasons {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 2px;
+}
+
+/* Individual reason chip */
+.mst-reason-chip {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--yellow-subtle);
+  color: var(--yellow);
+  font-family: var(--font-mono);
+  letter-spacing: -0.1px;
+}
+
 /* ── Responsive ── */
 @media (max-width: 720px) {
   .metrics-top-row {
@@ -916,6 +1235,10 @@ ul.metrics-scrollable {
   }
 
   .metrics-group-row {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics-wip-stalled-row {
     grid-template-columns: 1fr;
   }
 

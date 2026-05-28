@@ -67,6 +67,7 @@ def project_metrics(alias: str, request: Request):
         tickets,
         since_days=f.get("since_days", 30),
         activity_events=activity_events,
+        project_alias=alias,
     )
 
     base_url = f"/project/{alias}/metrics"

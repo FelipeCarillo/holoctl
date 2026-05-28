@@ -1,0 +1,112 @@
+{#
+  _throughput_overlay.html — Throughput trend overlay chart (Task F3).
+
+  Renders current-period bars (solid accent) overlaid with previous-period
+  ghost bars (accent-subtle), plus a legend showing totals and delta.
+
+  Expected context:
+    trend_throughput_overlay — {
+        current: [{bucket, count}, ...],
+        previous: [{bucket, count}, ...],
+        current_total: int,
+        previous_total: int,
+        delta_pct: float | None,
+    }
+    since_days — int, for subtitle
+#}
+{%- set ov = trend_throughput_overlay -%}
+{%- set n = ov.current | length -%}
+{%- set max_count = namespace(val=1) -%}
+{%- for b in ov.current %}
+  {%- if b.count > max_count.val %}{%- set max_count.val = b.count %}{%- endif %}
+{%- endfor %}
+{%- for b in ov.previous %}
+  {%- if b.count > max_count.val %}{%- set max_count.val = b.count %}{%- endif %}
+{%- endfor %}
+
+{%- set has_current = ov.current_total > 0 or ov.previous_total > 0 -%}
+
+<div class="metrics-card" id="metrics-throughput-overlay">
+  <div class="metrics-card-title">
+    Throughput Trend
+    <span class="metrics-card-subtitle">last {{ since_days }}d vs previous {{ since_days }}d</span>
+  </div>
+
+  {%- if not has_current %}
+  <div class="metrics-empty">No completed tickets to show a trend.</div>
+
+  {%- else %}
+
+  <div class="metrics-chart-wrap" aria-label="Throughput trend overlay chart">
+    <svg class="metrics-bar-svg mto-svg"
+         role="img"
+         aria-label="Throughput overlay: current vs previous period"
+         viewBox="0 0 {{ n }} 40"
+         preserveAspectRatio="none">
+
+      {# Previous-period ghost bars (render first, behind current) #}
+      {%- for b in ov.previous %}
+      {%- set bar_h = (b.count / max_count.val * 36) | round(2) %}
+      {%- set bar_y = 40 - bar_h %}
+      <rect
+        x="{{ loop.index0 }}"
+        y="{{ bar_y }}"
+        width="0.8"
+        height="{{ bar_h }}"
+        class="mto-bar-prev"
+        aria-label="prev {{ b.bucket }}: {{ b.count }}">
+        <title>Prev {{ b.bucket }}: {{ b.count }} completed</title>
+      </rect>
+      {%- endfor %}
+
+      {# Current-period bars (solid, rendered on top) #}
+      {%- for b in ov.current %}
+      {%- set bar_h = (b.count / max_count.val * 36) | round(2) %}
+      {%- set bar_y = 40 - bar_h %}
+      <rect
+        x="{{ loop.index0 }}"
+        y="{{ bar_y }}"
+        width="0.8"
+        height="{{ bar_h }}"
+        class="metrics-bar mto-bar-curr{% if b.count == max_count.val %} metrics-bar-peak{% endif %}"
+        aria-label="{{ b.bucket }}: {{ b.count }}">
+        <title>{{ b.bucket }}: {{ b.count }} completed</title>
+      </rect>
+      {%- endfor %}
+    </svg>
+
+    {# X-axis labels: first / mid / last bucket of current period #}
+    <div class="metrics-axis-x">
+      {%- for b in ov.current %}
+      {%- if loop.index0 == 0 or loop.index0 == (n // 2) or loop.index0 == n - 1 %}
+      <span class="metrics-axis-label"
+            style="left:{{ (loop.index0 / (n - 1) * 100) | round(1) if n > 1 else 0 }}%">{{ b.bucket[5:] }}</span>
+      {%- endif %}
+      {%- endfor %}
+    </div>
+  </div>
+
+  {# Legend: current vs previous with delta arrow #}
+  <div class="mto-legend">
+    <span class="mto-swatch mto-swatch-curr" aria-hidden="true"></span>
+    <span class="mto-legend-label">Current</span>
+    <strong class="mto-legend-count">{{ ov.current_total }}</strong>
+
+    <span class="mto-legend-sep" aria-hidden="true"></span>
+
+    <span class="mto-swatch mto-swatch-prev" aria-hidden="true"></span>
+    <span class="mto-legend-label">Previous</span>
+    <strong class="mto-legend-count mto-legend-count-prev">{{ ov.previous_total }}</strong>
+
+    {%- if ov.delta_pct is not none %}
+    {%- set is_up = ov.delta_pct > 1.0 %}
+    {%- set is_down = ov.delta_pct < -1.0 %}
+    <span class="mto-delta{% if is_up %} mto-delta-up{% elif is_down %} mto-delta-down{% else %} mto-delta-flat{% endif %}">
+      {%- if is_up %}↑{%- elif is_down %}↓{%- else %}→{%- endif %}
+      {{ ov.delta_pct | abs | round(1) }}%
+    </span>
+    {%- endif %}
+  </div>
+
+  {%- endif %}
+</div>

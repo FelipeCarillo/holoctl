@@ -2151,9 +2151,9 @@ class TestMetricsRoute:
         _make_done_ticket(alias, b, created_offset_days=3)
         r = client.get(f"/project/{alias}/metrics")
         assert r.status_code == 200
-        # Cycle section must show at least the count chip (not the empty state).
-        assert "metrics-count-chip" in r.text
-        assert "metrics-stat-value" in r.text
+        # Cycle histogram must show percentile chips (not the empty state).
+        assert "mcd-chips" in r.text
+        assert "mcd-chip" in r.text
 
 
 class TestMetricsTab:
@@ -2280,7 +2280,8 @@ class TestWorkspaceMetricsRoute:
         _make_done_ticket(alias, b, created_offset_days=3)
         r = client.get("/metrics")
         assert r.status_code == 200
-        assert "metrics-count-chip" in r.text or "metrics-stat-value" in r.text
+        # Cycle histogram must show percentile chips (not the empty state).
+        assert "mcd-chips" in r.text or "mcd-chip" in r.text
 
     def test_by_workspace_project_shows_alias_link(
         self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
@@ -2578,3 +2579,185 @@ class TestWorkspaceMetricsFilterRoute:
         r = client.get("/metrics?since=all&kind=spec")
         assert r.status_code == 200
         assert 'class="metrics-wip-count-badge">1<' in r.text
+
+
+# ── F3: Cycle histogram, Throughput overlay, Stalled list ────────────────────
+
+
+class TestF3CycleHistogram:
+    """Cycle-time distribution histogram (_cycle_dist.html) renders correctly."""
+
+    def test_histogram_section_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-cycle-dist" in r.text
+
+    def test_histogram_empty_state_on_clean_board(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Empty state text in the cycle histogram.
+        assert "No completed tickets in this window" in r.text
+
+    def test_histogram_shows_percentile_chips_with_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=5)
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "mcd-chips" in r.text
+        assert "mcd-chip-p50" in r.text
+        assert "mcd-chip-p95" in r.text
+
+    def test_histogram_present_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-cycle-dist" in r.text
+
+    def test_histogram_css_classes_present(self, dashboard_css: str):
+        assert ".mcd-svg" in dashboard_css
+        assert ".mcd-bar" in dashboard_css
+        assert ".mcd-chips" in dashboard_css
+        assert ".mcd-chip-p95" in dashboard_css
+
+
+class TestF3ThroughputOverlay:
+    """Throughput trend overlay chart (_throughput_overlay.html) renders correctly."""
+
+    def test_overlay_section_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-throughput-overlay" in r.text
+
+    def test_overlay_empty_state_on_clean_board(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "No completed tickets to show a trend" in r.text
+
+    def test_overlay_legend_present_with_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=5)
+        r = client.get(f"/project/{alias}/metrics?since=all")
+        assert r.status_code == 200
+        assert "mto-legend" in r.text
+        # Legend shows "Current" and "Previous" labels.
+        assert "Current" in r.text
+        assert "Previous" in r.text
+
+    def test_overlay_has_prev_period_bar_class(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=5)
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Ghost bar class must be in the SVG markup.
+        assert "mto-bar-prev" in r.text
+
+    def test_overlay_present_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-throughput-overlay" in r.text
+
+    def test_overlay_css_classes_present(self, dashboard_css: str):
+        assert ".mto-bar-prev" in dashboard_css
+        assert ".mto-legend" in dashboard_css
+        assert ".mto-delta-up" in dashboard_css
+        assert ".mto-delta-down" in dashboard_css
+
+
+class TestF3StalledList:
+    """Stalled tickets list (_stalled.html + stalled_view shaper) integration."""
+
+    def test_stalled_section_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-stalled" in r.text
+
+    def test_stalled_empty_state_on_clean_board(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "No stalled tickets" in r.text
+
+    def test_stalled_shows_orphaned_backlog_ticket(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """A backlog ticket without an agent should appear in the stalled list
+        with the 'no agent assigned' reason."""
+        b = Board(workspace, workspace_config)
+        # Add a ticket with no agent explicitly (default in _ticket helper is []).
+        # Board.add requires valid agent, so add with agent then clear it in index.
+        t = b.add({"title": "Orphan", "agent": "developer"})
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        for tk in data["tickets"]:
+            if tk["id"] == t["id"]:
+                tk["agent"] = []
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        r = client.get(f"/project/{alias}/metrics?since=all")
+        assert r.status_code == 200
+        assert "no agent assigned" in r.text
+
+    def test_stalled_shows_no_priority_reason(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """A backlog ticket without priority should show 'no priority set'."""
+        b = Board(workspace, workspace_config)
+        t = b.add({"title": "NoPrio", "agent": "developer"})
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        for tk in data["tickets"]:
+            if tk["id"] == t["id"]:
+                tk["priority"] = ""
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        r = client.get(f"/project/{alias}/metrics?since=all")
+        assert r.status_code == 200
+        assert "no priority set" in r.text
+
+    def test_stalled_section_present_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-stalled" in r.text
+
+    def test_stalled_css_classes_present(self, dashboard_css: str):
+        assert ".mst-list" in dashboard_css
+        assert ".mst-item" in dashboard_css
+        assert ".mst-status-chip" in dashboard_css
+        assert ".mst-reason-chip" in dashboard_css
+        assert ".mst-ticket-id" in dashboard_css
+
+    def test_stalled_section_near_wip_block(
+        self, client: TestClient, alias: str
+    ):
+        """Stalled and WIP cards appear inside the same side-by-side grid row."""
+        r = client.get(f"/project/{alias}/metrics")
+        html = r.text
+        assert "metrics-wip-stalled-row" in html
+        wip_idx = html.find("metrics-wip")
+        stalled_idx = html.find("metrics-stalled")
+        assert wip_idx > 0 and stalled_idx > 0
+
+    def test_wip_stalled_row_css_present(self, dashboard_css: str):
+        assert ".metrics-wip-stalled-row" in dashboard_css

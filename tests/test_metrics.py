@@ -23,6 +23,7 @@ from holoctl.lib.metrics import (
     flow_efficiency,
     forecast,
 )
+from holoctl.server.views.metrics import stalled_view
 
 
 # ── Fixtures / helpers ────────────────────────────────────────────────────────
@@ -947,3 +948,204 @@ class TestForecast:
         assert "weekly_rate" in result
         assert "weeks_to_clear" in result
         assert "eta" in result
+
+
+# ── stalled_view (F3 shaper) ──────────────────────────────────────────────────
+
+
+class TestStalledView:
+    """Tests for stalled_view() in holoctl.server.views.metrics."""
+
+    def _t(self, **kw) -> dict:
+        """Build a minimal ticket dict; updated defaults to 1 day ago."""
+        updated = kw.pop(
+            "updated",
+            (NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        return {
+            "id": kw.pop("id", "T-001"),
+            "title": kw.pop("title", "A ticket"),
+            "status": kw.pop("status", "backlog"),
+            "updated": updated,
+            "completed": kw.pop("completed", None),
+            "agent": kw.pop("agent", []),
+            "priority": kw.pop("priority", ""),
+            **kw,
+        }
+
+    # ── empty state ──────────────────────────────────────────────────────────
+
+    def test_empty_tickets_returns_empty(self):
+        result = stalled_view([], now=NOW)
+        assert result["count"] == 0
+        assert result["tickets"] == []
+        assert result["is_empty"] is True
+
+    def test_all_healthy_returns_empty(self):
+        tickets = [
+            self._t(id="T-1", status="doing",
+                    updated=(NOW - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    agent=["alice"], priority="p1"),
+            self._t(id="T-2", status="backlog",
+                    agent=["bob"], priority="p2"),
+        ]
+        result = stalled_view(tickets, now=NOW, stale_days=5)
+        assert result["is_empty"] is True
+
+    # ── reason: active + stale ────────────────────────────────────────────────
+
+    def test_doing_stale_flagged(self):
+        tickets = [
+            self._t(id="T-1", status="doing",
+                    updated=(NOW - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    agent=["alice"], priority="p1"),
+        ]
+        result = stalled_view(tickets, now=NOW, stale_days=5)
+        assert result["count"] == 1
+        item = result["tickets"][0]
+        assert item["id"] == "T-1"
+        assert any("no update" in r for r in item["reasons"])
+
+    def test_review_stale_flagged(self):
+        tickets = [
+            self._t(id="T-1", status="review",
+                    updated=(NOW - timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    agent=["alice"], priority="p1"),
+        ]
+        result = stalled_view(tickets, now=NOW, stale_days=5)
+        assert result["count"] == 1
+        assert any("no update" in r for r in result["tickets"][0]["reasons"])
+
+    def test_doing_within_threshold_not_flagged(self):
+        tickets = [
+            self._t(id="T-1", status="doing",
+                    updated=(NOW - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    agent=["alice"], priority="p1"),
+        ]
+        result = stalled_view(tickets, now=NOW, stale_days=5)
+        assert result["is_empty"] is True
+
+    # ── reason: backlog orphaned (no agent) ───────────────────────────────────
+
+    def test_backlog_no_agent_flagged(self):
+        tickets = [
+            self._t(id="T-1", status="backlog", agent=[], priority="p1"),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        assert result["count"] == 1
+        assert any("no agent" in r for r in result["tickets"][0]["reasons"])
+
+    def test_backlog_with_agent_string_not_orphaned(self):
+        # agent as a non-empty string (some callers pass string)
+        tickets = [
+            self._t(id="T-1", status="backlog", agent=["alice"], priority="p1"),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        assert result["is_empty"] is True
+
+    # ── reason: backlog no priority ───────────────────────────────────────────
+
+    def test_backlog_no_priority_flagged(self):
+        tickets = [
+            self._t(id="T-1", status="backlog", agent=["alice"], priority=""),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        assert result["count"] == 1
+        assert any("no priority" in r for r in result["tickets"][0]["reasons"])
+
+    def test_backlog_none_priority_flagged(self):
+        tickets = [
+            self._t(id="T-1", status="backlog", agent=["alice"], priority=None),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        assert result["count"] == 1
+        assert any("no priority" in r for r in result["tickets"][0]["reasons"])
+
+    def test_backlog_both_missing_has_two_reasons(self):
+        tickets = [
+            self._t(id="T-1", status="backlog", agent=[], priority=""),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        assert result["count"] == 1
+        assert len(result["tickets"][0]["reasons"]) == 2
+
+    # ── reason: done but completed is null ────────────────────────────────────
+
+    def test_done_missing_completed_flagged(self):
+        tickets = [
+            self._t(id="T-1", status="done", completed=None,
+                    agent=["alice"], priority="p1"),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        assert result["count"] == 1
+        assert any("completed" in r for r in result["tickets"][0]["reasons"])
+
+    def test_done_with_completed_not_flagged(self):
+        tickets = [
+            self._t(id="T-1", status="done",
+                    completed=(NOW - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    agent=["alice"], priority="p1"),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        assert result["is_empty"] is True
+
+    # ── cancelled skipped ─────────────────────────────────────────────────────
+
+    def test_cancelled_skipped(self):
+        tickets = [
+            self._t(id="T-1", status="cancelled", agent=[], priority=""),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        assert result["is_empty"] is True
+
+    # ── ordering ──────────────────────────────────────────────────────────────
+
+    def test_items_sorted_by_age_desc(self):
+        tickets = [
+            self._t(id="T-new", status="doing",
+                    updated=(NOW - timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    agent=["a"], priority="p1"),
+            self._t(id="T-old", status="doing",
+                    updated=(NOW - timedelta(days=15)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    agent=["a"], priority="p1"),
+        ]
+        result = stalled_view(tickets, now=NOW, stale_days=5)
+        assert result["tickets"][0]["id"] == "T-old"
+        assert result["tickets"][1]["id"] == "T-new"
+
+    # ── required keys ─────────────────────────────────────────────────────────
+
+    def test_result_has_required_keys(self):
+        result = stalled_view([], now=NOW)
+        assert "count" in result
+        assert "tickets" in result
+        assert "is_empty" in result
+
+    def test_item_has_required_keys(self):
+        tickets = [
+            self._t(id="T-1", status="backlog", agent=[], priority=""),
+        ]
+        result = stalled_view(tickets, now=NOW)
+        item = result["tickets"][0]
+        assert "id" in item
+        assert "title" in item
+        assert "status" in item
+        assert "age_days" in item
+        assert "reasons" in item
+        assert "link" in item
+
+    # ── link generation ───────────────────────────────────────────────────────
+
+    def test_link_with_project_alias(self):
+        tickets = [
+            self._t(id="T-1", status="backlog", agent=[], priority=""),
+        ]
+        result = stalled_view(tickets, now=NOW, project_alias="myproject")
+        assert result["tickets"][0]["link"] == "/project/myproject/board/T-1"
+
+    def test_link_without_project_alias(self):
+        tickets = [
+            self._t(id="T-1", status="backlog", agent=[], priority=""),
+        ]
+        result = stalled_view(tickets, now=NOW, project_alias="")
+        assert result["tickets"][0]["link"] == "/board/T-1"

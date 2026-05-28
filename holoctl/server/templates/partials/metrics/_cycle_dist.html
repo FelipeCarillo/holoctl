@@ -1,0 +1,91 @@
+{#
+  _cycle_dist.html — Cycle-time distribution histogram (Task F3).
+
+  Expected context:
+    cycle_dist  — result of cycle_time_distribution():
+                  {min, max, p50, p75, p95, bins: [{lo, hi, count}, ...], count (added by shaper)}
+    since_days  — int, for subtitle
+#}
+{%- set cd = cycle_dist -%}
+{%- set has_data = cd.bins | length > 0 -%}
+
+<div class="metrics-card" id="metrics-cycle-dist">
+  <div class="metrics-card-title">
+    Cycle Distribution
+    <span class="metrics-card-subtitle">histogram · creation → done</span>
+  </div>
+
+  {%- if not has_data %}
+  <div class="metrics-empty">No completed tickets in this window.</div>
+
+  {%- else %}
+
+  {# ── Histogram SVG ── #}
+  {%- set n_bins = cd.bins | length %}
+  {%- set svg_w = n_bins * 12 %}
+  {%- set svg_h = 64 %}
+  {%- set bar_w = 10 %}
+  {%- set gap = 2 %}
+  {%- set max_count = namespace(val=1) %}
+  {%- for b in cd.bins %}
+    {%- if b.count > max_count.val %}
+      {%- set max_count.val = b.count %}
+    {%- endif %}
+  {%- endfor %}
+
+  <div class="mcd-chart-wrap" aria-label="Cycle time distribution histogram">
+    <svg class="mcd-svg"
+         role="img"
+         aria-label="Cycle time histogram"
+         viewBox="0 0 {{ svg_w }} {{ svg_h }}"
+         preserveAspectRatio="none">
+
+      {%- for b in cd.bins %}
+      {%- set bar_h = (b.count / max_count.val * (svg_h - 4)) | round(1) %}
+      {%- set bar_y = svg_h - bar_h %}
+      {%- set bar_x = loop.index0 * (bar_w + gap) %}
+      {%- set is_peak = (b.count == max_count.val) %}
+      <rect
+        x="{{ bar_x }}"
+        y="{{ bar_y }}"
+        width="{{ bar_w }}"
+        height="{{ bar_h }}"
+        class="mcd-bar{% if is_peak %} mcd-bar-peak{% endif %}"
+        aria-label="{{ b.lo | round(1) }}–{{ b.hi | round(1) }}d: {{ b.count }}">
+        <title>{{ b.lo | round(1) }}–{{ b.hi | round(1) }}d: {{ b.count }} ticket{{ "s" if b.count != 1 else "" }}</title>
+      </rect>
+      {%- endfor %}
+    </svg>
+
+    {# X-axis: min / mid / max labels #}
+    {%- set mid_val = ((cd.min + cd.max) / 2) | round(1) %}
+    <div class="mcd-axis-x">
+      <span class="mcd-axis-label mcd-axis-left">{{ cd.min | round(1) }}d</span>
+      <span class="mcd-axis-label mcd-axis-mid">{{ mid_val }}d</span>
+      <span class="mcd-axis-label mcd-axis-right">{{ cd.max | round(1) }}d</span>
+    </div>
+  </div>
+
+  {# ── Percentile chips ── #}
+  <div class="mcd-chips">
+    <span class="mcd-chip mcd-chip-p50" title="50th percentile (median)">
+      <span class="mcd-chip-label">p50</span>
+      <span class="mcd-chip-value">{{ cd.p50 | round(1) }}d</span>
+    </span>
+    <span class="mcd-chip mcd-chip-p75" title="75th percentile">
+      <span class="mcd-chip-label">p75</span>
+      <span class="mcd-chip-value">{{ cd.p75 | round(1) }}d</span>
+    </span>
+    <span class="mcd-chip mcd-chip-p95" title="95th percentile">
+      <span class="mcd-chip-label">p95</span>
+      <span class="mcd-chip-value">{{ cd.p95 | round(1) }}d</span>
+    </span>
+    {%- set cd_count = cd.bins | sum(attribute='count') %}
+    <span class="mcd-chip mcd-chip-count" title="Total tickets in distribution">
+      <span class="mcd-chip-label">n</span>
+      <span class="mcd-chip-value">{{ cd_count }}</span>
+    </span>
+  </div>
+
+  {%- endif %}
+</div>

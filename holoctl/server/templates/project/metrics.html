@@ -8,14 +8,17 @@
   {# ── KPI band (Task F2) ── #}
   {% include "partials/metrics/_kpi_band.html" %}
 
-  {# ── Row 1: Throughput + Cycle Time ── #}
+  {# ── Row 1: Throughput overlay + Cycle Histogram ── #}
   <div class="metrics-top-row">
-    {% include "partials/metrics/_throughput.html" %}
-    {% include "partials/metrics/_cycle_cards.html" %}
+    {% include "partials/metrics/_throughput_overlay.html" %}
+    {% include "partials/metrics/_cycle_dist.html" %}
   </div>
 
-  {# ── Row 2: WIP aging ── #}
-  {% include "partials/metrics/_wip.html" %}
+  {# ── Row 2: WIP aging + Stalled tickets ── #}
+  <div class="metrics-wip-stalled-row">
+    {% include "partials/metrics/_wip.html" %}
+    {% include "partials/metrics/_stalled.html" %}
+  </div>
 
   {# ── Row 3: By-agent + By-project ── #}
   <div class="metrics-group-row">
