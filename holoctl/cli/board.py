@@ -25,7 +25,7 @@ def _get_board() -> tuple[Board, dict, Path]:
 def stat_cmd():
     """Show ticket counts by status."""
     board, _, _ = _get_board()
-    print(json.dumps(board.stat(), indent=2))
+    print(json.dumps(board.stat(), indent=2, ensure_ascii=False))
 
 
 @app.command("get")
@@ -36,7 +36,7 @@ def get_cmd(ticket_id: str = typer.Argument(..., help="Ticket ID")):
     if not ticket:
         console.print(f"[red]Ticket {ticket_id} not found[/red]")
         raise typer.Exit(1)
-    print(json.dumps(ticket, indent=2))
+    print(json.dumps(ticket, indent=2, ensure_ascii=False))
 
 
 @app.command("ls")
@@ -136,7 +136,7 @@ def children_cmd(
         raise typer.Exit(1)
 
     if as_json:
-        print(json.dumps(result, indent=2, default=str))
+        print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
         return
 
     parent = result["parent"]
@@ -222,7 +222,7 @@ def set_cmd(
     if len(ids) == 1:
         try:
             result = board.set(ids[0], field, raw_value)
-            console.print(f"{result['id']}.{result['field']} = {json.dumps(result['value'])}")
+            console.print(f"{result['id']}.{result['field']} = {json.dumps(result['value'], ensure_ascii=False)}")
         except (KeyError, ValueError) as e:
             msg = str(e).strip("'")
             console.print(f"[red]{msg}[/red]")
@@ -230,7 +230,7 @@ def set_cmd(
         return
     result = board.batch_set(ids, field, raw_value)
     for r in result["updated"]:
-        console.print(f"{r['id']}.{r['field']} = {json.dumps(r['value'])}")
+        console.print(f"{r['id']}.{r['field']} = {json.dumps(r['value'], ensure_ascii=False)}")
     for err in result["errors"]:
         console.print(f"[red]{err['id']}: {err['error']}[/red]")
     if result["errors"]:
@@ -298,7 +298,7 @@ def add_cmd(ticket_json: str = typer.Argument(..., help="JSON ticket data")):
         patch = json.loads(ticket_json)
         ticket = board.add(patch)
         console.print(f"[green]Created {ticket['id']}: {ticket['title']}[/green]")
-        print(json.dumps(ticket, indent=2))
+        print(json.dumps(ticket, indent=2, ensure_ascii=False))
     except Exception as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
@@ -427,7 +427,7 @@ def show_cmd(
         raise typer.Exit(1)
 
     if as_json:
-        print(json.dumps({"id": rec["id"], "frontmatter": rec["frontmatter"], "body": rec["body"]}, indent=2, default=str))
+        print(json.dumps({"id": rec["id"], "frontmatter": rec["frontmatter"], "body": rec["body"]}, indent=2, default=str, ensure_ascii=False))
         return
     if body_only:
         print(rec["body"])

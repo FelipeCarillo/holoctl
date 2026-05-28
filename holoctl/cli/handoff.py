@@ -157,10 +157,15 @@ def _git_files_changed(root: Path) -> list[str]:
         return []
     try:
         # Files in working copy that differ from HEAD (staged + unstaged).
+        # `encoding="utf-8"` is required on Windows: `text=True` alone falls
+        # back to `locale.getpreferredencoding()` (cp1252), which mangles
+        # filenames with accents (a common case for pt-BR repos).
         out = subprocess.check_output(
             [git, "-C", str(root), "diff", "--name-only", "HEAD"],
             stderr=subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
     except (subprocess.SubprocessError, OSError):

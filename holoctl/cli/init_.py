@@ -116,8 +116,11 @@ def init_cmd(
         "meta": {"version": 1, "updated": _now(), "nextId": 1, "counts": {}},
         "tickets": [],
     }
+    # `ensure_ascii=False` to match Board._save() — keeps the index human-
+    # readable when future writes carry accented titles.
     (cwd / ".holoctl" / "board" / "index.json").write_text(
-        json.dumps(index_data, indent="\t") + "\n", encoding="utf-8"
+        json.dumps(index_data, indent="\t", ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
     (cwd / ".holoctl" / "activity.jsonl").write_text("", encoding="utf-8")
 

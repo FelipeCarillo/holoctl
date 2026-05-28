@@ -195,7 +195,14 @@ async def api_events(alias: str):
                         # it onto a single line so e.data is the full JSON.
                         raw = index_path.read_text(encoding="utf-8")
                         try:
-                            data = json.dumps(json.loads(raw), separators=(",", ":"))
+                            # `ensure_ascii=False`: preserve accented titles
+                            # in the SSE payload so DevTools / Network tab
+                            # show readable text, not `é` escapes.
+                            data = json.dumps(
+                                json.loads(raw),
+                                separators=(",", ":"),
+                                ensure_ascii=False,
+                            )
                         except (json.JSONDecodeError, ValueError):
                             data = raw.replace("\n", " ").replace("\r", "")
                         yield f"event: board-update\ndata: {data}\n\n"

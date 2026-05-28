@@ -89,7 +89,7 @@ def journal_show(
         console.print("[dim](no records)[/dim]")
         return
     for r in records:
-        payload_brief = json.dumps(r.get("payload", {}), separators=(",", ":"))
+        payload_brief = json.dumps(r.get("payload", {}), separators=(",", ":"), ensure_ascii=False)
         if len(payload_brief) > 60:
             payload_brief = payload_brief[:57] + "..."
         console.print(

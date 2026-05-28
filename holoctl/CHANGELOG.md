@@ -4,6 +4,33 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.20.3] — 2026-05-28
+
+UTF-8 hygiene pass: accented titles (and any non-ASCII text) now survive
+end-to-end without mojibake on Windows + without ASCII escapes anywhere
+the raw JSON is surfaced.
+
+### Fixed
+
+- **`json.dumps` was escaping every non-ASCII codepoint to `\uXXXX`** in
+  the on-disk board index, the SSE `board-update` stream, the
+  `activity.jsonl` log, workspace config, curator state, and every CLI
+  command that prints JSON (`hctl board get/ls/move/set`,
+  `hctl agent suggest`, `hctl journal show`). Functional — `json.loads`
+  decodes it back — but the bytes were unreadable in `cat`, `git diff`,
+  DevTools Network panel, and anything that surfaces the raw payload
+  without re-parsing. Now `ensure_ascii=False` everywhere user-authored
+  text can land. Adds a regression test that an accented title round-trips
+  as literal UTF-8 through `index.json`. The index is rewritten on the
+  next mutation, so existing workspaces self-heal on first ticket change.
+- **`subprocess` on Windows decoded git output as cp1252.**
+  `subprocess.run(..., text=True)` without `encoding` falls back to
+  `locale.getpreferredencoding()`, so accented branch names, commit
+  messages, and filenames came back as mojibake in the dashboard Repos
+  tab and in `hctl handoff`'s changed-files preview. Pinned to
+  `encoding="utf-8", errors="replace"` in both call sites
+  (`lib/git.py`, `cli/handoff.py`).
+
 ## [0.20.2] — 2026-05-28
 
 Two follow-ups to the 0.20.1 UI patch:
