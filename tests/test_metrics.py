@@ -1163,3 +1163,19 @@ class TestStalledView:
         ]
         result = stalled_view(tickets, now=NOW, project_alias="")
         assert result["tickets"][0]["link"] == "/board/T-1"
+
+    def test_link_uses_source_alias_when_project_alias_empty(self):
+        """Workspace-rolled tickets with _source_alias build /project/<alias>/board/<id>."""
+        tickets = [
+            {**self._t(id="T-42", status="backlog", agent=[], priority=""), "_source_alias": "myrepo"},
+        ]
+        result = stalled_view(tickets, now=NOW, project_alias="")
+        assert result["tickets"][0]["link"] == "/project/myrepo/board/T-42"
+
+    def test_link_project_alias_takes_precedence_over_source_alias(self):
+        """Explicit project_alias wins over _source_alias."""
+        tickets = [
+            {**self._t(id="T-1", status="backlog", agent=[], priority=""), "_source_alias": "other"},
+        ]
+        result = stalled_view(tickets, now=NOW, project_alias="explicit")
+        assert result["tickets"][0]["link"] == "/project/explicit/board/T-1"

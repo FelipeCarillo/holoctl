@@ -51,8 +51,9 @@ def stalled_view(
     stale_days:
         Threshold for active-status stale detection.
     project_alias:
-        Alias used to build per-ticket detail links.  When empty, links use
-        ``/board/{id}`` (relative).
+        Alias used to build per-ticket detail links.  When empty, falls back to
+        each ticket's ``_source_alias`` field (workspace-rolled tickets); if
+        that is also absent, links use ``/board/{id}`` (relative).
 
     Returns
     -------
@@ -60,7 +61,7 @@ def stalled_view(
 
         {
             "count": int,
-            "items": [
+            "tickets": [
                 {
                     "id": str,
                     "title": str,
@@ -120,6 +121,8 @@ def stalled_view(
         tid = t.get("id", "")
         if project_alias:
             link = f"/project/{project_alias}/board/{tid}"
+        elif t.get("_source_alias"):
+            link = f"/project/{t['_source_alias']}/board/{tid}"
         else:
             link = f"/board/{tid}"
 
