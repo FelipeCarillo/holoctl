@@ -68,9 +68,10 @@ jobs:
         run: |
           set -e
           mkdir -p _ci_compile && cd _ci_compile
-          # Compile every supported target and verify doctor reports healthy.
+          # Compile the supported targets (agents, claude — the 0.20.0 set after
+          # copilot/codex were retired) and verify doctor reports healthy.
           uv run --project .. holoctl init --name ci --prefix CI \
-            --targets agents,claude,copilot,codex
+            --targets agents,claude
           uv run --project .. holoctl doctor | tee doctor.txt
           grep -q "All checks passed" doctor.txt
           if grep -q "issue(s) found" doctor.txt; then
@@ -78,22 +79,15 @@ jobs:
             exit 1
           fi
 
-          # `.codex/config.toml` must parse as valid TOML and declare the holoctl server.
-          uv run --project .. python -c "
-          import tomllib
-          d = tomllib.loads(open('.codex/config.toml','rb').read().decode())
-          assert d['mcp_servers']['holoctl']['args'] == ['serve', '--mcp'], d
-          print('codex config.toml OK')"
-
           # Removed targets must reject with a useful error.
           uv run --project .. holoctl compile --target cursor 2>&1 | tee cursor.txt
           grep -q "Unknown compile target: cursor" cursor.txt
           grep -q "Available:" cursor.txt
 
           # Re-compile is idempotent — second run produces no diff in tracked outputs.
-          sha_before=$(sha256sum AGENTS.md CLAUDE.md .codex/config.toml .codex/AGENTS.override.md | sort)
+          sha_before=$(sha256sum AGENTS.md CLAUDE.md | sort)
           uv run --project .. holoctl compile
-          sha_after=$(sha256sum AGENTS.md CLAUDE.md .codex/config.toml .codex/AGENTS.override.md | sort)
+          sha_after=$(sha256sum AGENTS.md CLAUDE.md | sort)
           if [ "$sha_before" != "$sha_after" ]; then
             echo "ERROR: compile is not idempotent"
             diff <(echo "$sha_before") <(echo "$sha_after")
@@ -101,7 +95,8 @@ jobs:
           fi
 
           # Legacy workspace (still listing retired targets) compiles silently
-          # — exercises the _filter_removed_targets migration.
+          # — exercises the _filter_removed_targets migration. 0.20.0 adds
+          # `copilot` and `codex` to the retired set on top of the 0.18.0 ones.
           cd .. && mkdir -p _ci_legacy && cd _ci_legacy
           uv run --project .. holoctl init --name legacy --skip-compile
           uv run --project .. python -c "
@@ -111,15 +106,14 @@ jobs:
           d['targets'] = ['agents','claude','cursor','windsurf','copilot','devin','generic','codex']
           p.write_text(json.dumps(d, indent=2))"
           uv run --project .. holoctl compile | tee legacy.txt
-          # Removed targets must not appear in the output as errors.
-          if grep -E "compiled (cursor|windsurf|devin|generic)" legacy.txt; then
+          # Removed targets must not appear in the output as compiled.
+          if grep -E "compiled (cursor|windsurf|devin|generic|copilot|codex)" legacy.txt; then
             echo "ERROR: a retired target was compiled — filter regressed"
             exit 1
           fi
           test -f AGENTS.md
           test -f CLAUDE.md
-          test -f .codex/config.toml
-          [ ! -d .cursor ] && [ ! -d .windsurf ] && [ ! -d .devin ]
+          [ ! -d .cursor ] && [ ! -d .windsurf ] && [ ! -d .devin ] && [ ! -d .codex ]
           echo "Migration smoke OK"
 
       - name: Run pytest
