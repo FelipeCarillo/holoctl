@@ -176,7 +176,7 @@ def agent_suggest(
             "active": list(active),
             "library": list(library),
         }
-        print(_json.dumps(payload, indent=2))
+        print(_json.dumps(payload, indent=2, ensure_ascii=False))
         return
 
     console.print("\n  [bold]Persona suggestions[/bold] [dim](based on codebase)[/dim]")

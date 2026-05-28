@@ -123,8 +123,12 @@ def get_git_info(abs_path: Path) -> dict:
 
     def run(cmd: list[str]) -> str:
         try:
+            # `encoding="utf-8"` is required on Windows: `text=True` alone
+            # defaults to `locale.getpreferredencoding()` (cp1252), which
+            # mangles accented branch names / commit messages.
             return subprocess.run(
-                cmd, cwd=abs_path, capture_output=True, text=True
+                cmd, cwd=abs_path, capture_output=True,
+                text=True, encoding="utf-8", errors="replace",
             ).stdout.strip()
         except Exception:
             return ""

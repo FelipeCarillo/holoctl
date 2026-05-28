@@ -19,6 +19,27 @@ def test_add_creates_ticket_with_id_and_md_file(workspace: Path, workspace_confi
     assert "id: TST-001" in md_path.read_text(encoding="utf-8")
 
 
+def test_index_json_keeps_unicode_titles_unescaped(
+    workspace: Path, workspace_config: dict
+):
+    """Regression: accented titles must survive as literal UTF-8 in index.json.
+
+    Before the ``ensure_ascii=False`` fix, ``json.dumps`` escaped every
+    non-ASCII codepoint to ``\\uXXXX`` — functional (json.loads decodes it
+    back) but the raw bytes were unreadable in DevTools / `cat` / SSE
+    payloads, surfacing as mojibake to anyone inspecting the JSON directly.
+    """
+    board = Board(workspace, workspace_config)
+    board.add({"title": "Métricas — fase 1: ação"})
+    index_path = workspace / ".holoctl" / "board" / "index.json"
+    raw = index_path.read_bytes()
+    # Em-dash (U+2014) is 0xE2 0x80 0x94 in UTF-8 — it must appear literally,
+    # NOT as the ASCII escape `—`.
+    assert "Métricas — fase 1: ação".encode("utf-8") in raw
+    assert b"\\u2014" not in raw
+    assert b"\\u00e9" not in raw
+
+
 def test_add_increments_id(workspace: Path, workspace_config: dict):
     board = Board(workspace, workspace_config)
     a = board.add({"title": "A"})

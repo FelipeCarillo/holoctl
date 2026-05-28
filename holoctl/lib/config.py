@@ -209,7 +209,8 @@ def save_config(project_root: Path, config: dict) -> None:
     canonical = project_root / ".holoctl"
     canonical.mkdir(parents=True, exist_ok=True)
     (canonical / "config.json").write_text(
-        json.dumps(config, indent=2) + "\n", encoding="utf-8"
+        json.dumps(config, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
 
 

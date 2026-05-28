@@ -98,7 +98,8 @@ class CuratorState:
         path = root / ".holoctl" / "curator" / "state.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps(asdict(self), indent=2) + "\n", encoding="utf-8",
+            json.dumps(asdict(self), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
 
     def is_silenced(self, pattern_id: str, *, now: datetime) -> bool:
@@ -143,7 +144,8 @@ def _save_ticket_meta(project_root: Path, ticket_id: str, meta: dict) -> None:
     d = _curator_ticket_meta_dir(project_root)
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{ticket_id}.json").write_text(
-        json.dumps(meta, indent=2) + "\n", encoding="utf-8",
+        json.dumps(meta, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
 
 

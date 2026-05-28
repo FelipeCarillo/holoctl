@@ -37,8 +37,14 @@ class Board:
 
     def _save(self, data: dict) -> None:
         self._board_dir.mkdir(parents=True, exist_ok=True)
+        # `ensure_ascii=False` keeps accented titles (e.g. "métricas — fase 1")
+        # readable in the on-disk index.json and in anything that surfaces the
+        # raw JSON (SSE payload, MCP responses, `git diff`). Default would
+        # escape every non-ASCII codepoint to `\uXXXX` — functional, but
+        # mojibake when a consumer prints the raw bytes without decoding.
         self._index_path.write_text(
-            json.dumps(data, indent="\t") + "\n", encoding="utf-8"
+            json.dumps(data, indent="\t", ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
 
     def _recount(self, tickets: list[dict]) -> dict:
@@ -997,4 +1003,7 @@ def _log_activity(project_root: Path, event: dict) -> None:
     from .jsonl import append_jsonl_line
     log_path = project_root / ".holoctl" / "activity.jsonl"
     entry = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"), **event}
-    append_jsonl_line(log_path, json.dumps(entry) + "\n")
+    # `ensure_ascii=False`: payloads may carry the ticket title/agent name,
+    # which can contain pt-BR accents. Match the journal writer's policy
+    # (see `lib/journal.py`).
+    append_jsonl_line(log_path, json.dumps(entry, ensure_ascii=False) + "\n")

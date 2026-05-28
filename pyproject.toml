@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "holoctl"
-version = "0.20.2"
+version = "0.20.3"
 description = "Project operating system for Claude Code, with a portable bootstrap for other AI assistants"
 readme = "README.md"
 license = { file = "LICENSE" }
