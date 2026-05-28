@@ -49,8 +49,17 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def _to_posix(rel: str) -> str:
-    """Normalise a relative path key to POSIX forward-slash style."""
-    return str(PurePosixPath(Path(rel)))
+    """Normalise a relative path key to POSIX forward-slash style.
+
+    Must work identically on Windows and POSIX hosts.  ``Path(rel)`` is
+    OS-dependent — on Windows it parses ``\\`` as a separator, on Linux/macOS
+    it does NOT (the backslash is kept as a literal filename character).  So
+    we explicitly translate backslashes to forward slashes BEFORE handing the
+    string to ``PurePosixPath``; otherwise a Windows-style key passed in on
+    Linux (e.g. tests that simulate a Windows write) survives unchanged and
+    breaks cross-platform symmetry.
+    """
+    return str(PurePosixPath(rel.replace("\\", "/")))
 
 
 def _default_manifest() -> dict:
