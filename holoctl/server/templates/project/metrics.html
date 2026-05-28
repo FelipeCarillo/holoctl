@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="metrics-page">
+
+  {# ── Row 1: Throughput + Cycle Time ── #}
+  <div class="metrics-top-row">
+    {% include "partials/metrics/_throughput.html" %}
+    {% include "partials/metrics/_cycle_cards.html" %}
+  </div>
+
+  {# ── Row 2: WIP aging ── #}
+  {% include "partials/metrics/_wip.html" %}
+
+  {# ── Row 3: By-agent + By-project ── #}
+  <div class="metrics-group-row">
+    {% with
+       group_id="by-agent",
+       group_label="By Agent",
+       group_key_label="Agent",
+       group_rows=by_agent,
+       group_max=agent_max
+    %}
+    {% include "partials/metrics/_by_group.html" %}
+    {% endwith %}
+
+    {% if by_project %}
+    {% with
+       group_id="by-project",
+       group_label="By Repo / Project",
+       group_key_label="Repo",
+       group_rows=by_project,
+       group_max=project_max
+    %}
+    {% include "partials/metrics/_by_group.html" %}
+    {% endwith %}
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

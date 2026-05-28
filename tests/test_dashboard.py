@@ -35,6 +35,7 @@ from holoctl.server.views.list import list_context
 from holoctl.server.views.tree import tree_context
 from holoctl.server.views.card import format_due, ticket_preview
 from holoctl.server.views.detail import read_ticket_activity, detail_context
+from holoctl.server.views.metrics import metrics_context
 
 
 # ── Module-level rendering helpers ───────────────────────────────────────────
@@ -1791,3 +1792,246 @@ class TestNestedContextFileDetail:
         _make_context_dir(workspace)
         r = client.get(f"/project/{alias}/context/decisions/9999.md")
         assert r.status_code == 404
+
+
+# ── Metrics tab: view shaper + route + template ───────────────────────────────
+
+
+def _make_done_ticket(
+    alias: str,
+    board: "Board",
+    *,
+    title: str = "T",
+    agent: str = "developer",
+    created_offset_days: int = 5,
+    completed_offset_days: int = 0,
+) -> dict:
+    """Create a done ticket with controllable timestamps for metrics tests."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    created_ts = (now - timedelta(days=created_offset_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    completed_ts = (now - timedelta(days=completed_offset_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ticket = board.add({"title": title, "agent": agent, "status": "done"})
+    # Patch timestamps directly in the index so cycle_time sees them.
+    idx_path = board._root / ".holoctl" / "board" / "index.json"
+    data = json.loads(idx_path.read_text(encoding="utf-8"))
+    for t in data["tickets"]:
+        if t["id"] == ticket["id"]:
+            t["created"] = created_ts
+            t["completed"] = completed_ts
+    idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+    return ticket
+
+
+class TestMetricsContextShaper:
+    """Unit tests for the metrics_context() view shaper."""
+
+    def test_returns_required_keys(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls())
+        assert "throughput" in ctx
+        assert "cycle" in ctx
+        assert "wip_view" in ctx
+        assert "by_agent" in ctx
+        assert "by_project" in ctx
+        assert "since_days" in ctx
+        assert "agent_max" in ctx
+        assert "project_max" in ctx
+
+    def test_throughput_has_days_and_max_count(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls())
+        tp = ctx["throughput"]
+        assert "days" in tp
+        assert "max_count" in tp
+        assert isinstance(tp["days"], list)
+        assert isinstance(tp["max_count"], int)
+
+    def test_throughput_days_length_matches_since(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls(), since_days=14)
+        # 14 days → 15 buckets (inclusive of both endpoints)
+        assert len(ctx["throughput"]["days"]) == 15
+
+    def test_cycle_keys_present_and_rounded(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(workspace.name, b, created_offset_days=3)
+        ctx = metrics_context(b.ls())
+        cycle = ctx["cycle"]
+        assert cycle["count"] == 1
+        # Rounded to 1 decimal
+        assert isinstance(cycle["mean"], float)
+        assert isinstance(cycle["median"], float)
+        assert isinstance(cycle["p95"], float)
+
+    def test_empty_board_cycle_zeros(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls())
+        cycle = ctx["cycle"]
+        assert cycle["count"] == 0
+        assert cycle["mean"] == 0.0
+        assert cycle["median"] == 0.0
+        assert cycle["p95"] == 0.0
+
+    def test_wip_view_keys(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "In progress", "agent": "developer", "status": "doing"})
+        ctx = metrics_context(b.ls())
+        wip = ctx["wip_view"]
+        assert "count" in wip
+        assert "stale_count" in wip
+        assert "tickets" in wip
+        assert wip["count"] == 1
+
+    def test_by_agent_has_group_key(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer"})
+        ctx = metrics_context(b.ls())
+        assert isinstance(ctx["by_agent"], list)
+        if ctx["by_agent"]:
+            row = ctx["by_agent"][0]
+            assert "group" in row
+            assert "completed" in row
+            assert "avg_cycle_days" in row
+            assert "wip" in row
+
+    def test_since_days_passed_through(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls(), since_days=7)
+        assert ctx["since_days"] == 7
+
+    def test_max_values_computed(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(workspace.name, b, agent="developer")
+        ctx = metrics_context(b.ls())
+        assert ctx["agent_max"] >= 0
+        assert ctx["project_max"] >= 0
+
+
+class TestMetricsRoute:
+    """HTTP tests for GET /project/{alias}/metrics."""
+
+    def test_returns_200(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+
+    def test_unknown_alias_returns_404(self, client: TestClient):
+        r = client.get("/project/no-such-project/metrics")
+        assert r.status_code == 404
+
+    def test_page_has_throughput_section(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-throughput" in r.text
+
+    def test_page_has_cycle_section(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert "metrics-cycle" in r.text
+
+    def test_page_has_wip_section(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert "metrics-wip" in r.text
+
+    def test_page_has_by_agent_section(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert "metrics-by-agent" in r.text
+
+    def test_empty_board_renders_without_error(self, client: TestClient, alias: str):
+        # No tickets — all empty states should appear, page must not 500.
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # All four empty-state messages appear.
+        assert "metrics-empty" in r.text
+
+    def test_board_with_tickets_shows_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "Active", "agent": "developer", "status": "doing"})
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # WIP count badge visible.
+        assert "metrics-wip-count-badge" in r.text
+
+    def test_done_tickets_appear_in_cycle_stats(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=3)
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Cycle section must show at least the count chip (not the empty state).
+        assert "metrics-count-chip" in r.text
+        assert "metrics-stat-value" in r.text
+
+
+class TestMetricsTab:
+    """Verify the Metrics tab appears on all project pages and links correctly."""
+
+    def test_metrics_tab_on_board_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board")
+        assert r.status_code == 200
+        assert "Metrics" in r.text
+        assert f"/project/{alias}/metrics" in r.text
+
+    def test_metrics_tab_on_agents_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/agents")
+        assert r.status_code == 200
+        assert "Metrics" in r.text
+        assert f"/project/{alias}/metrics" in r.text
+
+    def test_metrics_tab_on_context_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/context")
+        assert r.status_code == 200
+        assert "Metrics" in r.text
+        assert f"/project/{alias}/metrics" in r.text
+
+    def test_metrics_tab_is_active_on_metrics_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # The Metrics tab link must carry the "active" class.
+        assert 'class="tab active"' in r.text or 'class="tab  active"' in r.text or "tab active" in r.text
+
+    def test_board_tab_active_on_board_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board")
+        # Board tab is active; Metrics tab is not.
+        html = r.text
+        # Find the metrics tab link — it must not be the active one.
+        metrics_tab_idx = html.find(f'href="/project/{alias}/metrics"')
+        board_tab_idx = html.find(f'href="/project/{alias}/board"')
+        assert metrics_tab_idx > 0
+        assert board_tab_idx > 0
+
+
+class TestMetricsCss:
+    """Verify metrics.css is included in the bundle and has key selectors."""
+
+    def test_metrics_css_importted_in_index(self, dashboard_css: str):
+        # dashboard_css fixture resolves @imports — metrics.css content must be present.
+        assert ".metrics-card" in dashboard_css
+
+    def test_metrics_bar_svg_class_present(self, dashboard_css: str):
+        assert ".metrics-bar-svg" in dashboard_css
+
+    def test_metrics_stat_value_present(self, dashboard_css: str):
+        assert ".metrics-stat-value" in dashboard_css
+
+    def test_metrics_group_table_present(self, dashboard_css: str):
+        assert ".metrics-group-table" in dashboard_css
+
+    def test_metrics_wip_list_present(self, dashboard_css: str):
+        assert ".metrics-wip-list" in dashboard_css
+
+    def test_metrics_uses_editorial_tokens(self, dashboard_css: str):
+        # Key token usage in metrics rules.
+        assert "var(--accent)" in dashboard_css
+        assert "var(--green)" in dashboard_css
+        assert "var(--bg-card)" in dashboard_css
+        assert "var(--font-mono)" in dashboard_css
+        assert "var(--font-serif)" in dashboard_css
+
+    def test_metrics_served_as_static_file(self, client: TestClient):
+        r = client.get("/static/css/metrics.css")
+        assert r.status_code == 200
+        assert ".metrics-card" in r.text
