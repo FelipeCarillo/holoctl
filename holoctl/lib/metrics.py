@@ -56,15 +56,23 @@ def _parse_ts(value: str | None) -> datetime | None:
     ``+00:00`` form produced by Python's ``datetime.isoformat()``.  Returns
     ``None`` on any bad / missing input rather than raising, so callers can
     treat missing timestamps as "exclude this ticket."
+
+    Defensively, an input with NO timezone suffix at all (a bare
+    ``2026-05-27T12:00:00``) is assumed UTC and returned tz-aware — otherwise
+    comparing it against a tz-aware ``now`` later in the pipeline would raise
+    ``TypeError: can't compare offset-naive and offset-aware datetimes``.
     """
     if not value:
         return None
     try:
         # Normalise trailing Z → +00:00 so fromisoformat works on Python < 3.11.
         normalised = value.replace("Z", "+00:00")
-        return datetime.fromisoformat(normalised)
+        dt = datetime.fromisoformat(normalised)
     except (ValueError, AttributeError):
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _week_monday(d: date) -> date:
