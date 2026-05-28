@@ -117,6 +117,7 @@ def workspace_metrics(request: Request):
     ctx = metrics_context(  # type: ignore[arg-type]
         tickets,
         since_days=f.get("since_days", 30),
+        since_preset=f.get("since_preset"),
         activity_events=all_activity_events,
     )
 

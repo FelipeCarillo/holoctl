@@ -2071,6 +2071,7 @@ class TestMetricsContextShaper:
         wip = ctx["wip_view"]
         assert "count" in wip
         assert "stale_count" in wip
+        assert "stale_days" in wip
         assert "tickets" in wip
         assert wip["count"] == 1
 

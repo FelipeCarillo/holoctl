@@ -8,16 +8,20 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Sequence
+from typing import Literal, Sequence
 
 from ...lib import metrics as _m
 
 # Maximum items to surface in WIP list and by-group tables.
-_WIP_TOP_N = 10
-_GROUP_TOP_N = 10
+_WIP_TOP_N = 20
+_GROUP_TOP_N = 20
 
 # Stale threshold for stalled detection (active tickets with no updates).
 _STALE_DAYS_DEFAULT = 5
+
+# When the since_days range exceeds this threshold, switch to weekly buckets
+# for the throughput overlay (daily buckets become 1000+ rects above this).
+_DAILY_BUCKET_MAX_DAYS = 180
 
 # Statuses that are "active" (doing / review) — tickets should be moving here.
 _ACTIVE_STATUSES: frozenset[str] = frozenset({"doing", "review"})
@@ -174,10 +178,36 @@ def _kpi_label(value: float | int | None, *, unit: str = "", delta_pct: float | 
     return f"{val_str} ({sign}{abs(delta_pct):.1f}%)"
 
 
+def _since_label(since_days: int, since_preset: str | None = None) -> str:
+    """Return a human-readable label for the since window.
+
+    Used in the KPI band header so "Throughput 9999d" never shows when the
+    preset is "all".
+    """
+    preset = since_preset or ""
+    if preset == "all":
+        return "All time"
+    if preset == "7d":
+        return "7 days"
+    if preset == "30d" or (not preset and since_days == 30):
+        return "30 days"
+    if preset == "90d":
+        return "90 days"
+    if preset == "sprint":
+        return "Sprint"
+    if preset == "custom":
+        # since_days was computed from a custom ISO date; back-derive date from now
+        # We don't have `now` here, so just show the day count.
+        return f"since ({since_days}d)"
+    # Fallback: show the day count directly.
+    return f"{since_days} days"
+
+
 def metrics_context(
     tickets: list[dict],
     *,
     since_days: int = 30,
+    since_preset: str | None = None,
     now: datetime | None = None,
     active_statuses: Sequence[str] | None = None,
     activity_events: list[dict] | None = None,
@@ -206,10 +236,12 @@ def metrics_context(
     Dict with keys:
         ``throughput``              – ``{"days": [...buckets], "max_count": int}``
         ``cycle``                   – ``{"count", "mean", "median", "p95"}`` (rounded)
-        ``wip_view``                – ``{"count", "stale_count", "tickets": [...top N]}``
+        ``wip_view``                – ``{"count", "stale_count", "stale_days", "tickets": [...top N]}``
         ``by_agent``                – list of group rows (top N by completed)
         ``by_project``              – same, keyed on "projects"
         ``since_days``              – passed through for display
+        ``since_label``             – human-readable label for the since window
+        ``throughput_bucket``       – "day" or "week" (auto-selected based on range)
         ``kpis``                    – executive KPI band dict
         ``time_in_status_view``     – per-status totals + bottleneck pointer
         ``cycle_dist``              – histogram + percentiles for cycle time
@@ -223,7 +255,10 @@ def metrics_context(
     events = activity_events if activity_events is not None else []
 
     # ── Throughput ────────────────────────────────────────────────────────────
-    raw_days = _m.throughput(tickets, bucket="day", since=since, now=now)
+    # Auto-switch to weekly buckets when the range is long to avoid thousands
+    # of tiny SVG rects that are invisible and slow to render.
+    throughput_bucket: Literal["day", "week"] = "week" if since_days > _DAILY_BUCKET_MAX_DAYS else "day"
+    raw_days = _m.throughput(tickets, bucket=throughput_bucket, since=since, now=now)
     max_count = max((b["count"] for b in raw_days), default=0)
     throughput_view = {
         "days": raw_days,
@@ -240,11 +275,12 @@ def metrics_context(
     }
 
     # ── WIP ───────────────────────────────────────────────────────────────────
-    raw_wip = _m.wip(tickets, active_statuses=active, now=now)
+    raw_wip = _m.wip(tickets, active_statuses=active, now=now, stale_days=_STALE_DAYS_DEFAULT)
     wip_items = raw_wip["items"][:_WIP_TOP_N]
     wip_view = {
         "count": raw_wip["count"],
         "stale_count": raw_wip["stale_count"],
+        "stale_days": _STALE_DAYS_DEFAULT,
         "tickets": wip_items,
     }
 
@@ -300,9 +336,10 @@ def metrics_context(
     # Build paired overlay series for trend chart: current vs previous period.
     # existing throughput() uses `now` as the upper bound so we pass now=now for current,
     # and now=since for the previous period (so it ends at `since`).
-    trend_current_buckets = _m.throughput(tickets, bucket="day", since=since, now=now)
+    # Use the same smart bucket (day vs week) as the main throughput series.
+    trend_current_buckets = _m.throughput(tickets, bucket=throughput_bucket, since=since, now=now)
     prev_since = since - timedelta(days=since_days)
-    trend_prev_buckets = _m.throughput(tickets, bucket="day", since=prev_since, now=since)
+    trend_prev_buckets = _m.throughput(tickets, bucket=throughput_bucket, since=prev_since, now=since)
     trend_throughput_overlay = {
         "current": trend_current_buckets,
         "previous": trend_prev_buckets,
@@ -360,6 +397,8 @@ def metrics_context(
         "agent_max": agent_max,
         "project_max": project_max,
         "since_days": since_days,
+        "since_label": _since_label(since_days, since_preset),
+        "throughput_bucket": throughput_bucket,
         # F2 additions
         "kpis": kpis,
         "time_in_status_view": raw_tis,

@@ -13,6 +13,7 @@
         delta_pct: float | None,
     }
     since_days — int, for subtitle
+    throughput_bucket — "day" or "week", used to label the x-axis
 #}
 {%- set ov = trend_throughput_overlay -%}
 {%- set n = ov.current | length -%}
@@ -29,7 +30,10 @@
 <div class="metrics-card" id="metrics-throughput-overlay">
   <div class="metrics-card-title">
     Throughput Trend
-    <span class="metrics-card-subtitle">last {{ since_days }}d vs previous {{ since_days }}d</span>
+    <span class="metrics-card-subtitle">
+      {%- if throughput_bucket == "week" %}weekly buckets · {%- else %}daily buckets · {%- endif %}
+      last {{ since_days }}d vs previous {{ since_days }}d
+    </span>
   </div>
 
   {%- if not has_current %}

@@ -3,7 +3,7 @@
     Work In Progress
     <span class="metrics-wip-count-badge">{{ wip_view.count }}</span>
     {% if wip_view.stale_count > 0 %}
-    <span class="metrics-stale-badge" title="Stale: no update in 5+ days">{{ wip_view.stale_count }} stale</span>
+    <span class="metrics-stale-badge" title="Stale: no update in {{ wip_view.stale_days }}+ days">{{ wip_view.stale_count }} stale</span>
     {% endif %}
   </div>
   {% if wip_view.count == 0 %}
@@ -16,7 +16,7 @@
       <span class="metrics-wip-status" data-status="{{ item.status }}">{{ item.status }}</span>
       <span class="metrics-wip-age">{{ item.age_days | round(1) }}d</span>
       {% if item.stale %}
-      <span class="metrics-stale-dot" title="Stale — no update in 5+ days">stale</span>
+      <span class="metrics-stale-dot" title="Stale — no update in {{ wip_view.stale_days }}+ days">stale</span>
       {% endif %}
     </li>
     {% endfor %}

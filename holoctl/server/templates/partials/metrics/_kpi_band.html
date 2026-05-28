@@ -1,7 +1,7 @@
 {#
   _kpi_band.html — Executive KPI band (Task F2).
 
-  Expected context: kpis (dict), since_days (int).
+  Expected context: kpis (dict), since_days (int), since_label (str).
 
   Arrow polarity:
     - throughput: up = good (green), down = bad (red)
@@ -14,9 +14,9 @@
 
 <div class="mkpi-band" aria-label="Executive KPI summary">
 
-  {# ── Throughput 30d ── #}
+  {# ── Throughput (label driven by since_label) ── #}
   <div class="mkpi-card">
-    <div class="mkpi-label">Throughput {{ since_days }}d</div>
+    <div class="mkpi-label">Throughput · {{ since_label }}</div>
     <div class="mkpi-value">{{ k.throughput_30d_count }}</div>
     <div class="mkpi-meta">
       {%- if k.throughput_30d_delta_pct is not none %}
