@@ -1754,6 +1754,10 @@ class TestContextTreePage:
         r = client.get(f"/project/{alias}/context")
         assert 'data-loaded="false"' in r.text
         assert 'class="tree-children tree-lazy"' in r.text
+        # depth marker must be present so JS can pass parentDepth+1 to
+        # renderTreeEntries() when a second-level dir expands — without it
+        # all lazy-expanded levels indent at the same depth as level 1.
+        assert 'data-depth="0"' in r.text
 
 
 class TestNestedContextFileDetail:

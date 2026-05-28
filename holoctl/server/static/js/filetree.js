@@ -19,6 +19,15 @@ import { showToast } from './toast.js';
 //                           when present, file nodes render as <a> links
 //                           rather than copy-to-clipboard spans.
 
+/** Escape a string for safe insertion into HTML text/attribute content. */
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export function initFileTree() {
   for (const tree of document.querySelectorAll('#file-tree, #context-tree')) {
     _attachTree(tree);
@@ -40,6 +49,9 @@ function _attachTree(tree) {
     if (!lazy) return;
 
     const subPath = lazy.getAttribute('data-path');
+    // Read the depth stored on the lazy container so nested levels indent
+    // correctly; default to 0 if missing (first-level expansion).
+    const parentDepth = parseInt(lazy.getAttribute('data-depth') || '0', 10);
     lazy.style.display = '';
     lazy.innerHTML = '<div class="tree-lazy-loading">Loading…</div>';
 
@@ -51,7 +63,7 @@ function _attachTree(tree) {
         return;
       }
       const { entries } = await res.json();
-      lazy.innerHTML = renderTreeEntries(entries, subPath, 1, fileHrefBase);
+      lazy.innerHTML = renderTreeEntries(entries, subPath, parentDepth + 1, fileHrefBase);
       lazy.setAttribute('data-loaded', 'true');
     } catch {
       lazy.innerHTML = '<div class="tree-lazy-loading">Failed to load</div>';
@@ -76,29 +88,29 @@ function renderTreeEntries(entries, parentPath, depth, fileHrefBase) {
     const entryPath = parentPath ? `${parentPath}/${e.name}` : e.name;
     const indent = depth * 20;
     if (e.type === 'dir') {
-      const badgesHtml = (e.badges || []).map(b => `<span class="tree-badge">${b.label}</span>`).join('');
+      const badgesHtml = (e.badges || []).map(b => `<span class="tree-badge">${esc(b.label)}</span>`).join('');
       const childId = 'children-' + entryPath.replace(/\//g, '-');
       return `<details class="tree-dir">
-        <summary class="tree-row tree-dir-row" data-path="${entryPath}">
+        <summary class="tree-row tree-dir-row" data-path="${esc(entryPath)}">
           <span class="tree-indent" style="width:${indent}px"></span>
           <span class="tree-chevron">&#x25B6;</span>
           <span class="tree-icon">&#x1F4C1;</span>
-          <span class="tree-name">${e.name}</span>
+          <span class="tree-name">${esc(e.name)}</span>
           ${badgesHtml}
         </summary>
-        <div class="tree-children tree-lazy" id="${childId}" data-path="${entryPath}" data-loaded="false" style="display:none"></div>
+        <div class="tree-children tree-lazy" id="${childId}" data-path="${esc(entryPath)}" data-depth="${depth}" data-loaded="false" style="display:none"></div>
       </details>`;
     }
     if (fileHrefBase) {
-      const href = fileHrefBase + entryPath;
+      const href = fileHrefBase + entryPath.split('/').map(encodeURIComponent).join('/');
       return `<div class="tree-row tree-file-row" style="padding-left:${indent + 20}px">
         <span class="tree-icon">&#x1F4C4;</span>
-        <a href="${href}" class="tree-name tree-context-link">${e.name}</a>
+        <a href="${esc(href)}" class="tree-name tree-context-link">${esc(e.name)}</a>
       </div>`;
     }
     return `<div class="tree-row tree-file-row" style="padding-left:${indent + 20}px">
       <span class="tree-icon">&#x1F4C4;</span>
-      <span class="tree-name tree-file-name" data-path="${entryPath}">${e.name}</span>
+      <span class="tree-name tree-file-name" data-path="${esc(entryPath)}">${esc(e.name)}</span>
     </div>`;
   }).join('');
 }

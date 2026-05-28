@@ -37,21 +37,10 @@ def commands_context(commands: list[dict], alias: str) -> dict:
     return {"items": items, "is_empty": not commands}
 
 
-_CONTEXT_ICON_MAP = {
-    "objective": "objective",
-    "architecture": "architecture",
-    "conventions": "conventions",
-    "decisions": "folder",
-    "documents": "folder",
-}
-
-
 def context_context(docs: list[dict], alias: str) -> dict:
     items = []
     for d in docs:
-        stem = d["name"].replace(".md", "").lower()
         is_dir = d["isDir"]
-        icon_cls = _CONTEXT_ICON_MAP.get(stem, "folder" if is_dir else "doc")
         # Directories are lazy-expanded by filetree.js; files link directly.
         link = None if is_dir else f"/project/{alias}/context/{d['name']}"
         # data_path carries the subpath filetree.js will fetch children for.
@@ -60,7 +49,6 @@ def context_context(docs: list[dict], alias: str) -> dict:
             "name": d["name"],
             "desc": d["description"],
             "is_dir": is_dir,
-            "icon_cls": icon_cls,
             "link": link,
             "data_path": data_path,
         })
