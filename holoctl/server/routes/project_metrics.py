@@ -16,6 +16,7 @@ from ..filters import (
     parse_filter_from_query,
 )
 from .project_board import _PROJECT_TABS
+from ...lib.metrics import read_activity_events
 
 router = APIRouter()
 
@@ -59,7 +60,14 @@ def project_metrics(alias: str, request: Request):
     # Apply filter to get the analysis set.
     tickets = apply_filter(all_tickets, f)
 
-    ctx = metrics_context(tickets, since_days=f.get("since_days", 30))  # type: ignore[arg-type]
+    # Load activity events for time-in-status / flow-efficiency surfaces.
+    activity_events = read_activity_events(Path(project["path"]))
+
+    ctx = metrics_context(  # type: ignore[arg-type]
+        tickets,
+        since_days=f.get("since_days", 30),
+        activity_events=activity_events,
+    )
 
     base_url = f"/project/{alias}/metrics"
 

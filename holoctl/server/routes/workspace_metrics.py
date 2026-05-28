@@ -17,6 +17,7 @@ from ..filters import (
     parse_filter_from_query,
 )
 from ...lib import metrics as _m
+from ...lib.metrics import read_activity_events
 
 router = APIRouter()
 
@@ -105,7 +106,19 @@ def workspace_metrics(request: Request):
     # Apply filter to get the analysis set.
     tickets = apply_filter(all_tickets, f)
 
-    ctx = metrics_context(tickets, since_days=f.get("since_days", 30))  # type: ignore[arg-type]
+    # Load activity events for time-in-status / flow-efficiency — union across projects.
+    all_activity_events: list[dict] = []
+    for p in projects:
+        try:
+            all_activity_events.extend(read_activity_events(Path(p["path"])))
+        except Exception:
+            pass
+
+    ctx = metrics_context(  # type: ignore[arg-type]
+        tickets,
+        since_days=f.get("since_days", 30),
+        activity_events=all_activity_events,
+    )
 
     # by_workspace_project runs AFTER apply_filter so it reflects the filter.
     by_ws_project = _by_workspace_project(tickets)

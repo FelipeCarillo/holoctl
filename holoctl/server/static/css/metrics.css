@@ -735,6 +735,180 @@ ul.metrics-scrollable {
   border-radius: 2px;
 }
 
+/* ── F2: Executive KPI band ───────────────────────────────────────────────── */
+
+.mkpi-band {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.mkpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px 14px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: fadeUp 0.28s var(--ease) both;
+}
+
+.mkpi-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-3);
+}
+
+.mkpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--font-serif);
+  color: var(--text-0);
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.mkpi-unit {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+.mkpi-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 18px;
+}
+
+.mkpi-subtitle {
+  font-size: 10px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+.mkpi-subtitle--muted {
+  font-style: italic;
+}
+
+/* Delta arrows */
+.mkpi-delta {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.mkpi-delta--good {
+  background: var(--green-subtle);
+  color: var(--green);
+}
+
+.mkpi-delta--bad {
+  background: var(--red-subtle);
+  color: var(--red);
+}
+
+.mkpi-delta--flat {
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+
+.mkpi-delta--warn {
+  background: var(--yellow-subtle);
+  color: var(--yellow);
+}
+
+/* ── F2: Time-in-status chart ─────────────────────────────────────────────── */
+
+.mtis-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* SVG text elements use currentColor via class rules below */
+.mtis-label {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.mtis-label--bottleneck {
+  fill: var(--red);
+  font-weight: 700;
+}
+
+.mtis-track {
+  fill: var(--bg-2);
+}
+
+.mtis-bar {
+  fill: var(--accent);
+  opacity: 0.65;
+}
+
+.mtis-bar--bottleneck {
+  fill: var(--red);
+  opacity: 0.8;
+}
+
+.mtis-bar--terminal {
+  fill: var(--green);
+  opacity: 0.4;
+}
+
+.mtis-value {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.mtis-value--bottleneck {
+  fill: var(--red);
+  font-weight: 700;
+}
+
+.mtis-count {
+  fill: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+.mtis-bottleneck-marker {
+  fill: var(--red);
+}
+
+.mtis-legend {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mtis-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mtis-legend-dot--bottleneck {
+  background: var(--red);
+  opacity: 0.8;
+}
+
 /* ── Responsive ── */
 @media (max-width: 720px) {
   .metrics-top-row {
@@ -743,6 +917,10 @@ ul.metrics-scrollable {
 
   .metrics-group-row {
     grid-template-columns: 1fr;
+  }
+
+  .mkpi-band {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .mft-facet-body {
@@ -754,5 +932,11 @@ ul.metrics-scrollable {
     min-width: unset;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     max-height: 50vh;
+  }
+}
+
+@media (max-width: 480px) {
+  .mkpi-band {
+    grid-template-columns: 1fr;
   }
 }

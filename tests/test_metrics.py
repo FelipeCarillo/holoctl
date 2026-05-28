@@ -5,7 +5,10 @@ are fully deterministic and require no I/O.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import json
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from holoctl.lib.metrics import (
     _parse_ts,
@@ -13,6 +16,12 @@ from holoctl.lib.metrics import (
     cycle_time,
     wip,
     by_group,
+    trend,
+    cycle_time_distribution,
+    read_activity_events,
+    time_in_status,
+    flow_efficiency,
+    forecast,
 )
 
 
@@ -515,3 +524,426 @@ class TestByGroup:
         assert "completed" in row
         assert "avg_cycle_days" in row
         assert "wip" in row
+
+
+# ── trend ─────────────────────────────────────────────────────────────────────
+
+class TestTrend:
+    def _done(self, tid: str, completed_iso: str) -> dict:
+        return _ticket(
+            id=tid,
+            status="done",
+            created="2026-04-01T00:00:00Z",
+            updated=completed_iso,
+            completed=completed_iso,
+        )
+
+    def test_current_window_counts_correctly(self):
+        since = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        tickets = [
+            self._done("T-1", "2026-05-10T00:00:00Z"),
+            self._done("T-2", "2026-05-20T00:00:00Z"),
+            self._done("T-3", "2026-04-05T00:00:00Z"),  # in prev window
+        ]
+        result = trend(tickets, since=since, now=NOW)
+        assert result["current"] == 2
+
+    def test_previous_window_counts_correctly(self):
+        # since=2026-05-01, window=26d (May 1..May 27).
+        # prev window = Apr 5..Apr 30 (same length).
+        since = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        tickets = [
+            self._done("T-1", "2026-05-10T00:00:00Z"),  # current
+            self._done("T-2", "2026-04-10T00:00:00Z"),  # prev
+            self._done("T-3", "2026-04-15T00:00:00Z"),  # prev
+        ]
+        result = trend(tickets, since=since, now=NOW)
+        assert result["previous"] == 2
+
+    def test_delta_pct_positive(self):
+        since = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        tickets = [
+            self._done("T-cur1", "2026-05-05T00:00:00Z"),
+            self._done("T-cur2", "2026-05-10T00:00:00Z"),
+            self._done("T-prev1", "2026-04-05T00:00:00Z"),
+        ]
+        result = trend(tickets, since=since, now=NOW)
+        assert result["current"] == 2
+        assert result["previous"] == 1
+        assert result["delta_pct"] == 100.0
+
+    def test_delta_pct_none_when_previous_is_zero(self):
+        since = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        tickets = [self._done("T-1", "2026-05-10T00:00:00Z")]
+        result = trend(tickets, since=since, now=NOW)
+        assert result["previous"] == 0
+        assert result["delta_pct"] is None
+
+    def test_prev_period_false_suppresses_previous(self):
+        since = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        tickets = [
+            self._done("T-cur", "2026-05-10T00:00:00Z"),
+            self._done("T-prev", "2026-04-10T00:00:00Z"),
+        ]
+        result = trend(tickets, since=since, now=NOW, prev_period=False)
+        assert result["previous"] == 0
+        assert result["delta_pct"] is None
+
+    def test_empty_tickets_returns_zeros(self):
+        since = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        result = trend([], since=since, now=NOW)
+        assert result["current"] == 0
+        assert result["previous"] == 0
+        assert result["delta_pct"] is None
+
+    def test_result_keys(self):
+        since = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        result = trend([], since=since, now=NOW)
+        assert "current" in result
+        assert "previous" in result
+        assert "delta_pct" in result
+
+
+# ── cycle_time_distribution ───────────────────────────────────────────────────
+
+class TestCycleTimeDistribution:
+    def _done(self, tid: str, created_iso: str, completed_iso: str) -> dict:
+        return _ticket(
+            id=tid,
+            status="done",
+            created=created_iso,
+            completed=completed_iso,
+            updated=completed_iso,
+        )
+
+    def test_empty_returns_zero_values(self):
+        result = cycle_time_distribution([])
+        assert result["min"] == 0.0
+        assert result["max"] == 0.0
+        assert result["p50"] == 0.0
+        assert result["p75"] == 0.0
+        assert result["p95"] == 0.0
+        assert result["bins"] == []
+
+    def test_single_ticket_single_bin(self):
+        tickets = [self._done("T-1", "2026-05-01T00:00:00Z", "2026-05-06T00:00:00Z")]
+        result = cycle_time_distribution(tickets)
+        assert result["min"] == 5.0
+        assert result["max"] == 5.0
+        assert result["p50"] == 5.0
+        assert result["p95"] == 5.0
+        assert len(result["bins"]) == 1
+        assert result["bins"][0]["count"] == 1
+
+    def test_percentile_values(self):
+        # 4 tickets: 1d, 2d, 3d, 10d  → sorted [1,2,3,10]
+        # p50 = ceil(0.5*4)=2nd value=2; p75=ceil(0.75*4)=3rd=3; p95=ceil(0.95*4)=4th=10
+        base = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        tickets = [
+            self._done("T-1", "2026-05-01T00:00:00Z", "2026-05-02T00:00:00Z"),  # 1d
+            self._done("T-2", "2026-05-01T00:00:00Z", "2026-05-03T00:00:00Z"),  # 2d
+            self._done("T-3", "2026-05-01T00:00:00Z", "2026-05-04T00:00:00Z"),  # 3d
+            self._done("T-4", "2026-05-01T00:00:00Z", "2026-05-11T00:00:00Z"),  # 10d
+        ]
+        result = cycle_time_distribution(tickets)
+        assert result["p50"] == 2.0
+        assert result["p75"] == 3.0
+        assert result["p95"] == 10.0
+
+    def test_bins_count_sums_to_total(self):
+        tickets = [
+            self._done(f"T-{i}", "2026-05-01T00:00:00Z",
+                       (datetime(2026, 5, 1, tzinfo=timezone.utc) + timedelta(days=i)).isoformat().replace("+00:00", "Z"))
+            for i in range(1, 11)
+        ]
+        result = cycle_time_distribution(tickets, bins=5)
+        total = sum(b["count"] for b in result["bins"])
+        assert total == 10
+
+    def test_result_has_required_keys(self):
+        result = cycle_time_distribution([])
+        assert "min" in result
+        assert "max" in result
+        assert "p50" in result
+        assert "p75" in result
+        assert "p95" in result
+        assert "bins" in result
+
+    def test_missing_timestamps_excluded(self):
+        tickets = [
+            _ticket(id="T-1", status="done", created=None, completed="2026-05-10T00:00:00Z"),
+            self._done("T-2", "2026-05-01T00:00:00Z", "2026-05-06T00:00:00Z"),
+        ]
+        result = cycle_time_distribution(tickets)
+        # Only T-2 counts
+        assert result["min"] == 5.0
+        assert result["max"] == 5.0
+
+
+# ── read_activity_events ──────────────────────────────────────────────────────
+
+class TestReadActivityEvents:
+    def _make_root(self, lines: list[str]) -> Path:
+        """Create a temp directory with .holoctl/activity.jsonl populated."""
+        tmp = Path(tempfile.mkdtemp())
+        log_dir = tmp / ".holoctl"
+        log_dir.mkdir()
+        log_path = log_dir / "activity.jsonl"
+        log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return tmp
+
+    def test_returns_empty_when_file_missing(self):
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / ".holoctl").mkdir()
+        result = read_activity_events(tmp)
+        assert result == []
+
+    def test_parses_valid_moved_events(self):
+        lines = [
+            json.dumps({"ts": "2026-05-10T12:00:00Z", "type": "ticket.moved",
+                        "ticket": "T-1", "from": "backlog", "to": "doing"}),
+        ]
+        root = self._make_root(lines)
+        result = read_activity_events(root)
+        assert len(result) == 1
+        assert result[0]["ticket"] == "T-1"
+        assert result[0]["from"] == "backlog"
+        assert result[0]["to"] == "doing"
+        assert isinstance(result[0]["ts"], datetime)
+
+    def test_ignores_non_moved_events(self):
+        lines = [
+            json.dumps({"ts": "2026-05-10T12:00:00Z", "type": "ticket.created",
+                        "ticket": "T-1", "actor": "cli"}),
+            json.dumps({"ts": "2026-05-10T13:00:00Z", "type": "ticket.moved",
+                        "ticket": "T-2", "from": "backlog", "to": "doing"}),
+        ]
+        root = self._make_root(lines)
+        result = read_activity_events(root)
+        assert len(result) == 1
+        assert result[0]["ticket"] == "T-2"
+
+    def test_skips_malformed_json_lines(self):
+        lines = [
+            "{this is not json}",
+            json.dumps({"ts": "2026-05-10T12:00:00Z", "type": "ticket.moved",
+                        "ticket": "T-1", "from": "backlog", "to": "doing"}),
+        ]
+        root = self._make_root(lines)
+        result = read_activity_events(root)
+        assert len(result) == 1
+
+    def test_since_filter_applied(self):
+        lines = [
+            json.dumps({"ts": "2026-05-01T00:00:00Z", "type": "ticket.moved",
+                        "ticket": "T-old", "from": "backlog", "to": "doing"}),
+            json.dumps({"ts": "2026-05-20T00:00:00Z", "type": "ticket.moved",
+                        "ticket": "T-new", "from": "doing", "to": "review"}),
+        ]
+        root = self._make_root(lines)
+        since = datetime(2026, 5, 10, tzinfo=timezone.utc)
+        result = read_activity_events(root, since=since)
+        assert len(result) == 1
+        assert result[0]["ticket"] == "T-new"
+
+    def test_empty_file_returns_empty_list(self):
+        root = self._make_root([])
+        result = read_activity_events(root)
+        assert result == []
+
+
+# ── time_in_status ────────────────────────────────────────────────────────────
+
+class TestTimeInStatus:
+    def _moved(self, ts_iso: str, ticket: str, from_st: str, to_st: str) -> dict:
+        return {
+            "ts": datetime.fromisoformat(ts_iso.replace("Z", "+00:00")),
+            "ticket": ticket,
+            "from": from_st,
+            "to": to_st,
+        }
+
+    def test_empty_events_returns_empty(self):
+        result = time_in_status([], [], now=NOW)
+        assert result == {"per_status": [], "bottleneck": None}
+
+    def test_single_move_accumulates_to_status(self):
+        tickets = [_ticket(id="T-1", status="doing", updated="2026-05-25T00:00:00Z")]
+        events = [
+            # T-1 moved from backlog to doing at T+0; now is 2d later
+            self._moved("2026-05-25T00:00:00Z", "T-1", "backlog", "doing"),
+        ]
+        # now = 2026-05-27T12:00:00Z → 2.5 days in "doing"
+        result = time_in_status(tickets, events, now=NOW)
+        per = {r["status"]: r for r in result["per_status"]}
+        assert "doing" in per
+        assert abs(per["doing"]["avg_days"] - 2.5) < 0.1
+
+    def test_multiple_moves_chain_correctly(self):
+        # T-1: backlog→doing at t0, doing→review at t0+1d, review→done at t0+2d
+        t0 = "2026-05-20T00:00:00Z"
+        t1 = "2026-05-21T00:00:00Z"
+        t2 = "2026-05-22T00:00:00Z"
+        tickets = [_ticket(id="T-1", status="done", updated=t2, completed=t2)]
+        events = [
+            self._moved(t0, "T-1", "backlog", "doing"),
+            self._moved(t1, "T-1", "doing", "review"),
+            self._moved(t2, "T-1", "review", "done"),
+        ]
+        result = time_in_status(tickets, events, now=NOW)
+        per = {r["status"]: r for r in result["per_status"]}
+        # "doing" = 1 day (t0→t1), "review" = 1 day (t1→t2)
+        assert "doing" in per
+        assert "review" in per
+        assert abs(per["doing"]["avg_days"] - 1.0) < 0.01
+        assert abs(per["review"]["avg_days"] - 1.0) < 0.01
+
+    def test_bottleneck_is_highest_avg_non_terminal(self):
+        t0 = "2026-05-10T00:00:00Z"
+        t1 = "2026-05-15T00:00:00Z"  # 5 days in "doing"
+        t2 = "2026-05-16T00:00:00Z"  # 1 day in "review"
+        t3 = "2026-05-17T00:00:00Z"  # terminal
+        tickets = [_ticket(id="T-1", status="done", updated=t3, completed=t3)]
+        events = [
+            self._moved(t0, "T-1", "backlog", "doing"),
+            self._moved(t1, "T-1", "doing", "review"),
+            self._moved(t2, "T-1", "review", "done"),
+        ]
+        result = time_in_status(tickets, events, now=NOW)
+        assert result["bottleneck"] == "doing"
+
+    def test_done_not_bottleneck(self):
+        # Even if done has longest time, it should not be the bottleneck.
+        t0 = "2026-05-01T00:00:00Z"
+        t1 = "2026-05-26T00:00:00Z"  # 25 days in doing
+        t2 = "2026-05-27T00:00:00Z"  # 1 day in done
+        tickets = [_ticket(id="T-1", status="done", updated=t2, completed=t2)]
+        events = [
+            self._moved(t0, "T-1", "backlog", "doing"),
+            self._moved(t1, "T-1", "doing", "done"),
+        ]
+        result = time_in_status(tickets, events, now=NOW)
+        # bottleneck should be "doing" (non-terminal), not "done"
+        assert result["bottleneck"] == "doing"
+
+    def test_result_has_required_keys(self):
+        tickets = [_ticket(id="T-1", status="doing", updated="2026-05-25T00:00:00Z")]
+        events = [self._moved("2026-05-25T00:00:00Z", "T-1", "backlog", "doing")]
+        result = time_in_status(tickets, events, now=NOW)
+        assert "per_status" in result
+        assert "bottleneck" in result
+        for row in result["per_status"]:
+            assert "status" in row
+            assert "total_days" in row
+            assert "ticket_count" in row
+            assert "avg_days" in row
+
+
+# ── flow_efficiency ───────────────────────────────────────────────────────────
+
+class TestFlowEfficiency:
+    def _tis_result(self, per_status: list[dict]) -> dict:
+        return {"per_status": per_status, "bottleneck": None}
+
+    def test_empty_returns_none_ratio(self):
+        result = flow_efficiency(self._tis_result([]))
+        assert result["ratio"] is None
+        assert result["active_days"] == 0.0
+        assert result["total_days"] == 0.0
+
+    def test_ratio_all_active(self):
+        per = [{"status": "doing", "total_days": 10.0, "ticket_count": 1, "avg_days": 10.0}]
+        result = flow_efficiency(self._tis_result(per), active_statuses=("doing",))
+        assert result["ratio"] == 1.0
+        assert result["active_days"] == 10.0
+
+    def test_ratio_mixed_statuses(self):
+        per = [
+            {"status": "doing", "total_days": 4.0, "ticket_count": 1, "avg_days": 4.0},
+            {"status": "review", "total_days": 4.0, "ticket_count": 1, "avg_days": 4.0},
+            {"status": "backlog", "total_days": 2.0, "ticket_count": 1, "avg_days": 2.0},
+        ]
+        # active = doing only = 4d; total non-terminal = 10d
+        result = flow_efficiency(self._tis_result(per), active_statuses=("doing",))
+        assert abs(result["ratio"] - 0.4) < 0.001
+        assert result["total_days"] == 10.0
+        assert result["active_days"] == 4.0
+
+    def test_terminal_statuses_excluded_from_total(self):
+        per = [
+            {"status": "doing", "total_days": 5.0, "ticket_count": 1, "avg_days": 5.0},
+            {"status": "done", "total_days": 100.0, "ticket_count": 1, "avg_days": 100.0},
+            {"status": "cancelled", "total_days": 50.0, "ticket_count": 1, "avg_days": 50.0},
+        ]
+        result = flow_efficiency(self._tis_result(per), active_statuses=("doing",))
+        # done and cancelled excluded from total; total = 5, active = 5 → ratio = 1.0
+        assert result["total_days"] == 5.0
+        assert result["ratio"] == 1.0
+
+    def test_result_has_required_keys(self):
+        result = flow_efficiency({"per_status": [], "bottleneck": None})
+        assert "active_days" in result
+        assert "total_days" in result
+        assert "ratio" in result
+
+
+# ── forecast ──────────────────────────────────────────────────────────────────
+
+class TestForecast:
+    def _buckets(self, week_counts: list[tuple[str, int]]) -> list[dict]:
+        """Build weekly bucket list from (YYYY-MM-DD monday, count) pairs."""
+        return [{"bucket": k, "count": v} for k, v in week_counts]
+
+    def test_empty_throughput_returns_zero(self):
+        result = forecast([], backlog_size=10, now=NOW)
+        assert result["weekly_rate"] == 0.0
+        assert result["weeks_to_clear"] is None
+        assert result["eta"] is None
+
+    def test_zero_backlog_returns_zero(self):
+        buckets = self._buckets([("2026-05-18", 5)])
+        result = forecast(buckets, backlog_size=0, now=NOW)
+        assert result["weekly_rate"] == 0.0
+        assert result["weeks_to_clear"] is None
+
+    def test_single_week_rate(self):
+        # One completed week with 4 tickets, backlog=8 → 2 weeks to clear.
+        # NOW week (2026-05-25) is current/incomplete, so only 2026-05-18 counts.
+        buckets = self._buckets([
+            ("2026-05-18", 4),   # completed week
+            ("2026-05-25", 2),   # current week (incomplete, excluded by default)
+        ])
+        result = forecast(buckets, backlog_size=8, now=NOW)
+        assert result["weekly_rate"] == 4.0
+        assert result["weeks_to_clear"] == 2
+
+    def test_multi_week_mean_rate(self):
+        # 4 complete weeks: 4, 6, 4, 6 → mean = 5.0; backlog=10 → 2 weeks
+        buckets = self._buckets([
+            ("2026-04-27", 4),
+            ("2026-05-04", 6),
+            ("2026-05-11", 4),
+            ("2026-05-18", 6),
+        ])
+        result = forecast(buckets, backlog_size=10, now=NOW)
+        assert result["weekly_rate"] == 5.0
+        assert result["weeks_to_clear"] == 2
+
+    def test_eta_is_valid_iso_date(self):
+        buckets = self._buckets([("2026-05-18", 5)])
+        result = forecast(buckets, backlog_size=5, now=NOW)
+        assert result["eta"] is not None
+        from datetime import date
+        date.fromisoformat(result["eta"])  # must not raise
+
+    def test_zero_rate_returns_none(self):
+        buckets = self._buckets([("2026-05-18", 0)])
+        result = forecast(buckets, backlog_size=5, now=NOW)
+        assert result["weeks_to_clear"] is None
+        assert result["eta"] is None
+
+    def test_result_keys(self):
+        result = forecast([], backlog_size=0, now=NOW)
+        assert "weekly_rate" in result
+        assert "weeks_to_clear" in result
+        assert "eta" in result

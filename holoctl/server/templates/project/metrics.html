@@ -5,8 +5,8 @@
   {# ── Filter toolbar (sticky) ── #}
   {% include "partials/metrics/_filter_toolbar.html" %}
 
-  {# ── KPI band placeholder (Task F2 will fill this slot) ── #}
-  {# <div class="metrics-kpi-band"></div> #}
+  {# ── KPI band (Task F2) ── #}
+  {% include "partials/metrics/_kpi_band.html" %}
 
   {# ── Row 1: Throughput + Cycle Time ── #}
   <div class="metrics-top-row">
@@ -41,6 +41,9 @@
     {% endwith %}
     {% endif %}
   </div>
+
+  {# ── Row 4: Time-in-status (Task F2) ── #}
+  {% include "partials/metrics/_time_in_status.html" %}
 
 </div>
 {% endblock %}
