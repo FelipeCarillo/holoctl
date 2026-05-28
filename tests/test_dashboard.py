@@ -1760,6 +1760,56 @@ class TestContextTreePage:
         # all lazy-expanded levels indent at the same depth as level 1.
         assert 'data-depth="0"' in r.text
 
+    # ── Editorial redesign assertions ────────────────────────────────────────
+
+    def test_context_panel_card_chrome_present(self, client: TestClient, alias: str, workspace: Path):
+        """Page must wrap the tree in a card-chromed .context-panel container."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="context-panel"' in r.text
+
+    def test_context_panel_header_and_counter(self, client: TestClient, alias: str, workspace: Path):
+        """Panel header must include the 'Context documents' label and a counter."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="context-panel-header"' in r.text
+        assert 'class="context-panel-title"' in r.text
+        assert "Context documents" in r.text
+        assert 'class="context-panel-counter"' in r.text
+        # Layout has 1 folder (decisions/) and 2 files
+        assert "folder" in r.text
+        assert "file" in r.text
+
+    def test_no_emoji_icons_in_context_page(self, client: TestClient, alias: str, workspace: Path):
+        """Emoji folder/doc glyphs must be replaced by SVG icons."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert "\U0001f4c1" not in r.text  # 📁
+        assert "\U0001f4c4" not in r.text  # 📄
+        assert "\U0001f4c2" not in r.text  # 📂
+
+    def test_svg_folder_icon_in_dir_row(self, client: TestClient, alias: str, workspace: Path):
+        """Directory rows must carry the SVG folder icon class."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="tree-icon tree-icon-folder"' in r.text
+
+    def test_svg_doc_icon_in_file_row(self, client: TestClient, alias: str, workspace: Path):
+        """File rows must carry the SVG doc icon class."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="tree-icon tree-icon-doc"' in r.text
+
+    def test_chevron_is_svg_not_text_glyph(self, client: TestClient, alias: str, workspace: Path):
+        """Chevrons must be inline SVG, not a unicode text character."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="tree-chevron"' in r.text
+        # The SVG chevron wraps an <svg> tag
+        assert "<svg" in r.text
+        # Must NOT be the old unicode triangle glyph
+        assert "▶" not in r.text
+
 
 class TestNestedContextFileDetail:
     """Nested context files (subdir/file.md) open via the detail route."""
@@ -1792,6 +1842,146 @@ class TestNestedContextFileDetail:
         _make_context_dir(workspace)
         r = client.get(f"/project/{alias}/context/decisions/9999.md")
         assert r.status_code == 404
+
+
+# ── Hardening: read_context_dir with unreadable .md ──────────────────────────
+
+
+class TestReadContextDirHardening:
+    """read_context_dir must not propagate OSError / UnicodeDecodeError from a
+    single unreadable .md file — it should fall back to an empty description."""
+
+    def test_unreadable_md_falls_back_to_empty_description(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from holoctl.server.projects import read_context_dir
+
+        ctx_dir = workspace / ".holoctl" / "context"
+        ctx_dir.mkdir(parents=True, exist_ok=True)
+        bad = ctx_dir / "unreadable.md"
+        bad.write_text("# Good title\n", encoding="utf-8")
+
+        # Patch Path.read_text to raise OSError for our specific file.
+        original_read_text = Path.read_text
+
+        def _patched_read_text(self, *args, **kwargs):  # type: ignore[override]
+            if self == bad:
+                raise OSError("permission denied (simulated)")
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", _patched_read_text)
+
+        items = read_context_dir(workspace)
+        bad_item = next((i for i in items if i["name"] == "unreadable.md"), None)
+        assert bad_item is not None, "unreadable file should still appear in listing"
+        assert bad_item["description"] == "", "description must fall back to empty string"
+
+    def test_unicode_decode_error_falls_back_to_empty_description(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from holoctl.server.projects import read_context_dir
+
+        ctx_dir = workspace / ".holoctl" / "context"
+        ctx_dir.mkdir(parents=True, exist_ok=True)
+        bad = ctx_dir / "binary.md"
+        bad.write_bytes(b"\xff\xfe bad bytes")  # non-UTF-8
+
+        # Don't patch here — let the real read_text raise UnicodeDecodeError.
+        items = read_context_dir(workspace)
+        bad_item = next((i for i in items if i["name"] == "binary.md"), None)
+        assert bad_item is not None
+        assert bad_item["description"] == ""
+
+    def test_other_files_unaffected_by_one_bad_entry(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from holoctl.server.projects import read_context_dir
+
+        ctx_dir = workspace / ".holoctl" / "context"
+        ctx_dir.mkdir(parents=True, exist_ok=True)
+        (ctx_dir / "good.md").write_text("# Good Title\n", encoding="utf-8")
+        bad = ctx_dir / "bad.md"
+        bad.write_bytes(b"\xff\xfe")
+
+        items = read_context_dir(workspace)
+        good = next((i for i in items if i["name"] == "good.md"), None)
+        assert good is not None
+        assert good["description"] == "Good Title"
+
+
+# ── JS filetree: SVG icon markup in renderTreeEntries ────────────────────────
+
+
+class TestFiletreeJsSvgIcons:
+    """Smoke: the JS renderTreeEntries function emits SVG markup tokens,
+    not the old emoji Unicode escapes."""
+
+    def test_js_uses_svg_folder_icon(self, dashboard_js: str):
+        # The JS source must define the folder SVG — same viewBox as icons/folder.svg
+        assert "tree-icon-folder" in dashboard_js
+        assert "M3 7a2 2 0 012-2h4l2 2h8" in dashboard_js  # unique path fragment
+
+    def test_js_uses_svg_doc_icon(self, dashboard_js: str):
+        # The JS source must define the doc SVG — same path as icons/doc.svg
+        assert "tree-icon-doc" in dashboard_js
+        assert "M14 2H6a2 2 0 00-2 2v16" in dashboard_js  # unique path fragment
+
+    def test_js_uses_svg_chevron(self, dashboard_js: str):
+        # Chevron must be SVG, not the old &#x25B6; html entity or ▶ literal
+        assert "tree-chevron" in dashboard_js
+        assert "&#x25B6;" not in dashboard_js
+        assert "ICON_CHEVRON" in dashboard_js or "tree-chevron" in dashboard_js
+
+    def test_js_no_emoji_unicode_escapes(self, dashboard_js: str):
+        # Old code used &#x1F4C1; (folder) and &#x1F4C4; (doc)
+        assert "&#x1F4C1;" not in dashboard_js
+        assert "&#x1F4C4;" not in dashboard_js
+
+    def test_js_emits_empty_folder_state(self, dashboard_js: str):
+        # renderTreeEntries now handles the empty case with a dedicated message
+        assert "Empty folder" in dashboard_js
+
+    def test_js_emits_error_state_with_hint(self, dashboard_js: str):
+        # Error state should invite the user to retry
+        assert "Failed to load" in dashboard_js
+
+
+# ── Context panel CSS present in bundle ──────────────────────────────────────
+
+
+class TestContextPanelCss:
+    """Editorial panel selectors must ship in the served CSS bundle."""
+
+    def test_context_panel_selector_present(self, dashboard_css: str):
+        assert ".context-panel" in dashboard_css
+
+    def test_context_panel_uses_bg_card(self, dashboard_css: str):
+        # The panel card must reference --bg-card token
+        m = re.search(r"\.context-panel\s*\{[^}]*\}", dashboard_css)
+        assert m, ".context-panel rule must exist"
+        assert "var(--bg-card)" in m.group(0)
+
+    def test_context_panel_uses_shadow(self, dashboard_css: str):
+        m = re.search(r"\.context-panel\s*\{[^}]*\}", dashboard_css)
+        assert m
+        assert "var(--shadow-sm)" in m.group(0)
+
+    def test_context_panel_header_selector_present(self, dashboard_css: str):
+        assert ".context-panel-header" in dashboard_css
+
+    def test_context_tree_chevron_transition(self, dashboard_css: str):
+        # Chevron must use CSS transition (var(--ease))
+        assert "var(--ease)" in dashboard_css
+
+    def test_context_tree_lazy_states_present(self, dashboard_css: str):
+        assert ".context-tree .tree-lazy-loading" in dashboard_css
+        assert ".context-tree .tree-lazy-error" in dashboard_css
+        assert ".context-tree .tree-lazy-empty" in dashboard_css
+
+    def test_context_tree_accent_on_open_folder(self, dashboard_css: str):
+        # Open folder icon gets accent color
+        assert "tree-icon-folder" in dashboard_css
+        assert "var(--accent)" in dashboard_css
 
 
 # ── Metrics tab: view shaper + route + template ───────────────────────────────

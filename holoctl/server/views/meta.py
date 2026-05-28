@@ -39,8 +39,14 @@ def commands_context(commands: list[dict], alias: str) -> dict:
 
 def context_context(docs: list[dict], alias: str) -> dict:
     items = []
+    folder_count = 0
+    file_count = 0
     for d in docs:
         is_dir = d["isDir"]
+        if is_dir:
+            folder_count += 1
+        else:
+            file_count += 1
         # Directories are lazy-expanded by filetree.js; files link directly.
         link = None if is_dir else f"/project/{alias}/context/{d['name']}"
         # data_path carries the subpath filetree.js will fetch children for.
@@ -52,7 +58,13 @@ def context_context(docs: list[dict], alias: str) -> dict:
             "link": link,
             "data_path": data_path,
         })
-    return {"items": items, "is_empty": not docs, "alias": alias}
+    return {
+        "items": items,
+        "is_empty": not docs,
+        "alias": alias,
+        "folder_count": folder_count,
+        "file_count": file_count,
+    }
 
 
 def repos_context(repos: list[dict], alias: str) -> dict:

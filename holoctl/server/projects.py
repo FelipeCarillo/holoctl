@@ -178,7 +178,10 @@ def read_context_dir(project_path: Path, subpath: str = "") -> list[dict]:
         if entry.is_dir():
             dirs.append({"name": entry.name, "isDir": True, "description": f"{entry.name}/ folder"})
         elif entry.suffix == ".md":
-            content = entry.read_text(encoding="utf-8")
+            try:
+                content = entry.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                content = ""
             first_h1 = next(
                 (line.removeprefix("# ") for line in content.splitlines() if line.startswith("# ")),
                 "",

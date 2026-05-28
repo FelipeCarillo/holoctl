@@ -28,6 +28,11 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
+// SVG icon strings — 16px, currentColor stroke, matches icons/folder.svg + icons/doc.svg
+const ICON_FOLDER = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';
+const ICON_DOC    = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+const ICON_CHEVRON = '<svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
+
 export function initFileTree() {
   for (const tree of document.querySelectorAll('#file-tree, #context-tree')) {
     _attachTree(tree);
@@ -59,14 +64,19 @@ function _attachTree(tree) {
       const url = `${treeEndpoint}?path=${encodeURIComponent(subPath)}`;
       const res = await fetch(url);
       if (!res.ok) {
-        lazy.innerHTML = '<div class="tree-lazy-loading">Failed to load</div>';
+        lazy.innerHTML = '<div class="tree-lazy-error">Failed to load — try refreshing.</div>';
         return;
       }
       const { entries } = await res.json();
+      if (!entries || entries.length === 0) {
+        lazy.innerHTML = '<div class="tree-lazy-empty">Empty folder</div>';
+        lazy.setAttribute('data-loaded', 'true');
+        return;
+      }
       lazy.innerHTML = renderTreeEntries(entries, subPath, parentDepth + 1, fileHrefBase);
       lazy.setAttribute('data-loaded', 'true');
     } catch {
-      lazy.innerHTML = '<div class="tree-lazy-loading">Failed to load</div>';
+      lazy.innerHTML = '<div class="tree-lazy-error">Failed to load — try refreshing.</div>';
     }
   }, true);
 
@@ -93,8 +103,8 @@ function renderTreeEntries(entries, parentPath, depth, fileHrefBase) {
       return `<details class="tree-dir">
         <summary class="tree-row tree-dir-row" data-path="${esc(entryPath)}">
           <span class="tree-indent" style="width:${indent}px"></span>
-          <span class="tree-chevron">&#x25B6;</span>
-          <span class="tree-icon">&#x1F4C1;</span>
+          <span class="tree-chevron">${ICON_CHEVRON}</span>
+          <span class="tree-icon tree-icon-folder">${ICON_FOLDER}</span>
           <span class="tree-name">${esc(e.name)}</span>
           ${badgesHtml}
         </summary>
@@ -104,12 +114,12 @@ function renderTreeEntries(entries, parentPath, depth, fileHrefBase) {
     if (fileHrefBase) {
       const href = fileHrefBase + entryPath.split('/').map(encodeURIComponent).join('/');
       return `<div class="tree-row tree-file-row" style="padding-left:${indent + 20}px">
-        <span class="tree-icon">&#x1F4C4;</span>
+        <span class="tree-icon tree-icon-doc">${ICON_DOC}</span>
         <a href="${esc(href)}" class="tree-name tree-context-link">${esc(e.name)}</a>
       </div>`;
     }
     return `<div class="tree-row tree-file-row" style="padding-left:${indent + 20}px">
-      <span class="tree-icon">&#x1F4C4;</span>
+      <span class="tree-icon tree-icon-doc">${ICON_DOC}</span>
       <span class="tree-name tree-file-name" data-path="${esc(entryPath)}">${esc(e.name)}</span>
     </div>`;
   }).join('');
