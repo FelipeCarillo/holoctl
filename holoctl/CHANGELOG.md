@@ -2,6 +2,63 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added — dashboard: managed-vs-foreign badges on agents & commands pages
+
+- The per-project `/agents` and `/commands` dashboard pages now surface **foreign** items
+  (those in `.claude/` but NOT tracked by the manifest) alongside holoctl-managed ones.
+  Foreign items carry a subtle amber **"foreign"** badge with a tooltip pointing to
+  `hctl adopt`. Managed items get no badge (foreign should stand out, not managed).
+- Guard: foreign detection is suppressed when `.holoctl/.compiled.json` does not exist
+  (project never compiled with manifest-era holoctl) so no false positives occur.
+- New helpers: `read_foreign_agents(project_path)` and `read_foreign_commands(project_path)`
+  in `holoctl/server/projects.py` — consume `scan_unmanaged` + `manifest.manifest_path`.
+- `agents_context` / `commands_context` in `views/meta.py` propagate a `managed` bool
+  (defaulting `True`) so the global `/agents` registry and any future callers stay safe.
+- New `.foreign-badge` CSS class in `agents.css` using the `--yellow`/`--yellow-subtle`
+  editorial token (warm amber, on-brand, not alarming).
+
+### Added — `hctl adopt`: bring foreign config under holoctl management
+
+- **`hctl adopt`** brings externally-authored Claude config (agents, skills,
+  commands not in the manifest) under holoctl management. With no args it
+  previews unmanaged items and adopts nothing; `--all` adopts everything;
+  `--type {agent,skill,command}` (optionally `--name <x>`) adopts selectively.
+  Foreign MCP servers are reported as external (not adoptable). Non-interactive.
+- Adoption (1) copies the `.claude/` file into `.holoctl/` source — for agents,
+  reverse-mapping Claude `tools`/`model` frontmatter back to holoctl categories
+  /tiers — and (2) records the **current** `.claude/` file in the manifest as
+  managed. The manifest record is load-bearing: the next `hctl compile`
+  recognises the file as owned and regenerates it from `.holoctl/` instead of
+  preserving it as foreign. Adoption never auto-compiles.
+- New `holoctl/lib/ecosystem.py:scan_unmanaged(root)` returns foreign items by
+  type (the single source of "what's foreign", mirroring `doctor`'s logic).
+- New `manifest.add_entries(root, new_entries, *, holoctl_version)` merges
+  adoption records into the manifest.
+
+### Changed — skills are first-class manifest citizens
+
+- **Built-in skill override**: placing a `SKILL.md` in `.holoctl/skills/<name>/`
+  now explicitly shadows the matching built-in skill shipped with the holoctl
+  package. On compile the built-in is skipped entirely; the user's version is
+  emitted to the same `.claude/skills/<name>/SKILL.md` path. Previously the
+  write order was the only guard — fragile and undocumented.
+
+- **Manifest-tracked support files**: `references/`, `scripts/`, and `templates/`
+  subdirs under both built-in and custom skills are now synced per-file through
+  the `CompileLedger` instead of being blindly `rmtree`+`copytree`d. Each
+  support file is individually owned, hand-edit-guarded, and pruned when removed
+  from source — identical to how `SKILL.md` itself has been treated since Task 20.
+  User-added files under `.claude/skills/<name>/` that holoctl never generated
+  are preserved (foreign, never in the manifest, never pruned).
+
+- **`prune_orphans` dual-channel ownership**: the pruner now tries the byte-channel
+  hash as a fallback when the text-channel hash does not match the manifest entry,
+  before concluding a file is "diverged". This correctly handles support files
+  written via `write_bytes()` (verbatim copies) on Windows where `read_text()`
+  translates line endings and would otherwise produce a hash mismatch.
+
 ## [0.20.0] — 2026-05-28
 
 Claude-only refocus. holoctl now maintains a deep, native compiler **only** for

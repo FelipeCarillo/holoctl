@@ -22,6 +22,8 @@ from ..lib.config import find_project_root, load_config
 from ..lib.board import Board
 from ..lib.discover import discover_repos
 from ..lib.markdown import parse_frontmatter
+from ..lib.ecosystem import scan_unmanaged
+from ..lib.compiler import manifest
 
 # Cache for get_projects() — git_info subprocess is slow with many repos.
 # TTL is short so the dashboard still feels live.
@@ -105,7 +107,7 @@ def read_agents(project_path: Path) -> list[dict]:
     result = []
     for f in sorted(d.glob("*.md")):
         data, _ = parse_frontmatter(f.read_text(encoding="utf-8"))
-        result.append({**data, "file": f.name})
+        result.append({**data, "file": f.name, "managed": True})
     return result
 
 
@@ -116,8 +118,43 @@ def read_commands(project_path: Path) -> list[dict]:
     result = []
     for f in sorted(d.glob("*.md")):
         data, _ = parse_frontmatter(f.read_text(encoding="utf-8"))
-        result.append({**data, "file": f.name})
+        result.append({**data, "file": f.name, "managed": True})
     return result
+
+
+def _read_foreign(project_path: Path, kind: str) -> list[dict]:
+    """Shared implementation for read_foreign_agents / read_foreign_commands.
+
+    Guard: if the manifest does not exist (project was never compiled with the
+    manifest-era holoctl), return [] — we cannot reliably distinguish managed
+    from foreign without a manifest, so we emit nothing rather than reporting
+    every .claude/ item as foreign.
+
+    `kind` must be ``"agents"`` or ``"commands"`` — it is used both as the key
+    into ``scan_unmanaged`` and as the ``.claude/<kind>/`` subdirectory name.
+    """
+    if not manifest.manifest_path(project_path).exists():
+        return []
+    foreign_names = scan_unmanaged(project_path).get(kind, [])
+    result = []
+    for name in foreign_names:
+        f = project_path / ".claude" / kind / f"{name}.md"
+        try:
+            data, _ = parse_frontmatter(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        result.append({**data, "file": f"{name}.md", "managed": False})
+    return result
+
+
+def read_foreign_agents(project_path: Path) -> list[dict]:
+    """Return agents in .claude/agents/ that are NOT tracked by the manifest."""
+    return _read_foreign(project_path, "agents")
+
+
+def read_foreign_commands(project_path: Path) -> list[dict]:
+    """Return commands in .claude/commands/ that are NOT tracked by the manifest."""
+    return _read_foreign(project_path, "commands")
 
 
 def read_context_docs(project_path: Path) -> list[dict]:

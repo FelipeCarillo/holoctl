@@ -1,12 +1,15 @@
 from __future__ import annotations
 import json
+import os
 import re
+import shutil
 from pathlib import Path
 
 import typer
 from ._console import console
 
 from ..lib.config import find_project_root, load_config
+from ..lib.ecosystem import scan_unmanaged
 from .. import __version__
 
 app = typer.Typer()
@@ -185,6 +188,12 @@ def doctor_cmd(
             else:
                 _check("Compile", f"target '{tgt}' compiled", True)
 
+    # MCP health
+    issues = _check_mcp_health(root, config, issues)
+
+    # Ecosystem awareness (managed vs foreign)
+    _check_ecosystem(root)
+
     console.print("")
     if issues == 0:
         console.print("[green]  All checks passed. Project is healthy.[/green]\n")
@@ -197,21 +206,144 @@ def _check(category: str, message: str, ok: bool) -> None:
     console.print(f"  {icon} [dim]{category:<14}[/dim] {message}")
 
 
+def _info(category: str, message: str) -> None:
+    """Neutral / informational check line (no pass/fail colouring)."""
+    console.print(f"  [blue]·[/blue] [dim]{category:<14}[/dim] {message}")
+
+
+def _check_mcp_health(root: Path, config: dict | None, issues: int) -> int:
+    """Check MCP server health and registration; return updated issues count."""
+    from ..lib.mcp_config import read_mcp_servers
+
+    hctl_bin = os.environ.get("HOLOCTL_BIN") or "hctl"
+    bin_path = shutil.which(hctl_bin)
+    if bin_path is None:
+        _check(
+            "MCP",
+            "hctl not on PATH — MCP tools (mcp__holoctl__*) will fail; "
+            "install hctl or set HOLOCTL_BIN",
+            False,
+        )
+        issues += 1
+    else:
+        _check("MCP", f"hctl resolvable ({bin_path})", True)
+
+    # Check that mcpServers.holoctl is present (in .mcp.json or .claude/settings.json)
+    # when the 'claude' target is active (the claude compiler writes it to settings.json).
+    targets = (config or {}).get("targets", [])
+    if "claude" in targets:
+        if "holoctl" not in read_mcp_servers(root):
+            _check(
+                "MCP",
+                "mcpServers.holoctl missing from .claude/settings.json — run `hctl compile`",
+                False,
+            )
+            issues += 1
+        else:
+            _check("MCP", "mcpServers.holoctl registered in .claude/settings.json", True)
+
+    return issues
+
+
+def _check_ecosystem(root: Path) -> None:
+    """Print Ecosystem section: managed vs foreign agents, commands, skills, MCP servers."""
+    from ..lib.mcp_config import read_mcp_servers
+
+    # Delegate classification to the shared single source of truth.
+    foreign = scan_unmanaged(root)
+    agents_foreign = foreign["agents"]    # list of stems (no extension)
+    cmds_foreign = foreign["commands"]    # list of stems (no extension)
+    skills_foreign = foreign["skills"]    # list of dir names
+    mcp_foreign = foreign["mcp_servers"]  # list of server names
+
+    # Compute managed counts: (total on-disk of that type) − (foreign count).
+    claude_agents = root / ".claude" / "agents"
+    total_agents = len(list(claude_agents.glob("*.md"))) if claude_agents.exists() else 0
+    agents_managed_count = total_agents - len(agents_foreign)
+
+    claude_commands = root / ".claude" / "commands"
+    # Total on-disk commands minus the bootstrap commands (which are never counted
+    # as foreign by scan_unmanaged, but are on-disk).
+    from ..lib.ecosystem import _BOOTSTRAP_COMMANDS as _BS
+    total_cmds = (
+        sum(1 for f in claude_commands.glob("*.md") if f.name not in _BS)
+        if claude_commands.exists() else 0
+    )
+    cmds_managed_count = total_cmds - len(cmds_foreign)
+
+    claude_skills = root / ".claude" / "skills"
+    total_skills = (
+        sum(1 for d in claude_skills.iterdir() if d.is_dir())
+        if claude_skills.exists() else 0
+    )
+    skills_managed_count = total_skills - len(skills_foreign)
+
+    # MCP: holoctl registered status from all configured servers.
+    all_servers = read_mcp_servers(root)
+    holoctl_registered = "holoctl" in all_servers
+
+    # ---- Print ---------------------------------------------------------
+    _info(
+        "Ecosystem",
+        f"Agents: {agents_managed_count} managed, {len(agents_foreign)} foreign",
+    )
+    if agents_foreign:
+        for name in agents_foreign:
+            _info("Ecosystem", f"  foreign agent: {name}.md")
+
+    _info(
+        "Ecosystem",
+        f"Commands: {cmds_managed_count} managed, {len(cmds_foreign)} foreign",
+    )
+    if cmds_foreign:
+        for name in cmds_foreign:
+            _info("Ecosystem", f"  foreign command: {name}.md")
+
+    _info(
+        "Ecosystem",
+        f"Skills: {skills_managed_count} managed, {len(skills_foreign)} foreign",
+    )
+    if skills_foreign:
+        for name in skills_foreign:
+            _info("Ecosystem", f"  foreign skill: {name}")
+
+    _info(
+        "Ecosystem",
+        f"MCP servers: holoctl {'registered' if holoctl_registered else 'not registered'}, {len(mcp_foreign)} third-party"
+        + (f" ({', '.join(mcp_foreign)})" if mcp_foreign else ""),
+    )
+
+    # Hint when foreign items exist.
+    has_foreign = bool(agents_foreign or cmds_foreign or skills_foreign or mcp_foreign)
+    if has_foreign:
+        _info(
+            "Ecosystem",
+            "→ run 'hctl adopt' to bring foreign config under holoctl management",
+        )
+
+
 def _doctor_compile_drift() -> None:
     """Detect compiled outputs that are stale vs `.holoctl/`.
 
-    Compiles into a throwaway copy of the workspace, then byte-compares each
-    generated file against the one on disk. A mismatch means the source changed
-    but `hctl compile` wasn't re-run. Hand-edited outputs (no holoctl header)
-    are reported as such, not as drift — they're intentional. Merge-based
-    configs (settings.json / mcp.json / config.toml) are skipped: they carry
-    user content and can't be byte-compared.
+    Compiles into a throwaway copy of the workspace, then classifies each
+    generated file using the manifest (the header is gone):
+
+      - on-disk missing                          → stale (missing)
+      - tracked in the real manifest but its
+        on-disk hash != the manifest hash        → hand-edited (intentional;
+                                                    NOT drift)
+      - on-disk content != freshly-compiled
+        content                                  → stale (source changed,
+                                                    recompile needed)
+      - otherwise                                → up to date
+
+    Merge-based configs (settings.json) are skipped: they carry user content
+    and aren't manifest-tracked.
     """
     import shutil
     import tempfile
 
-    from ..lib.compiler import _COMPILERS, compile_project
-    from ..lib.compiler._safe_write import looks_hand_edited
+    from ..lib.compiler import _COMPILERS, compile_project, manifest
 
     root = find_project_root()
     if not root:
@@ -220,6 +352,10 @@ def _doctor_compile_drift() -> None:
         raise typer.Exit(1)
     config = load_config(root)
     targets = [t for t in config.get("targets", []) if t in _COMPILERS]
+
+    # The real (on-disk) manifest: rel -> {"sha256", ...}. Used to tell apart a
+    # hand-edit (tracked, hash drifted) from a stale source (source changed).
+    real = manifest.load(root)["files"]
 
     stale: list[str] = []
     hand_edited: list[str] = []
@@ -247,9 +383,23 @@ def _doctor_compile_drift() -> None:
                 continue
             if not on_disk.exists():
                 stale.append(f"{rel} (missing)")
-            elif looks_hand_edited(on_disk):
+                continue
+            try:
+                disk_text = on_disk.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # Unreadable as text — fall back to byte compare vs scratch.
+                if on_disk.read_bytes() != canonical.read_bytes():
+                    stale.append(rel)
+                continue
+            disk_sha = manifest.sha256_text(disk_text)
+            entry = real.get(rel)
+            if entry is not None and disk_sha != entry.get("sha256"):
+                # Tracked by holoctl but the on-disk content diverged from what
+                # we recorded → a deliberate hand-edit, not stale source.
                 hand_edited.append(rel)
-            elif on_disk.read_bytes() != canonical.read_bytes():
+            elif disk_text != canonical.read_text(encoding="utf-8"):
+                # Either untracked-but-present, or tracked-and-matching-manifest
+                # while the freshly-compiled content differs → source moved on.
                 stale.append(rel)
 
     if stale:
@@ -264,7 +414,7 @@ def _doctor_compile_drift() -> None:
             _check("Drift", f"{rel} is stale — run `holoctl compile`", False)
     if hand_edited:
         for rel in hand_edited:
-            _check("Hand-edited", f"{rel} (no holoctl header; left as-is)", True)
+            _check("Hand-edited", f"{rel} (hand-edited; left as-is)", True)
     if not stale and not hand_edited:
         _check("Compile", "all outputs up to date with .holoctl/", True)
 

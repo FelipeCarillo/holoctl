@@ -12,6 +12,7 @@
   <a href="{{ a.link }}" class="agent-card">
     <div class="agent-card-header">
       <span class="agent-card-name">{{ a.name }}</span>
+      {% if not a.managed %}<span class="foreign-badge" title="not managed by holoctl — run `hctl adopt`">foreign</span>{% endif %}
       <span class="trigger-badge">{{ a.trigger }}</span>
       <span class="model-badge {{ a.model }}">{{ a.model }}</span>
     </div>
