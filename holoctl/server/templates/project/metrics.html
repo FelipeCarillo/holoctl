@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="page-shell">
 <div class="metrics-page">
 
   {# ── Filter toolbar (sticky) ── #}
@@ -48,5 +49,6 @@
   {# ── Row 4: Time-in-status (Task F2) ── #}
   {% include "partials/metrics/_time_in_status.html" %}
 
+</div>
 </div>
 {% endblock %}

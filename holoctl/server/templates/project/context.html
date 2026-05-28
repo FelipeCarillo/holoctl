@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="page-shell">
 {% if is_empty %}
 <div class="empty-state"><p>No context documents.</p></div>
 {% else %}
@@ -44,4 +45,5 @@
   </div>
 </div>
 {% endif %}
+</div>
 {% endblock %}
