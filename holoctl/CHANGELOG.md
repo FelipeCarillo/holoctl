@@ -4,75 +4,12 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
-### Added — dashboard: managed-vs-foreign badges on agents & commands pages
-
-- The per-project `/agents` and `/commands` dashboard pages now surface **foreign** items
-  (those in `.claude/` but NOT tracked by the manifest) alongside holoctl-managed ones.
-  Foreign items carry a subtle amber **"foreign"** badge with a tooltip pointing to
-  `hctl adopt`. Managed items get no badge (foreign should stand out, not managed).
-- Guard: foreign detection is suppressed when `.holoctl/.compiled.json` does not exist
-  (project never compiled with manifest-era holoctl) so no false positives occur.
-- New helpers: `read_foreign_agents(project_path)` and `read_foreign_commands(project_path)`
-  in `holoctl/server/projects.py` — consume `scan_unmanaged` + `manifest.manifest_path`.
-- `agents_context` / `commands_context` in `views/meta.py` propagate a `managed` bool
-  (defaulting `True`) so the global `/agents` registry and any future callers stay safe.
-- New `.foreign-badge` CSS class in `agents.css` using the `--yellow`/`--yellow-subtle`
-  editorial token (warm amber, on-brand, not alarming).
-
-### Added — `hctl adopt`: bring foreign config under holoctl management
-
-- **`hctl adopt`** brings externally-authored Claude config (agents, skills,
-  commands not in the manifest) under holoctl management. With no args it
-  previews unmanaged items and adopts nothing; `--all` adopts everything;
-  `--type {agent,skill,command}` (optionally `--name <x>`) adopts selectively.
-  Foreign MCP servers are reported as external (not adoptable). Non-interactive.
-- Adoption (1) copies the `.claude/` file into `.holoctl/` source — for agents,
-  reverse-mapping Claude `tools`/`model` frontmatter back to holoctl categories
-  /tiers — and (2) records the **current** `.claude/` file in the manifest as
-  managed. The manifest record is load-bearing: the next `hctl compile`
-  recognises the file as owned and regenerates it from `.holoctl/` instead of
-  preserving it as foreign. Adoption never auto-compiles.
-- New `holoctl/lib/ecosystem.py:scan_unmanaged(root)` returns foreign items by
-  type (the single source of "what's foreign", mirroring `doctor`'s logic).
-- New `manifest.add_entries(root, new_entries, *, holoctl_version)` merges
-  adoption records into the manifest.
-
-### Changed — skills are first-class manifest citizens
-
-- **Built-in skill override**: placing a `SKILL.md` in `.holoctl/skills/<name>/`
-  now explicitly shadows the matching built-in skill shipped with the holoctl
-  package. On compile the built-in is skipped entirely; the user's version is
-  emitted to the same `.claude/skills/<name>/SKILL.md` path. Previously the
-  write order was the only guard — fragile and undocumented.
-
-- **Manifest-tracked support files**: `references/`, `scripts/`, and `templates/`
-  subdirs under both built-in and custom skills are now synced per-file through
-  the `CompileLedger` instead of being blindly `rmtree`+`copytree`d. Each
-  support file is individually owned, hand-edit-guarded, and pruned when removed
-  from source — identical to how `SKILL.md` itself has been treated since Task 20.
-  User-added files under `.claude/skills/<name>/` that holoctl never generated
-  are preserved (foreign, never in the manifest, never pruned).
-
-- **`prune_orphans` dual-channel ownership**: the pruner now tries the byte-channel
-  hash as a fallback when the text-channel hash does not match the manifest entry,
-  before concluding a file is "diverged". This correctly handles support files
-  written via `write_bytes()` (verbatim copies) on Windows where `read_text()`
-  translates line endings and would otherwise produce a hash mismatch.
-
 ## [0.20.0] — 2026-05-28
 
-Claude-only refocus. holoctl now maintains a deep, native compiler **only** for
-Claude Code. The bespoke `copilot` and `codex` compilers are gone; every other
-assistant is served by a single portable **`holoctl-foreign-bootstrap` skill**
-that teaches it to read `.holoctl/` and generate its own native config dir. The
-`agents` target no longer mirrors content — it emits a **minimal AGENTS.md
-discovery shim** that points non-Claude assistants at that skill. The translation
-knowledge that used to live in N maintained Python compilers now lives in one
-skill the foreign assistant executes at runtime.
-
-Workspaces still listing `copilot` / `codex` in `config.json:targets[]` keep
-compiling cleanly — the silent migration filter strips them before the dispatcher
-sees them, exactly like the 0.18.0 long-tail removal.
+0.20.0 is the largest single release since 0.17 — a Claude-only compiler refocus,
+a full Editorial dashboard redesign, manifest-based compilation, a strategic
+productivity-metrics page, and a suite of control-plane capabilities that turn
+holoctl into a central management hub for the `.claude/` ecosystem.
 
 ### Removed — `copilot` + `codex` compile targets (breaking)
 
@@ -83,16 +20,210 @@ sees them, exactly like the 0.18.0 long-tail removal.
 - **`hctl setup-global`** ships an installer only for Claude now — the `copilot` target (the `~/.copilot/AGENTS.md` block) is gone; `--target all` resolves to just `claude`.
 - **Migration is silent**: `lib/config.py:load_config` filters `copilot` / `codex` (alongside `cursor` / `windsurf` / `devin` / `generic`) out of any workspace's `targets` array on load. Already-materialized `.github/`, `.codex/`, `.vscode/`, `.copilot/` directories from earlier compiles are **not** auto-deleted — remove them by hand if you want.
 
-### Changed — `agents` target is now a discovery shim
+### Changed — manifest replaces generated-by header (breaking)
 
-- **`AGENTS.md` is minimal.** It no longer mirrors objective/architecture/conventions/build-commands. It states the project is holoctl-managed, points Claude at `.claude/`, and points every other assistant at `.holoctl/foreign-bootstrap.md`. The hand-edit guard + `--compile-drift` still apply.
-- **`hctl coverage` / `hctl doctor`** matrices and checks collapsed to the two live targets (`agents`, `claude`); `_MERGE_OUTPUTS` and `doctor --global` no longer reference the dropped per-assistant configs.
-- **Default `config.targets` stays `["agents", "claude"]`** — `agents` first so a foreign assistant finds the pointer immediately.
-- **Positioning**: README / `ARCHITECTURE.md` / `CONTRIBUTING.md` reframed from "multi-assistant compiler" to "Claude-first, with a portable bootstrap for the rest." Adding a new native compiler is explicitly no longer the extension path — the bootstrap skill is.
+- **`.holoctl/.compiled.json`** is now the sole ownership mechanism. The
+  `<!-- Generated by holoctl -->` header is gone; compiled files are emitted
+  clean. Ownership is hash-based: `CompileLedger` (in `holoctl/lib/manifest.py`)
+  tracks every output by SHA-256 hash, detects hand-edits, and prunes orphans
+  safely on the next compile. Any downstream consumer that relied on the header
+  to identify holoctl-generated files must switch to checking the manifest.
+- **`prune_orphans` dual-channel ownership**: the pruner tries the byte-channel
+  hash as a fallback when the text-channel hash misses (supports files written via
+  `write_bytes()` on Windows where `read_text()` translates line endings).
+- `hctl compile` now reports `migrated` count on first run (legacy headered files
+  are adopted into the manifest cleanly).
+
+### Added — productivity metrics dashboard
+
+The headline addition of 0.20.0. A full strategic-grade metrics surface ships
+across two routes and a new pure-function library module.
+
+- **`holoctl/lib/metrics.py`** — stdlib-only pure functions (all accept injected
+  `now`): `throughput`, `cycle_time`, `wip`, `by_group`, `trend`,
+  `cycle_time_distribution`, `time_in_status` (reads `activity.jsonl`),
+  `flow_efficiency`, `forecast`, `read_activity_events`. Zero I/O except
+  `read_activity_events`.
+- **Per-project `/project/{alias}/metrics`** tab and **workspace `/metrics`**
+  rollup. Home page gains a compact 3-tile summary band (Total WIP / Done last
+  7d / Stale) with a CTA linking to `/metrics`. Cross-project breakdown table on
+  the workspace page links each alias to its per-project tab.
+- **Executive KPI band**: throughput Δ% vs previous period, cycle-time p50/p95,
+  WIP count, flow efficiency %, stale count, simple weekly forecast.
+- **Time-in-status chart** (SVG): reads `ticket.moved` events from
+  `activity.jsonl`; surfaces bottleneck stages and flow signal.
+- **Cycle-time distribution histogram** (inline SVG, 10 bins) with p50/p75/p95
+  percentile chips and a graceful empty state.
+- **Throughput overlay chart**: current-period solid bars overlaid with
+  previous-period ghost bars; legend with totals and delta arrow chip. Auto-switches
+  to weekly buckets when `since_days > 180` so large ranges stay readable.
+- **Stalled-tickets list**: actionable list of aging/orphaned/missing-metadata
+  tickets (active stale > 5d, backlog no-agent, backlog no-priority, done without
+  `completed` timestamp); sorted by age desc; scrollable when > 12 items.
+- **Complete filter toolbar** (`holoctl/server/filters.py`): date presets (7d /
+  30d / 90d / Sprint / All) + custom ISO range; per-field multi-select facets
+  (Tags, Kind, Status, Agent, Project, Sprint, Priority); URL-driven state; active
+  chips with × remove and Clear all; sticky toolbar with backdrop-blur.
+- **Layout/scroll**: WIP aging, by-agent, by-project, and stalled lists all get
+  internal scroll (`.metrics-scrollable`, max-height 360px) when > 12 items so
+  large boards don't blow out the page.
+
+### Added — `hctl adopt`: bring foreign config under management
+
+- **`hctl adopt`** brings externally-authored Claude config (agents, skills,
+  commands not tracked by the manifest) under holoctl management. No args previews
+  and adopts nothing; `--all` adopts everything; `--type {agent,skill,command}`
+  (optionally `--name <x>`) adopts selectively. Foreign MCP servers are reported as
+  external (not adoptable). Non-interactive.
+- Adoption copies the `.claude/` file into `.holoctl/` source (reverse-mapping
+  Claude `tools`/`model` frontmatter for agents) and records the current file in
+  the manifest. The next `hctl compile` regenerates from `.holoctl/` instead of
+  treating the file as foreign. Adoption never auto-compiles.
+- New `holoctl/lib/ecosystem.py:scan_unmanaged(root)` — single classifier for what
+  is foreign, shared by `doctor`, `adopt`, and the dashboard badges.
+- New `manifest.add_entries(root, new_entries, *, holoctl_version)` merges adoption
+  records into the manifest.
+
+### Added — skills first-class manifest citizens
+
+- **Built-in skill override**: a `SKILL.md` in `.holoctl/skills/<name>/` now
+  explicitly shadows the matching built-in; on compile the built-in is skipped
+  entirely and the user's version lands at the same `.claude/skills/<name>/SKILL.md`
+  path.
+- **Manifest-tracked support files**: `references/`, `scripts/`, and `templates/`
+  subdirs under both built-in and custom skills are synced per-file through the
+  `CompileLedger` (individually owned, hand-edit-guarded, pruned on removal).
+  User-added files under `.claude/skills/<name>/` that holoctl never generated are
+  preserved as foreign — never pruned.
 
 ### Added — portable `holoctl-foreign-bootstrap` skill
 
-- **`holoctl/templates/skills/holoctl-foreign-bootstrap/`** (SKILL.md + `references/format-hints.md`). Compiled into `.claude/skills/` by the existing built-in-skill glob, and its body is also emitted (frontmatter stripped, hints inlined) at **`.holoctl/foreign-bootstrap.md`** — a tool-neutral path any non-Claude assistant can read. It reads `.holoctl/` as the canonical source and carries per-tool format hints (Copilot / Codex / Cursor / generic) so the foreign assistant materializes its own config dir.
+- **`holoctl/templates/skills/holoctl-foreign-bootstrap/`** (SKILL.md +
+  `references/format-hints.md`). Compiled into `.claude/skills/` and also emitted
+  (frontmatter stripped, hints inlined) at **`.holoctl/foreign-bootstrap.md`** — a
+  tool-neutral path any non-Claude assistant can read. Carries per-tool format hints
+  (Copilot / Codex / Cursor / generic) so a foreign assistant can materialise its
+  own config dir from `.holoctl/`.
+
+### Added — managed-vs-foreign dashboard badges
+
+- The per-project `/agents` and `/commands` pages surface **foreign** items (in
+  `.claude/` but NOT tracked by the manifest) with a subtle amber **"foreign"**
+  badge and a tooltip pointing to `hctl adopt`. Badge detection is suppressed when
+  `.holoctl/.compiled.json` does not exist (no false positives on pre-manifest
+  workspaces).
+- New `.foreign-badge` CSS class in `agents.css` using `--yellow`/`--yellow-subtle`
+  editorial tokens.
+
+### Added — context expandable directory tree
+
+- The **Context tab** now renders an expandable directory tree. Directories expand
+  lazily via `GET /api/project/{alias}/context/tree?path=<subpath>` (returns one
+  listing level as `{entries: [{name, type}]}`; 403 on traversal, 404 on unknown
+  alias or non-directory path). Files link to their detail view; nested children
+  show a faint vertical guide line.
+- `filetree.js` generalised with `data-tree-endpoint` / `data-file-href-base`
+  configuration; attaches to both `#file-tree` and `#context-tree`.
+- Editorial reskin of the Context tab: card-chrome `.context-panel`, inline SVG
+  folder/doc/chevron icons replacing emoji, full-row hover, accent colour on open
+  folders, lazy-state pulses.
+- `read_context_dir` wraps per-file reads in try/except (`OSError`,
+  `UnicodeDecodeError`) so a single unreadable `.md` never 500s the endpoint.
+
+### Added — `hctl doctor` MCP health + ecosystem awareness
+
+- **MCP health section**: checks whether `hctl` is on PATH and whether the holoctl
+  MCP server is registered in `.mcp.json` / `.claude/settings.json:mcpServers`.
+- **Ecosystem awareness section**: reports managed-vs-foreign agents, skills,
+  commands, and MCP servers using `ecosystem.scan_unmanaged` (single classifier,
+  shared with `adopt` and the dashboard badges).
+
+### Added — `hctl provider` MCP-server awareness
+
+- `hctl provider list/add/doctor` now read `.mcp.json` and
+  `.claude/settings.json:mcpServers` to surface which providers have a connected
+  MCP server, in addition to the declarative catalog.
+
+### Added — `agents` target changed to discovery shim
+
+- **`AGENTS.md` is now minimal.** It states the project is holoctl-managed, points
+  Claude at `.claude/`, and points every other assistant at
+  `.holoctl/foreign-bootstrap.md`. Objective / architecture / conventions /
+  build-commands are no longer mirrored. Hand-edit guard and `--compile-drift` still
+  apply.
+- `hctl coverage` / `hctl doctor` matrices collapsed to the two live targets
+  (`agents`, `claude`).
+- README / `ARCHITECTURE.md` / `CONTRIBUTING.md` reframed from "multi-assistant
+  compiler" to "Claude-first, with a portable bootstrap for the rest."
+
+### Added — server refactor: Jinja templates + modular routes
+
+- **`holoctl/server/markdown.py`**: `markdown-it-py` renderer module (replaces the
+  old inline `_render_markdown` string-builder). `markdown-it-py` and
+  `mdit-py-plugins` added as locked dependencies.
+- **`app.py` thinned to ~180 lines**: all string-building HTML helpers removed;
+  routes extracted into `routes/` modules; views extracted into `views/` modules.
+  `app.py` is now thin wiring: FastAPI app, static mount, router includes, and
+  SSE/API endpoints only.
+- **`holoctl/server/projects.py`**: project listing, foreign-agent/command helpers,
+  and context-tree reader extracted from `app.py` and `project_doc.py`.
+- **`holoctl/server/paths.py`**: `safe_resolve` traversal guard extracted as a
+  shared utility, used by context tree and doc detail routes.
+- Board filter controls now support **Kind** and **Source** filters alongside the
+  existing status/priority/agent/sprint/tag set; group-by parity across list and
+  kanban views. Popover scroll fixed.
+- Meta tabs (agents, commands, context, repos) gain **live search + scroll** via
+  `meta-search.js`; doc-detail 500 (title-clash bug) fixed.
+- Agents list survives agents with null/empty `tools` frontmatter (no longer
+  crashes the page).
+
+### Added — board integrity: `ticket.moved` activity log
+
+- `Board.move()`, `Board.set(status)`, and `Board.batch_move()` all route through
+  one shared helper. `ticket.moved` is appended to `activity.jsonl` **after**
+  `_save()` + `_patch_ticket_md()` complete — eliminating the phantom-move window
+  on process death.
+- `completed` is reliably set on `done`-status transitions and cleared when leaving
+  `done`. Activity timestamps use `isoformat(timespec="seconds")` to match
+  `updated`/`completed` field precision.
+
+### Added — Editorial dashboard redesign
+
+- **Token system overhaul** (`tokens.css`): warm palette, terracotta `--accent`
+  (`--terracotta`), rich dark background (`--bg-page` near-black), distinct
+  card/rail/hover layers. Full dark and light theme support.
+- **Typography**: Fraunces (serif, display headings), Inter (sans-serif, body/UI),
+  JetBrains Mono (monospace, code/IDs). Loaded via `<link rel="preconnect">` in
+  `_boot.html`.
+- **Board + detail surfaces** (`card.css`, `kanban.css`, `detail.css`,
+  `markdown.css`, `chips.css`, `list.css`, `tree.css`): refined card chrome, richer
+  markdown rendering (code blocks, tables, blockquotes), editorial chip styles,
+  editorial list rows, tree indentation.
+- **Home, secondary tabs, and shell** (`home.css`, `agents.css`, `context.css`,
+  `tabs.css`, `main.css`, `scope.css`): hero band, tab underline indicators,
+  consistent surface/border tokens throughout.
+
+### Fixed — detail-page card box-shadow clipping
+
+- Detail pages (ticket and doc detail) clipped a sliver of each card's left
+  box-shadow. Root cause: `.detail-main` / `.detail-rail` set `overflow-y: auto`
+  (which computes `overflow-x` to `auto`) with no left padding, and doc detail
+  scrolled inside `.content-body { overflow-x: hidden }`. Fix: `padding-inline` on
+  `.detail-page` and scroll containers. Also defined the previously-undefined
+  `--content-px` token (referenced by `scope.css` + `filetree.css`).
+
+### Fixed — context tree accessibility and security
+
+- Context tree "Loading…" pulse animation wrapped in
+  `prefers-reduced-motion: no-preference` media query, consistent with
+  `accessibility.css` policy.
+- Filetree DOM HTML-escapes all user-controlled values (`e.name`, `entryPath`,
+  badge labels) via a new `esc()` helper; file href segments are
+  `encodeURIComponent`-encoded — defense-in-depth for names with `&`, `<`, `>`,
+  or spaces.
+- Lazy-expand nesting depth fixed: `data-depth` stored on every `.tree-lazy` div;
+  toggle handler reads parent depth and passes `parentDepth+1` to
+  `renderTreeEntries` so indentation grows correctly with nesting.
 
 ## [0.19.0] — 2026-05-27
 
