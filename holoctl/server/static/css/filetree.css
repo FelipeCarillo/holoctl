@@ -247,12 +247,17 @@ details[open] > summary .tree-chevron { transform: rotate(90deg); }
   color: var(--text-3);
   font-size: 12px;
   font-style: italic;
-  animation: ctx-pulse 1.4s ease-in-out infinite;
 }
 
-@keyframes ctx-pulse {
-  0%, 100% { opacity: 0.6; }
-  50%       { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .context-tree .tree-lazy-loading {
+    animation: ctx-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes ctx-pulse {
+    0%, 100% { opacity: 0.6; }
+    50%       { opacity: 1; }
+  }
 }
 
 .context-tree .tree-lazy-error {
