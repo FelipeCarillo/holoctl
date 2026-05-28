@@ -1,5 +1,8 @@
 /* ── Detail pages ── */
-.detail-page { max-width: 960px; }
+/* `padding-inline` gives the cards' box-shadow a few px of breathing room so
+   the left edge isn't clipped by the scroll containers' computed overflow-x
+   (`.content-body` for doc detail; `.detail-main`/`.detail-rail` for tickets). */
+.detail-page { max-width: 960px; padding-inline: 4px; }
 
 .detail-header { margin-bottom: 28px; }
 
@@ -197,7 +200,9 @@
 [data-detail-page] .detail-main {
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  /* Symmetric inset: right keeps content off the scrollbar; left stops the
+     card box-shadow from being clipped by the computed overflow-x. */
+  padding-inline: 4px;
 }
 
 [data-detail-page] .detail-section {
@@ -213,7 +218,9 @@
   min-height: 0;
   /* Independent vertical scroll, parallel to .detail-main. */
   overflow-y: auto;
-  padding-right: 4px;
+  /* Symmetric inset: right keeps content off the scrollbar; left stops the
+     card box-shadow from being clipped by the computed overflow-x. */
+  padding-inline: 4px;
 }
 
 /* Each card in the rail. Notion/Things-style: same chrome as cards
