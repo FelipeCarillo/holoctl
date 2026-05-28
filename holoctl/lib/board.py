@@ -266,9 +266,12 @@ class Board:
         """Apply a status transition on a ticket dict in-place.
 
         Sets ``status``, ``updated``, and ``completed`` (set when entering
-        ``done``, cleared when leaving ``done``).  Also appends a
-        ``"ticket.moved"`` event to ``activity.jsonl`` — but only when the
-        status actually changes (no-op moves are skipped).
+        ``done``, cleared when leaving ``done``).
+
+        The ``"ticket.moved"`` activity log entry is intentionally NOT emitted
+        here — callers (``move`` and ``set``) emit it AFTER ``_save`` and
+        ``_patch_ticket_md`` have both completed, so the log never records a
+        transition that failed to persist (no partial-write window).
 
         Returns a patches dict suitable for ``_patch_ticket_md``.
         """
@@ -284,17 +287,6 @@ class Board:
             # Leaving done — clear the stale completion timestamp.
             ticket["completed"] = None
             patches["completed"] = None
-
-        _log_activity(
-            self._root,
-            {
-                "type": "ticket.moved",
-                "ticket": ticket["id"],
-                "from": old_status,
-                "to": new_status,
-                "actor": "cli",
-            },
-        )
 
         return patches
 
@@ -314,7 +306,8 @@ class Board:
         if old_status != new_status:
             patches = self._apply_status_change(ticket, old_status, new_status, now)
         else:
-            # No-op move: still update the timestamp, but don't log.
+            # No-op move: touch `updated` so the mutation is acknowledged even
+            # when status is unchanged, but don't log a ticket.moved event.
             ticket["updated"] = now
             patches = {"updated": now}
 
@@ -324,6 +317,21 @@ class Board:
 
         if ticket.get("file"):
             self._patch_ticket_md(ticket["file"], patches)
+
+        # Log status change AFTER both _save and _patch_ticket_md have
+        # completed — this prevents a phantom activity entry in the rare case
+        # the process dies between persist and log.
+        if old_status != new_status:
+            _log_activity(
+                self._root,
+                {
+                    "type": "ticket.moved",
+                    "ticket": ticket_id,
+                    "from": old_status,
+                    "to": new_status,
+                    "actor": "cli",
+                },
+            )
 
         # Curator auto-execute (item 8A): when a meta:curate ticket transitions
         # to `done`, the curator action stored in the parallel metadata file
@@ -386,7 +394,8 @@ class Board:
             if old_status != new_status:
                 md_patches = self._apply_status_change(ticket, old_status, new_status, now)
             else:
-                # No-op status set: update timestamp only, no logging.
+                # No-op status set: touch `updated` so the mutation is
+                # acknowledged even when status is unchanged, but don't log.
                 ticket["updated"] = now
                 md_patches = {"status": new_status, "updated": now}
             data["meta"]["counts"] = self._recount(data["tickets"])
@@ -400,6 +409,20 @@ class Board:
 
         if ticket.get("file"):
             self._patch_ticket_md(ticket["file"], md_patches)
+
+        # Log status change AFTER both _save and _patch_ticket_md have
+        # completed — mirrors the ordering in move() (no partial-write window).
+        if field == "status" and old_status != new_status:  # type: ignore[possibly-undefined]
+            _log_activity(
+                self._root,
+                {
+                    "type": "ticket.moved",
+                    "ticket": ticket_id,
+                    "from": old_status,
+                    "to": new_status,
+                    "actor": "cli",
+                },
+            )
 
         return {"id": ticket_id, "field": field, "value": parsed}
 
@@ -973,5 +996,5 @@ def _log_activity(project_root: Path, event: dict) -> None:
     """
     from .jsonl import append_jsonl_line
     log_path = project_root / ".holoctl" / "activity.jsonl"
-    entry = {"ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), **event}
+    entry = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"), **event}
     append_jsonl_line(log_path, json.dumps(entry) + "\n")
