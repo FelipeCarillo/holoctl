@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="metrics-page">
+
+  {# ── Row 1: Throughput + Cycle Time ── #}
+  <div class="metrics-top-row">
+    {% include "partials/metrics/_throughput.html" %}
+    {% include "partials/metrics/_cycle_cards.html" %}
+  </div>
+
+  {# ── Row 2: WIP aging ── #}
+  {% include "partials/metrics/_wip.html" %}
+
+  {# ── Row 3: By-agent + By-project (ticket `projects` field) ── #}
+  <div class="metrics-group-row">
+    {% with
+       group_id="by-agent",
+       group_label="By Agent",
+       group_key_label="Agent",
+       group_rows=by_agent,
+       group_max=agent_max
+    %}
+    {% include "partials/metrics/_by_group.html" %}
+    {% endwith %}
+
+    {% if by_project %}
+    {% with
+       group_id="by-project",
+       group_label="By Repo / Project",
+       group_key_label="Repo",
+       group_rows=by_project,
+       group_max=project_max
+    %}
+    {% include "partials/metrics/_by_group.html" %}
+    {% endwith %}
+    {% endif %}
+  </div>
+
+  {# ── Row 4: Cross-project comparison ── #}
+  {% if by_ws_project %}
+  <div class="metrics-card" id="metrics-by-workspace-project">
+    <div class="metrics-card-title">By Workspace Project</div>
+    {% set row_max = ws_project_max if ws_project_max > 0 else 1 %}
+    <table class="metrics-group-table" aria-label="By workspace project breakdown">
+      <thead>
+        <tr>
+          <th class="mgt-col-name">Project</th>
+          <th class="mgt-col-bar" aria-label="Completed bar"></th>
+          <th class="mgt-col-count">Done</th>
+          <th class="mgt-col-cycle">Avg cycle</th>
+          <th class="mgt-col-wip">WIP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in by_ws_project %}
+        {% set bar_pct = (row.completed / row_max * 100) | round(1) %}
+        <tr class="mgt-row">
+          <td class="mgt-cell-name">
+            <a href="/project/{{ row.alias }}/metrics" class="mgt-name mgt-project-link">{{ row.alias }}</a>
+          </td>
+          <td class="mgt-cell-bar">
+            <div class="mgt-bar-track">
+              <div class="mgt-bar-fill" style="width:{{ bar_pct }}%" aria-hidden="true"></div>
+            </div>
+          </td>
+          <td class="mgt-cell-count">{{ row.completed }}</td>
+          <td class="mgt-cell-cycle">
+            {% if row.avg_cycle_days is not none %}
+            <span class="mgt-cycle">{{ row.avg_cycle_days }}d</span>
+            {% else %}
+            <span class="mgt-cycle mgt-cycle-none">—</span>
+            {% endif %}
+          </td>
+          <td class="mgt-cell-wip">
+            {% if row.wip > 0 %}
+            <span class="mgt-wip-chip">{{ row.wip }}</span>
+            {% else %}
+            <span class="mgt-cycle-none">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="metrics-card" id="metrics-by-workspace-project">
+    <div class="metrics-card-title">By Workspace Project</div>
+    <div class="metrics-empty">No projects found in this workspace.</div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

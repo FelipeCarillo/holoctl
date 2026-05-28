@@ -27,7 +27,9 @@ from .routes.project_detail import router as _project_detail_router  # noqa: E40
 from .routes.project_doc import router as _project_doc_router  # noqa: E402
 from .routes.project_meta import router as _project_meta_router  # noqa: E402
 from .routes.project_metrics import router as _project_metrics_router  # noqa: E402
+from .routes.workspace_metrics import router as _workspace_metrics_router  # noqa: E402
 app.include_router(_home_router)
+app.include_router(_workspace_metrics_router)
 app.include_router(_project_board_router)
 app.include_router(_project_detail_router)
 app.include_router(_project_doc_router)

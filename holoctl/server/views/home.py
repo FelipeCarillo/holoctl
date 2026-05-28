@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from .workspace_summary import workspace_summary
+
 
 def home_context(projects: list[dict]) -> dict:
     """Shape the project list for the home grid template."""
+    summary = workspace_summary(projects)
     if not projects:
-        return {"is_empty": True, "cards": []}
+        return {"is_empty": True, "cards": [], **summary}
     cards = []
     for p in projects:
         counts = p.get("counts") or {}
@@ -25,4 +28,4 @@ def home_context(projects: list[dict]) -> dict:
             "backlog_pct": f"{backlog / total * 100:.0f}",
             "targets": list(p.get("targets") or []),
         })
-    return {"is_empty": False, "cards": cards}
+    return {"is_empty": False, "cards": cards, **summary}

@@ -2225,3 +2225,207 @@ class TestMetricsCss:
         r = client.get("/static/css/metrics.css")
         assert r.status_code == 200
         assert ".metrics-card" in r.text
+
+
+# ── Workspace metrics rollup: GET /metrics ────────────────────────────────────
+
+
+class TestWorkspaceMetricsRoute:
+    """HTTP tests for GET /metrics (workspace-level rollup)."""
+
+    def test_returns_200(self, client: TestClient):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+
+    def test_page_has_throughput_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-throughput" in r.text
+
+    def test_page_has_cycle_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-cycle" in r.text
+
+    def test_page_has_wip_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-wip" in r.text
+
+    def test_page_has_by_agent_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-by-agent" in r.text
+
+    def test_page_has_by_workspace_project_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-by-workspace-project" in r.text
+
+    def test_empty_workspace_renders_gracefully(self, client: TestClient):
+        """Empty workspace (no tickets) must render without error — not 500."""
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-empty" in r.text
+
+    def test_breadcrumb_links_to_home(self, client: TestClient):
+        r = client.get("/metrics")
+        assert 'href="/"' in r.text
+        assert "Workspace metrics" in r.text
+
+    def test_no_project_tabs_on_workspace_metrics(self, client: TestClient):
+        """Workspace metrics page is not project-scoped; no per-project tabs."""
+        r = client.get("/metrics")
+        assert 'class="tabs"' not in r.text
+
+    def test_workspace_with_done_tickets_shows_cycle_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=3)
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-count-chip" in r.text or "metrics-stat-value" in r.text
+
+    def test_by_workspace_project_shows_alias_link(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """By-workspace-project table links each alias to its project metrics page."""
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer", "status": "doing"})
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert alias in r.text
+        assert f"/project/{alias}/metrics" in r.text
+
+
+# ── Workspace summary band on home page ──────────────────────────────────────
+
+
+class TestWorkspaceSummaryBand:
+    """Home page must show the compact 3-tile summary band + CTA."""
+
+    def test_band_present_on_home(self, client: TestClient):
+        r = client.get("/")
+        assert r.status_code == 200
+        assert 'class="ws-summary-band"' in r.text
+
+    def test_band_has_three_tiles(self, client: TestClient):
+        r = client.get("/")
+        assert r.text.count('class="ws-summary-tile') >= 3
+
+    def test_band_has_cta_link_to_metrics(self, client: TestClient):
+        r = client.get("/")
+        assert 'href="/metrics"' in r.text
+        assert "workspace metrics" in r.text.lower()
+
+    def test_band_shows_wip_count(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A", "agent": "developer", "status": "doing"})
+        b.add({"title": "B", "agent": "developer", "status": "review"})
+        r = client.get("/")
+        assert r.status_code == 200
+        # WIP tile value "2" should appear somewhere in the band.
+        assert "2" in r.text
+
+    def test_tile_labels_present(self, client: TestClient):
+        r = client.get("/")
+        assert "Total WIP" in r.text
+        assert "Done last 7d" in r.text
+        assert "Stale" in r.text
+
+    def test_stale_tile_has_warn_class_when_stale(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """When stale_count > 0 the stale tile carries the warn modifier."""
+        from datetime import datetime, timedelta, timezone
+        import json
+        b = Board(workspace, workspace_config)
+        t = b.add({"title": "Old", "agent": "developer", "status": "doing"})
+        # Force the updated timestamp to be 10 days ago so wip() flags it stale.
+        stale_ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        for tk in data["tickets"]:
+            if tk["id"] == t["id"]:
+                tk["updated"] = stale_ts
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        r = client.get("/")
+        assert r.status_code == 200
+        assert "ws-tile-warn" in r.text
+
+    def test_summary_band_css_in_bundle(self, dashboard_css: str):
+        assert ".ws-summary-band" in dashboard_css
+        assert ".ws-summary-tile" in dashboard_css
+        assert ".ws-summary-cta" in dashboard_css
+
+
+# ── workspace_summary shaper unit tests ──────────────────────────────────────
+
+
+class TestWorkspaceSummaryShaper:
+    """Unit tests for the workspace_summary() view shaper."""
+
+    def test_empty_projects_returns_zeros(self):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        result = workspace_summary([])
+        assert result == {"total_wip": 0, "last7_throughput": 0, "stale_count": 0}
+
+    def test_total_wip_sums_doing_and_review(self):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        projects = [
+            {"counts": {"doing": 2, "review": 1, "backlog": 5, "done": 3}},
+            {"counts": {"doing": 1, "review": 0, "backlog": 2, "done": 1}},
+        ]
+        result = workspace_summary(projects)
+        assert result["total_wip"] == 4  # 2+1 + 1+0
+
+    def test_missing_counts_defaults_to_zero(self):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        projects = [{"counts": {}}]
+        result = workspace_summary(projects)
+        assert result["total_wip"] == 0
+
+    def test_no_tickets_key_gives_zero_throughput_and_stale(self):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        # Projects without pre-loaded _tickets → throughput and stale fall back to 0.
+        projects = [{"counts": {"doing": 3}}]
+        result = workspace_summary(projects)
+        assert result["last7_throughput"] == 0
+        assert result["stale_count"] == 0
+
+    def test_last7_throughput_with_tickets(self, workspace: Path, workspace_config: dict):
+        """Projects enriched with _tickets give correct last7 count."""
+        from holoctl.server.views.workspace_summary import workspace_summary
+        b = Board(workspace, workspace_config)
+        alias = workspace.name
+        # Create a done ticket with completed = now (within last 7 days).
+        t = _make_done_ticket(alias, b, created_offset_days=5, completed_offset_days=1)
+        tickets = b.ls()
+        projects = [{"counts": {"doing": 0}, "_tickets": tickets}]
+        result = workspace_summary(projects)
+        assert result["last7_throughput"] >= 1
+
+    def test_stale_count_with_stale_ticket(
+        self, workspace: Path, workspace_config: dict
+    ):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        from datetime import datetime, timedelta, timezone
+        import json
+
+        b = Board(workspace, workspace_config)
+        t = b.add({"title": "Stale", "agent": "developer", "status": "doing"})
+        stale_ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        for tk in data["tickets"]:
+            if tk["id"] == t["id"]:
+                tk["updated"] = stale_ts
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        tickets = b.ls()
+        projects = [{"counts": {"doing": 1}, "_tickets": tickets}]
+        result = workspace_summary(projects)
+        assert result["stale_count"] >= 1
