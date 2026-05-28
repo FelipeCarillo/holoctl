@@ -1,7 +1,6 @@
 """Tests for `hctl handoff` — end-of-session persistence."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest

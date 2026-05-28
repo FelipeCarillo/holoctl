@@ -74,7 +74,7 @@ def init_cmd(
     config["project"]["prefix"] = project_prefix
     config["targets"] = target_list
 
-    console.print(f"\n  [bold]holoctl init[/bold]\n")
+    console.print("\n  [bold]holoctl init[/bold]\n")
     console.print(f"  Project:  [green]{project_name}[/green]")
     console.print(f"  Prefix:   [green]{project_prefix}[/green] (tickets: {project_prefix}-001, {project_prefix}-002, ...)")
     console.print(f"  Targets:  [green]{', '.join(target_list)}[/green]")
@@ -122,8 +122,8 @@ def init_cmd(
     (cwd / ".holoctl" / "activity.jsonl").write_text("", encoding="utf-8")
 
     console.print(
-        f"  [green]✓ .holoctl/ initialized[/green] "
-        f"[dim](neutral — only `boardmaster` active; library loaded)[/dim]\n"
+        "  [green]✓ .holoctl/ initialized[/green] "
+        "[dim](neutral — only `boardmaster` active; library loaded)[/dim]\n"
     )
 
     if bare:
@@ -145,17 +145,17 @@ def init_cmd(
     console.print("")
     console.print("  Next steps:")
     console.print(
-        f"    [dim]$[/dim] hctl agent list                     "
-        f"[dim]# see latent personas you can activate[/dim]"
+        "    [dim]$[/dim] hctl agent list                     "
+        "[dim]# see latent personas you can activate[/dim]"
     )
     console.print(
-        f"    [dim]$[/dim] hctl agent add developer            "
-        f"[dim]# example: activate the code-implementation persona[/dim]"
+        "    [dim]$[/dim] hctl agent add developer            "
+        "[dim]# example: activate the code-implementation persona[/dim]"
     )
     console.print(
-        f"    [dim]$[/dim] hctl board add '{{\"title\":\"My first ticket\",\"agent\":\"boardmaster\"}}'"
+        "    [dim]$[/dim] hctl board add '{\"title\":\"My first ticket\",\"agent\":\"boardmaster\"}'"
     )
-    console.print(f"    [dim]$[/dim] hctl serve")
+    console.print("    [dim]$[/dim] hctl serve")
     console.print("")
 
 
@@ -163,10 +163,11 @@ def _resync_existing(cwd: Path, config: dict, *, skip_compile: bool, bare: bool)
     """Re-run sync+compile on an existing workspace at the same version.
 
     Non-destructive: user-owned files (tickets, hand-edited agents/context) are
-    preserved; only template-managed files are refreshed via the same allow-list
-    `cli.sync_._SYNC_TARGETS` uses.
+    preserved; only template-managed files are refreshed via the shared
+    `lib.templates.SYNC_TARGETS` allow-list (plus the always-active boardmaster
+    persona).
     """
-    from ..lib.templates import get_templates
+    from ..lib.templates import SYNC_TARGETS, get_templates
     templates = get_templates(config)
 
     # Re-emit memory seed/.gitignore (idempotent, non-destructive).
@@ -176,22 +177,11 @@ def _resync_existing(cwd: Path, config: dict, *, skip_compile: bool, bare: bool)
     mem.ensure_gitignore()
     _ensure_workspace_gitignore(cwd)
 
-    # Materialize template-managed files but never overwrite user content.
-    # The conservative default: only write essentials (matches what
-    # cli.upgrade_._sync writes), not full template set.
-    SYNC_TARGETS = {
-        ".holoctl/commands/status.md",
-        ".holoctl/commands/ticket.md",
-        ".holoctl/commands/board.md",
-        ".holoctl/commands/sprint.md",
-        ".holoctl/commands/decision.md",
-        ".holoctl/commands/close.md",
-        ".holoctl/board/WORKFLOW.md",
-        ".holoctl/board/tickets/_template.md",
-        ".holoctl/agents/boardmaster.md",
-    }
+    # Materialize template-managed files but never overwrite user content:
+    # the shared allow-list + the always-active boardmaster persona.
+    refresh = set(SYNC_TARGETS) | {".holoctl/agents/boardmaster.md"}
     for rel_path, content in templates.items():
-        if rel_path not in SYNC_TARGETS:
+        if rel_path not in refresh:
             continue
         path = cwd / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)

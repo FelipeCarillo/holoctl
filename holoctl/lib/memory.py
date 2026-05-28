@@ -21,13 +21,8 @@ translate it to native primitives:
 
   - Claude Code: skill description (lazy), CLAUDE.md import (always_on),
     skill ``paths:`` (glob).
-  - Cursor: ``.cursor/rules/<name>.mdc`` with ``alwaysApply: true``,
-    ``description:``, or ``globs:``.
   - Copilot: ``.github/instructions/<name>.instructions.md`` with
     ``applyTo:`` (glob), or section in copilot-instructions.md (always_on).
-  - Windsurf: ``.windsurf/rules/<name>.md`` with ``trigger: always_on |
-    model_decision | glob``.
-  - Devin: best-effort (rules-style instructions).
 
 Memory is **not auto-edited**. Writes go through ``hctl memory add`` (or the
 curator in 0.14, after user approval of a ``meta:curate`` ticket).

@@ -4,7 +4,6 @@ import json
 import re
 from pathlib import Path
 
-import pytest
 
 from holoctl.lib.config import (
     _apply_provider_defaults,

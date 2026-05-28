@@ -7,7 +7,6 @@ from ._console import console
 
 from ..lib.config import find_project_root, load_config
 from ..lib.curator import (
-    CuratorState,
     apply_curator_action,
     run_curator,
     silence_pattern,
@@ -94,10 +93,10 @@ def curate_show():
             f"  [dim]action={action}  rule={rule}  pattern={pattern_id}[/dim]"
         )
     console.print(
-        f"\n  [dim]Approve: `hctl board move <ID> done` "
-        f"(boardmaster auto-executes the action).[/dim]\n"
-        f"  [dim]Reject:  `hctl board move <ID> cancelled` or "
-        f"`hctl curate silence <pattern_id>`.[/dim]"
+        "\n  [dim]Approve: `hctl board move <ID> done` "
+        "(boardmaster auto-executes the action).[/dim]\n"
+        "  [dim]Reject:  `hctl board move <ID> cancelled` or "
+        "`hctl curate silence <pattern_id>`.[/dim]"
     )
 
 

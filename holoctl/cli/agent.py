@@ -371,7 +371,7 @@ def _detect_docs_signals(root: Path) -> list[str]:
     docs = root / "docs"
     if docs.is_dir():
         md_count = 0
-        for f in docs.rglob("*.md"):
+        for _ in docs.rglob("*.md"):
             md_count += 1
             if md_count > 10:
                 break

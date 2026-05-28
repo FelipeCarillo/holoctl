@@ -137,5 +137,5 @@ def repo_info(
     if git.get("remote"):
         console.print(f"  Remote:  [dim]{git['remote']}[/dim]")
     if not check_dirty:
-        console.print(f"\n  [dim](dirty / last commit hidden — set [bold]git.checkDirty[/bold] in config or pass [bold]--check-dirty[/bold])[/dim]")
+        console.print("\n  [dim](dirty / last commit hidden — set [bold]git.checkDirty[/bold] in config or pass [bold]--check-dirty[/bold])[/dim]")
     console.print("")

@@ -26,7 +26,8 @@ def list_library_agents() -> list[str]:
     try:
         from importlib.resources import files as _files
         d = _files("holoctl") / "templates" / "agents"
-        names = [p.stem for p in d.iterdir() if p.name.endswith(".md")]
+        # `importlib.resources` yields Traversable (no `.stem`); derive it from name.
+        names = [Path(p.name).stem for p in d.iterdir() if p.name.endswith(".md")]
         if names:
             return sorted(names)
     except (FileNotFoundError, ModuleNotFoundError, AttributeError, NotADirectoryError):

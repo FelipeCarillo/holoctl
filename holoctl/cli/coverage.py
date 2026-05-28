@@ -24,18 +24,18 @@ app = typer.Typer()
 # (source rel path under .holoctl/, label) → which targets consume it.
 # This is a static catalog of expected coverage, not introspected from the
 # compilers — kept in sync manually but small enough to be obvious.
-_COVERAGE = {
+_COVERAGE: dict[str, dict[str, str | None]] = {
     # Source path under .holoctl/  : { target: rel_path under repo root | None }
     "instructions.md": {
         "claude":  "CLAUDE.md",
         "copilot": ".github/copilot-instructions.md",
-        "codex":   ".codex/AGENTS.md",
+        "codex":   ".codex/AGENTS.override.md",
         "agents":  "AGENTS.md (Objective+Architecture sections)",
     },
     "agents/*.md": {
         "claude":  ".claude/agents/<name>.md",
         "copilot": None,
-        "codex":   None,
+        "codex":   ".codex/AGENTS.override.md (summary)",
         "agents":  None,
     },
     "commands/*.md": {
@@ -53,7 +53,7 @@ _COVERAGE = {
     "memory/topics/*.md": {
         "claude":  ".claude/skills/holoctl-memory-<topic>/SKILL.md",
         "copilot": ".github/instructions/holoctl-memory-<topic>.instructions.md",
-        "codex":   None,
+        "codex":   ".codex/AGENTS.override.md (index + list)",
         "agents":  None,
     },
     "hooks/*.json": {
@@ -83,7 +83,7 @@ _COVERAGE = {
     "(MCP servers, defined in CLI/server)": {
         "claude":  ".claude/settings.json:mcpServers",
         "copilot": ".vscode/mcp.json",
-        "codex":   "~/.codex/config.toml (user-level)",
+        "codex":   ".codex/config.toml",
         "agents":  None,
     },
 }
@@ -93,7 +93,7 @@ _COVERAGE = {
 def coverage_cmd(
     target_filter: Optional[str] = typer.Option(
         None, "--target", "-t",
-        help="Only show coverage for one target (claude, cursor, etc).",
+        help="Only show coverage for one target (agents, claude, copilot, codex).",
     ),
     only_present: bool = typer.Option(
         False, "--only-present",
@@ -132,9 +132,8 @@ def coverage_cmd(
             if dest is None:
                 cells.append("[dim]—[/dim]".ljust(12))
             else:
-                short = dest.replace(".claude/", ".cl/").replace(".cursor/", ".cu/")
-                short = short.replace(".windsurf/", ".ws/").replace(".github/", ".gh/")
-                short = short.replace(".devin/", ".dv/").replace(".vscode/", ".vs/")
+                short = dest.replace(".claude/", ".cl/").replace(".github/", ".gh/")
+                short = short.replace(".codex/", ".cx/").replace(".vscode/", ".vs/")
                 cells.append(f"[green]✓[/green] {short[:10]}")
         row += " | ".join(cells)
         console.print(row)

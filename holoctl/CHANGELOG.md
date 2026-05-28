@@ -2,6 +2,40 @@
 
 All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.19.0] — 2026-05-27
+
+Post-0.18 audit: correctness + drift fixes (Phase A) plus structural
+hardening (Phase B). The headline is a set of **previously-broken Claude
+hooks** that now work; the hand-edit guard now protects every target; and
+the web dashboard moved to an optional extra so the core install stays lean.
+
+### Changed (packaging — action may be needed)
+
+- **The dashboard (`hctl serve`) moved to an optional `[dashboard]` extra.** `fastapi`, `uvicorn`, and `jinja2` are no longer core dependencies, so a CLI/MCP-only install (the common case) no longer pulls the web stack (fastapi → pydantic → starlette). Install the dashboard with `pip install 'holoctl[dashboard]'` (or `uv tool install 'holoctl[dashboard]'`); `hctl serve` prints this hint and exits non-zero if the extra is absent. The CLI, board, compile, and MCP server (`hctl serve --mcp`) are unaffected. A guard test locks the invariant that importing the CLI never pulls the web stack.
+
+### Fixed
+
+- **Claude hooks were broken on every session.** The compiled `.claude/settings.json` invoked two flags that don't exist: the `Stop` hook ran `handoff --quiet --auto` and the `PreToolUse` hook ran `journal record … --deny-glob …`, both of which made typer exit with a usage error. Switched to the real generalist commands (`handoff --quiet`, `journal record write_attempt … --quiet`); direct writes to derived state were already blocked by `permissions.deny`, so `--deny-glob` was redundant on top of being invalid. New guard `test_hooks_emit.py::test_hook_commands_are_valid_cli_invocations` runs each baked hook command and fails on any usage error.
+- **Hooks + MCP config baked a machine-specific absolute path.** `_resolve_hctl_bin()` (in `compiler/hooks_emit.py` and `compiler/mcp_emit.py`) resolved `shutil.which("hctl")`, so a committed `.claude/settings.json` / `.vscode/mcp.json` / `.codex/config.toml` broke the moment it was used on another machine, user, or assistant. Now emits the portable `hctl` command (PATH-resolved); set `HOLOCTL_BIN` to override.
+- **Recompile clobbered hand-edited target files.** The header-aware hand-edit guard that protected `CLAUDE.md` now also protects `AGENTS.md`, `.github/copilot-instructions.md`, and `.codex/AGENTS.override.md`: a hand-edited copy (no holoctl header) is preserved instead of overwritten, and `--force` still overwrites. Previously only the Claude target honored this — the others wrote blindly, contradicting the "never overwrite hand-edited configs" rule holoctl itself ships.
+- **`/spec` and `/agent-new` went stale after upgrades.** The sync allow-list was duplicated across `cli/sync_.py`, `cli/init_.py`, and `cli/upgrade_.py`, and all three copies omitted `spec.md` and `agent-new.md` — so the two flagship 0.17 commands were seeded once at `init` but never refreshed. The list is now a single shared constant, `lib/templates.SYNC_TARGETS`, that includes them (guarded by `test_sync_targets.py`).
+- **`hctl coverage` pointed at the wrong Codex path.** The matrix mapped `instructions.md` → codex `.codex/AGENTS.md` and MCP → `~/.codex/config.toml (user-level)`, while the compiler emits `.codex/AGENTS.override.md` and a project-level `.codex/config.toml`. Corrected, and `test_target_consistency.py` now validates `_COVERAGE`'s concrete path *values* against the files compilers actually emit (it previously checked only the column set).
+- **MCP server replied to JSON-RPC notifications.** `server/mcp.py` returned an error response for any unknown method, including notifications (no `id`) — a protocol violation. Unknown notifications now return nothing, and a `ping` keep-alive handler was added.
+- **`board_set` / `board_batch_set` via MCP crashed on non-string values.** A JSON client sending `value: ["a","b"]` (or a bool/null) hit `_parse_set_value` doing `value.startswith(...)` on a non-string. The MCP layer now coerces non-strings with `json.dumps`, which maps exactly onto the literals Board already understands (`null` / `true` / `[json,array]`), so array/bool/null values round-trip correctly.
+- **The board activity log appended without a lock.** `.holoctl/activity.jsonl` (board mutations, read by the dashboard) was a plain append while the journal used OS-level locking — a corruption risk under concurrent assistants. Both now share `lib.jsonl.append_jsonl_line` (fcntl/msvcrt). The two logs stay separate on purpose (different schema + consumer); only the lock is shared.
+
+### Added
+
+- **`hctl doctor --compile-drift`.** Detects compiled outputs (`CLAUDE.md`, `AGENTS.md`, …) that are stale vs their `.holoctl/` source — i.e. you edited the source but forgot to recompile. It compiles into a throwaway copy of the workspace and byte-compares each generated file; hand-edited outputs (no holoctl header) are reported as such, not as drift, and merge-based configs (`settings.json` / `mcp.json` / `config.toml`) are skipped. Exits non-zero when anything is stale; the first output line (`holoctl: compile-drift` / `ok`) is router-friendly.
+- **Codex parity — memory + personas in `.codex/AGENTS.override.md`.** Codex has no skills/subagent/lazy-memory surface like Claude's `.claude/` tree, so it previously got strictly less context. The override now inlines the always-on memory index + a list of lazy topics (read on demand from `.holoctl/memory/topics/`) and a summary of the active personas. Sections are omitted when their source is absent (empty in → empty out), and the output stays idempotent.
+- **Linting + type-checking in CI (`ruff` + `mypy`).** A focused pyflakes + bugbear ruff set (`[tool.ruff]`, ignoring typer's required call-in-default pattern) plus a lenient mypy pass over the core (`holoctl/lib`, `holoctl/cli`) both run in CI. Existing dead-code / bad-f-string smells were cleaned up, two redundant `except (..., Exception)` handlers collapsed, and ~14 real type gaps fixed (including the `board_set` crash above). The FastAPI dashboard is intentionally out of mypy scope (dynamically typed, reachable only via a lazy import).
+
+### Changed
+
+- **`lib/board.py` decomposition (internal, no behavior change).** The 1000-LOC god-module shed two distinct responsibilities into focused, independently-testable modules: ASCII tree rendering → `lib/board_tree.py` (`render_tree`, a pure function), and ticket-body assembly → `lib/board_body.py` (`build_body`). `Board.tree` is now a thin wrapper. Covered by new `test_board_tree.py` plus the existing board suite.
+- **MCP stdio conformance test.** `test_mcp_stdio.py` drives the real `hctl serve --mcp` subprocess through a full initialize → list → call → ping handshake and asserts notifications get no response line (the in-process tests couldn't cover the cold-start stdio loop).
+- **Docs/drift sweep.** `ARCHITECTURE.md` corrected (it claimed `setup-global` was removed and that nothing is written to `$HOME`, and its layout / compile-pipeline / ticket-body / static-asset sections were stale); the generated `AGENTS.md` no longer cites the retired `.cursor/rules/`; stale docstrings (`memory.py`, `journal.py`, `server/mcp.py`) and MCP tool descriptions ("stubbed in 0.13") refreshed; `hctl coverage` help + glyphs no longer reference retired targets; `CONTRIBUTING.md` points at the new shared `SYNC_TARGETS`.
+
 ## [0.18.0] — 2026-05-18
 
 Target slimdown + first-class Codex support. Holoctl now ships four

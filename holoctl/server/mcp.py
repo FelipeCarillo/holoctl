@@ -2,7 +2,7 @@
 
 Implements just enough of the JSON-RPC over stdio protocol for the
 holoctl tools to be discoverable and callable from any MCP-aware client
-(Claude Code, Cursor, Copilot, Windsurf, Devin).
+(Claude Code, Copilot, Codex, and other MCP-aware assistants).
 
 We don't depend on the `mcp` Python package because:
   1. Adds a 5MB+ install footprint for ~150 lines of protocol logic.
@@ -34,11 +34,10 @@ parse and render natively.
 from __future__ import annotations
 
 import json
-import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "holoctl"
@@ -59,6 +58,19 @@ def _project_root() -> Path:
             "started from inside a holoctl-managed workspace."
         )
     return root
+
+
+def _coerce_set_value(value: Any) -> str:
+    """Normalize a board_set/batch_set value to the string form Board expects.
+
+    Board.set parses the string via `_parse_set_value` (which understands
+    `null` / `true` / `false` / `[json,array]`). JSON clients may send a real
+    None / bool / list / number, so non-strings are json-dumped — which maps
+    cleanly onto exactly those literals (None→`null`, True→`true`, [..]→array).
+    """
+    if isinstance(value, str):
+        return value
+    return json.dumps(value)
 
 
 def _tool_board_list(args: dict) -> Any:
@@ -176,7 +188,7 @@ def _tool_board_batch_set(args: dict) -> Any:
     value = args.get("value")
     if not ids or not field:
         raise ValueError("missing required args: ids, field")
-    return board.batch_set(list(ids), field, value)
+    return board.batch_set(list(ids), field, _coerce_set_value(value))
 
 
 def _tool_board_batch_delete(args: dict) -> Any:
@@ -220,7 +232,7 @@ def _tool_board_set(args: dict) -> Any:
     value = args.get("value")
     if not tid or not field:
         raise ValueError("missing required args: id, field")
-    return board.set(tid, field, value)
+    return board.set(tid, field, _coerce_set_value(value))
 
 
 def _tool_memory_list_topics(args: dict) -> Any:
@@ -820,14 +832,14 @@ TOOLS: list[dict] = [
     },
     {
         "name": "holoctl.curate_suggestions",
-        "description": "Get current curator suggestions (stubbed in 0.13; engine in 0.14).",
+        "description": "Get current curator suggestions (open meta:curate tickets on the board).",
         "schema": {"type": "object", "properties": {}},
         "handler": _tool_curate_suggestions,
         "write": False,
     },
     {
         "name": "holoctl.curate_silence",
-        "description": "Suppress a curator pattern for 14 days (stubbed in 0.13).",
+        "description": "Suppress a curator pattern for 14 days.",
         "schema": {
             "type": "object",
             "properties": {"pattern_id": {"type": "string"}},
@@ -892,6 +904,10 @@ def handle(message: dict) -> dict | None:
     if method == "notifications/initialized":
         return None
 
+    if method == "ping":
+        # MCP keep-alive. Spec: empty result object.
+        return _make_response(req_id, {})
+
     if method == "tools/list":
         return _make_response(req_id, {
             "tools": [
@@ -922,6 +938,11 @@ def handle(message: dict) -> dict | None:
     if method == "shutdown":
         return _make_response(req_id, {})
 
+    # Unknown method. A JSON-RPC notification (no `id`) must never receive a
+    # response — returning an error here would violate the protocol and can
+    # confuse strict clients that send `notifications/cancelled` et al.
+    if req_id is None:
+        return None
     return _make_error(req_id, -32601, f"Method not found: {method}")
 
 

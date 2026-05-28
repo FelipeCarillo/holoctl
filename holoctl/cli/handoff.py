@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -20,7 +19,7 @@ from typing import Optional
 import typer
 from ._console import console
 
-from ..lib.config import find_project_root, load_config
+from ..lib.config import find_project_root
 from ..lib.journal import Journal
 from ..lib.memory import Memory
 
@@ -48,7 +47,6 @@ def handoff_cmd(
         console.print("[red]No .holoctl/ found.[/red]")
         raise typer.Exit(1)
 
-    config = load_config(root)
     j = Journal(root)
     mem = Memory(root)
 
@@ -98,7 +96,7 @@ def handoff_cmd(
             f"[dim]({duration}, {tool_count} events, "
             f"{len(files_changed)} files)[/dim]"
         )
-        console.print(f"  [dim]→ .holoctl/memory/topics/session-trail.md[/dim]")
+        console.print("  [dim]→ .holoctl/memory/topics/session-trail.md[/dim]")
 
 
 def _append_session_trail(mem: Memory, line: str) -> None:

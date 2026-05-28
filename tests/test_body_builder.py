@@ -1,7 +1,7 @@
-"""Tests for holoctl.lib.board._build_body — structured ticket body assembly."""
+"""Tests for holoctl.lib.board_body.build_body — structured ticket body assembly."""
 from __future__ import annotations
 
-from holoctl.lib.board import _build_body
+from holoctl.lib.board_body import build_body as _build_body
 
 
 def test_returns_none_for_empty_patch():

@@ -3,6 +3,26 @@ from __future__ import annotations
 from .agent_library import materialize_agent
 
 
+# Template-managed, non-agent files refreshed by `hctl sync`, `hctl upgrade`,
+# and re-`hctl init`. Single source of truth: the three call sites import this
+# so a newly added template file can't drift out of one of them. (That drift is
+# exactly why `/spec` and `/agent-new` used to go stale after an upgrade — they
+# were produced by get_templates() but missing from every sync list.) Agent
+# personas are synced separately: opt-in on `sync --agents`, always on `upgrade`.
+SYNC_TARGETS = frozenset({
+    ".holoctl/commands/status.md",
+    ".holoctl/commands/ticket.md",
+    ".holoctl/commands/spec.md",
+    ".holoctl/commands/agent-new.md",
+    ".holoctl/commands/board.md",
+    ".holoctl/commands/sprint.md",
+    ".holoctl/commands/decision.md",
+    ".holoctl/commands/close.md",
+    ".holoctl/board/WORKFLOW.md",
+    ".holoctl/board/tickets/_template.md",
+})
+
+
 def get_templates(config: dict) -> dict[str, str]:
     """Return the dict of (rel_path → content) materialized at ``hctl init``.
 
@@ -307,7 +327,7 @@ Any `doing` with `updated` >5d ago → prefix `⚠ stalled`.
 
 
 def _cmd_sprint_md(cli: str) -> str:
-    return f"""---
+    return """---
 name: sprint
 description: "Plan or review a sprint via the board MCP/CLI"
 arguments: "[plan|review]"
@@ -318,17 +338,17 @@ allowed-tools: [Bash, mcp__holoctl__board_list, mcp__holoctl__board_set]
 
 ## No argument (status of current sprint)
 
-`board_list({{"status":"doing"}})` + `board_list({{"status":"review"}})`. Group by `sprint`. Per sprint: `X/Y completed (Z%)`. Flag tickets with undone `depends`.
+`board_list({"status":"doing"})` + `board_list({"status":"review"})`. Group by `sprint`. Per sprint: `X/Y completed (Z%)`. Flag tickets with undone `depends`.
 
 ## `plan`
 
-1. `board_list({{"status":"backlog"}})`.
+1. `board_list({"status":"backlog"})`.
 2. Suggest selection by: dependencies done first, p0 > p1 > p2 > p3, capacity.
-3. After user approval: `board_set({{"id":"<ID>","field":"sprint","value":"<name>"}})` per ticket.
+3. After user approval: `board_set({"id":"<ID>","field":"sprint","value":"<name>"})` per ticket.
 
 ## `review`
 
-1. `board_list({{"sprint":"<current>"}})`.
+1. `board_list({"sprint":"<current>"})`.
 2. Report: completed (with dates), carried over (with reasons), velocity.
 3. Suggest next-sprint adjustments.
 """
@@ -377,7 +397,6 @@ status: accepted
 
 
 def _cmd_close_md(cli: str, p: dict) -> str:
-    cli_bin = cli.split()[0] if cli else "hctl"
     return f"""---
 name: close
 description: "End-of-session persistence — verify open tickets reflect actual work via git diff + board MCP, then ready for /clear"

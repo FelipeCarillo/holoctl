@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Body
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..lib.config import find_project_root, load_config
@@ -107,7 +107,6 @@ def _get_projects(*, with_git: bool = True) -> list[dict]:
             )
             enriched_repos = []
             for r in discovered:
-                git = r.get("git") or {"isGit": False}
                 ticket_count = sum(1 for t in all_tickets if r["name"] in (t.get("projects") or []))
                 enriched_repos.append({**r, "ticketCount": ticket_count})
 

@@ -1,10 +1,8 @@
 """Detect N edits in the same glob across M sessions → propose path-scoped rule."""
 from __future__ import annotations
 
-import os
 import re
 from collections import Counter
-from pathlib import PurePosixPath
 
 from ..curator import CuratorContext, Suggestion, hash_pattern
 

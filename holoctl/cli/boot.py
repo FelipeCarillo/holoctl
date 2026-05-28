@@ -19,7 +19,6 @@ away (`hctl board get`, `hctl memory get <topic>`, `hctl curate show`).
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -37,7 +36,7 @@ app = typer.Typer()
 def boot_cmd(
     target: Optional[str] = typer.Option(
         None, "--target",
-        help="Hint of which assistant is calling (claude|cursor|...). Recorded in journal.",
+        help="Hint of which assistant is calling (claude|copilot|codex). Recorded in journal.",
     ),
     cwd: Optional[str] = typer.Option(
         None, "--cwd",

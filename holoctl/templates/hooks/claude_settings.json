@@ -22,8 +22,8 @@
       {
         "type": "command",
         "matcher": "Edit|Write",
-        "command": "{{HCTL_BIN}} journal record write_attempt --source claude --stdin --quiet --deny-glob '.holoctl/board/index.json,.holoctl/memory/MEMORY.md,.holoctl/activity.jsonl'",
-        "description": "Block direct writes to derived state — force CLI usage"
+        "command": "{{HCTL_BIN}} journal record write_attempt --source claude --stdin --quiet",
+        "description": "Record write attempts. Direct writes to derived state are blocked by permissions.deny below."
       }
     ],
     "Stop": [
@@ -33,8 +33,8 @@
       },
       {
         "type": "command",
-        "command": "{{HCTL_BIN}} handoff --quiet --auto",
-        "description": "Persist session-trail line on every Stop. --auto skips if session was trivial."
+        "command": "{{HCTL_BIN}} handoff --quiet",
+        "description": "Persist session-trail line on every Stop."
       }
     ]
   },

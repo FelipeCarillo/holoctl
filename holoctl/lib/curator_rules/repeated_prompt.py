@@ -13,7 +13,6 @@ recall on paraphrase.
 from __future__ import annotations
 
 import re
-from collections import Counter
 
 from ..curator import CuratorContext, Suggestion, hash_pattern
 
@@ -72,7 +71,9 @@ def _cluster(prompts: list[str]) -> list[tuple[str, int]]:
     """
     try:
         return _cluster_embeddings(prompts)
-    except (ImportError, RuntimeError, Exception):  # noqa: BLE001
+    except Exception:
+        # fastembed missing (ImportError) or any model/runtime error → fall back
+        # to the dependency-free token-hash clustering. Same Suggestion shape.
         return _cluster_hash(prompts)
 
 
@@ -96,7 +97,7 @@ def _cluster_embeddings(prompts: list[str]) -> list[tuple[str, int]]:
     # Greedy clustering: each prompt joins the first cluster whose centroid
     # has cosine >= threshold; otherwise starts a new cluster.
     clusters: list[dict] = []
-    for prompt, v in zip(prompts, vectors):
+    for prompt, v in zip(prompts, vectors, strict=False):
         joined = False
         for c in clusters:
             if _cos(v, c["centroid"]) >= SIMILARITY_THRESHOLD:
@@ -117,7 +118,7 @@ def _tokenize(s: str) -> list[str]:
 
 def _cos(a, b) -> float:
     import math
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(x * x for x in b))
     if na == 0 or nb == 0:

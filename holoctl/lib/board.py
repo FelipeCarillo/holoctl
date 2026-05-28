@@ -4,6 +4,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .board_body import build_body
+from .board_tree import render_tree
 from .markdown import parse_frontmatter, serialize_frontmatter
 
 
@@ -64,7 +66,7 @@ class Board:
             str_val = _yaml_format(val)
             content = re.sub(
                 rf"^({re.escape(key)}:\s*)(.*)$",
-                lambda m, v=str_val: f"{m.group(1)}{v}",
+                lambda m, v=str_val: f"{m.group(1)}{v}",  # type: ignore[misc]
                 content,
                 flags=re.MULTILINE,
             )
@@ -206,83 +208,11 @@ class Board:
         """
         data = self._load()
         all_tickets: list[dict] = data["tickets"]
-        by_id: dict[str, dict] = {t["id"]: t for t in all_tickets}
-
-        # 1. Apply filters to compute the "matched" set.
-        matched_set: set[str]
         if filters:
-            matched_set = {t["id"] for t in self.ls(filters)}
+            matched_ids = {t["id"] for t in self.ls(filters)}
         else:
-            matched_set = {t["id"] for t in all_tickets}
-
-        # 2. Expand matched set with every ancestor — keeps the tree readable.
-        keep: set[str] = set()
-        for tid in matched_set:
-            cursor: str | None = tid
-            depth_guard = 0
-            while cursor and depth_guard <= len(all_tickets):
-                if cursor in keep:
-                    break
-                keep.add(cursor)
-                cursor = (by_id.get(cursor) or {}).get("parent") or None
-                depth_guard += 1
-
-        # 3. Build the children adjacency, then DFS from roots, recording depth
-        #    and whether each ancestor was the last child of its parent (so
-        #    the renderer can decide between │ and a blank for padding).
-        kids: dict[str | None, list[str]] = {}
-        for t in all_tickets:
-            if t["id"] not in keep:
-                continue
-            p = t.get("parent") or None
-            # An item whose parent is outside `keep` is treated as a root
-            # in the rendered tree — otherwise we'd dangle it.
-            if p is not None and p not in keep:
-                p = None
-            kids.setdefault(p, []).append(t["id"])
-
-        # Sort children stably by id for deterministic output.
-        for v in kids.values():
-            v.sort()
-
-        if root is not None:
-            if root not in by_id:
-                raise KeyError(f"Ticket {root} not found")
-            roots = [root]
-        else:
-            roots = kids.get(None, [])
-
-        # `pipe_flags` carries one bool per ancestor level *above* the
-        # current node, in order from the outermost root down: True means
-        # that ancestor had more siblings after it (draw "│  " for the
-        # continuation column), False means it was the last child (draw
-        # "   "). The node itself contributes nothing to `pipe_flags`
-        # until we recurse into its children.
-        out: list[dict] = []
-
-        def _emit(tid: str, depth: int, pipe_flags: list[bool], is_last: bool) -> None:
-            pad = "".join("│  " if flag else "   " for flag in pipe_flags)
-            if depth == 0:
-                prefix = ""
-            else:
-                prefix = pad + ("└─ " if is_last else "├─ ")
-            out.append({"ticket": by_id[tid], "depth": depth, "prefix": prefix})
-            child_ids = kids.get(tid, [])
-            # For the children's prefix: append a column reflecting whether
-            # *this* node had a sibling after it. Roots don't add a column —
-            # the depth-0 row prints nothing in front of the title, so its
-            # children start at column 0 too.
-            if depth == 0:
-                next_flags = pipe_flags
-            else:
-                next_flags = pipe_flags + [not is_last]
-            for i, cid in enumerate(child_ids):
-                _emit(cid, depth + 1, next_flags, i == len(child_ids) - 1)
-
-        for i, rid in enumerate(roots):
-            _emit(rid, 0, [], i == len(roots) - 1)
-
-        return out
+            matched_ids = {t["id"] for t in all_tickets}
+        return render_tree(all_tickets, matched_ids, root)
 
     def children(self, parent_id: str) -> dict:
         """Return direct children of a work item plus aggregate progress.
@@ -430,7 +360,6 @@ class Board:
         # The agent must pass valid status / priority / agent names — no silent
         # coercion, so malformed tickets fail loud and the agent retries.
         statuses = self._config["board"]["statuses"]
-        priorities = self._config["board"]["priorities"]
         status = patch.get("status", statuses[0])
         priority = patch.get("priority") or "p2"
         self._validate_status(status)
@@ -521,7 +450,7 @@ class Board:
         data["meta"]["updated"] = now
         self._save(data)
 
-        body = _build_body(patch)
+        body = build_body(patch)
         self._create_ticket_md(ticket, body=body)
         _log_activity(self._root, {"type": "ticket.created", "ticket": ticket_id, "actor": "cli"})
 
@@ -790,7 +719,6 @@ class Board:
         # Pre-flight: validate every ticket through the same rules `add` uses,
         # without creating anything yet.
         statuses = self._config["board"]["statuses"]
-        priorities = self._config["board"]["priorities"]
         for i, m in enumerate(merged):
             if not (m.get("title") or "").strip():
                 raise ValueError(f"tickets[{i}]: title is required.")
@@ -896,7 +824,7 @@ class Board:
             "tickets": tickets,
         }
         self._save(index)
-        return {"ticketCount": len(tickets), "nextId": index["meta"]["nextId"]}
+        return {"ticketCount": len(tickets), "nextId": max_num + 1}
 
     def _create_ticket_md(self, ticket: dict, body: str | None = None) -> None:
         md_path = self._board_dir / ticket["file"]
@@ -943,58 +871,6 @@ class Board:
         md_path.write_text(serialize_frontmatter(frontmatter, body), encoding="utf-8")
 
 
-# Body sections rendered from structured patch fields. Order is the canonical
-# document order. Each entry: (preferred_key, legacy_key_or_None, header).
-_BODY_SECTIONS = (
-    ("context", "start", "Context"),       # `start` is legacy; merges into Context
-    ("out_of_scope", "outOfScope", "Out of scope"),
-    ("notes", "executionNotes", "Notes"),  # `executionNotes` legacy; lives as `notes` now
-)
-
-
-def _build_body(patch: dict) -> str | None:
-    """Assemble a ticket body from structured fields in the create patch.
-
-    If `patch["body"]` is set, it wins (raw markdown override). Otherwise:
-      - `acceptance` (preferred) or `goal` (legacy) → `# Acceptance — Definition of Done`
-      - `context` (preferred) — accepts content from legacy `start` merged in
-      - `out_of_scope` (preferred) or legacy `outOfScope`
-      - `notes` (preferred) or legacy `executionNotes`
-
-    Returns None when no structured/body fields are present, signalling to
-    the caller that it should fall back to the `_template.md` placeholder.
-    """
-    raw = patch.get("body")
-    if raw is not None and str(raw).strip():
-        return str(raw)
-
-    sections: list[str] = []
-
-    acceptance = patch.get("acceptance") or patch.get("goal")
-    if acceptance:
-        if isinstance(acceptance, str):
-            acceptance = [g.strip() for g in acceptance.split("\n") if g.strip()]
-        items = "\n".join(f"- [ ] {g}" for g in acceptance if str(g).strip())
-        if items:
-            sections.append(f"# Acceptance — Definition of Done\n\n{items}")
-
-    for preferred, legacy, header in _BODY_SECTIONS:
-        val = patch.get(preferred)
-        if not val and legacy:
-            val = patch.get(legacy)
-        # Legacy `start` content merges into `context` (M8 design)
-        if preferred == "context":
-            extra = patch.get("start")
-            if extra and val and str(val).strip() != str(extra).strip():
-                val = f"{str(val).strip()}\n\n{str(extra).strip()}"
-            elif extra and not val:
-                val = extra
-        if val and str(val).strip():
-            sections.append(f"# {header}\n\n{str(val).strip()}")
-
-    return "\n\n".join(sections) + "\n" if sections else None
-
-
 def _normalize_array(val) -> list:
     if not val or val == "null":
         return []
@@ -1031,8 +907,16 @@ def _parse_set_value(value: str):
 
 
 def _log_activity(project_root: Path, event: dict) -> None:
-    from datetime import datetime, timezone
+    """Append a board mutation to ``.holoctl/activity.jsonl``.
+
+    This is a *separate* store from the event journal (``.holoctl/journal/``):
+    it has a ticket-scoped schema (``{ts, type, ticket, ...}``) and feeds the
+    dashboard's per-ticket activity timeline, whereas the journal has a
+    session-event schema and feeds the curator. They share the same locked
+    append primitive so neither interleaves a half-written line under
+    concurrent writers.
+    """
+    from .jsonl import append_jsonl_line
     log_path = project_root / ".holoctl" / "activity.jsonl"
     entry = {"ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), **event}
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+    append_jsonl_line(log_path, json.dumps(entry) + "\n")

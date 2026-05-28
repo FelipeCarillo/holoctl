@@ -299,7 +299,7 @@ def add_cmd(ticket_json: str = typer.Argument(..., help="JSON ticket data")):
         ticket = board.add(patch)
         console.print(f"[green]Created {ticket['id']}: {ticket['title']}[/green]")
         print(json.dumps(ticket, indent=2))
-    except (json.JSONDecodeError, Exception) as e:
+    except Exception as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
 

@@ -1,6 +1,6 @@
 # Architecture
 
-`holoctl` is a CLI + small web server that turns the directory you `init` in into a structured workspace for AI coding agents. The whole product lives inside `.holoctl/` next to your code; nothing is ever written to `$HOME`.
+`holoctl` is a CLI + small web server that turns the directory you `init` in into a structured workspace for AI coding agents. The whole product lives inside `.holoctl/` next to your code. The only command that writes outside the workspace is the opt-in `hctl setup-global`, which installs the `/holoctl` router into each AI tool's user-level config (`~/.claude/`, `~/.copilot/`) — everything else stays in `.holoctl/`. There is **no machine-wide registry of projects**.
 
 This document covers the **internal design**. For user-facing usage see [README.md](README.md).
 
@@ -16,18 +16,25 @@ holoctl is a single Python package distributed via PyPI (`pip install holoctl`, 
 .
 ├── holoctl/                      Python package (canonical)
 │   ├── __main__.py               typer app, registers subcommands
-│   ├── cli/                      init, board, repo, agent, compile, serve, sync, doctor, overview
+│   ├── cli/                      init, board, agent, memory, journal, curate, repo,
+│   │                             provider, compile, sync, upgrade, serve, doctor,
+│   │                             overview, boot, handoff, coverage, setup, setup-global
 │   ├── lib/
 │   │   ├── config.py             find_project_root, load/save config, marker auto-migrate
-│   │   ├── board.py              ticket CRUD, frontmatter <-> index.json sync
+│   │   ├── board.py              ticket CRUD, frontmatter <-> index.json sync, tree render
+│   │   ├── memory.py             durable cross-assistant memory (MEMORY.md + topics/)
+│   │   ├── journal.py            append-safe JSONL event log (curator input)
+│   │   ├── curator.py            + curator_rules/   pattern → meta:curate suggestions
+│   │   ├── agent_library.py      latent persona library (templates/agents/*.md)
 │   │   ├── discover.py           auto-scan workspace for project markers
-│   │   ├── git.py                git info per subdir
+│   │   ├── git.py                git info per subdir (fast parse + full subprocess)
 │   │   ├── markdown.py           frontmatter parse/serialize
 │   │   ├── filetree.py           file tree with tech-stack badges (used internally)
-│   │   ├── templates.py          init-time templates for agents/commands/context/instructions
-│   │   └── compiler/             one file per AI tool target
-│   ├── server/                   FastAPI dashboard
-│   └── templates/commands/       /holoctl bootstrap commands per tool target
+│   │   ├── templates.py          init-time templates + SYNC_TARGETS allow-list
+│   │   └── compiler/             one module per AI tool target + *_emit helpers
+│   ├── server/                   FastAPI dashboard (app, routes/, views/, templates/, static/)
+│   │   └── mcp.py                hand-written JSON-RPC-over-stdio MCP server
+│   └── templates/                agents/, commands/, hooks/, skills/ shipped with the package
 │
 ├── tests/                        pytest suite
 ├── pyproject.toml                package metadata
@@ -66,28 +73,29 @@ Every ticket is a Markdown file at `.holoctl/board/tickets/<ID>-<slug>.md` with 
 ---
 id: PRJ-001
 title: Add authentication
+kind: task                  # task | story | bug | spec | epic | rfc | ...
+parent: null                # ID of a containing work item (e.g. a spec), if any
 agent: developer            # one of the personas in .holoctl/agents/
 projects: backend, shared   # array → which discovered subprojects this touches
+files: src/auth/jwt.py      # array → paths this ticket touches
 status: doing               # one of config.board.statuses
 priority: p1
 sprint: sprint-1
-created: 2026-05-04
-updated: 2026-05-04
+created: 2026-05-04T00:00:00Z
+updated: 2026-05-04T00:00:00Z
 completed: null
 depends: null
 tags: auth, security
 ---
 
-# Start
-…files this will touch, current state…
-# Goal — Definition of Done
+# Acceptance — Definition of Done
 - [ ] criteria
 # Context
-…why…
+…why this ticket exists; current state; files it touches…
 # Out of scope
 …what NOT to do…
-# Execution notes
-…filled by the agent…
+# Notes
+…appended by `hctl board note` during work…
 ```
 
 The `index.json` next to it is a denormalized projection used for fast filtering by the CLI and dashboard. It is **rebuilt** from the .md files by `holoctl board rebuild-index`. The .md is always the source of truth.
@@ -99,13 +107,15 @@ The `index.json` next to it is a denormalized projection used for fast filtering
 `holoctl compile --target X` is the bridge from `.holoctl/` to whatever the target tool reads at startup.
 
 ```
-.holoctl/agents/*.md         ──┐
-.holoctl/commands/*.md       ──┼──> compiler/X ──> CLAUDE.md, .claude/commands/*.md, ...
-.holoctl/instructions.md     ──┤                  AGENTS.md, .devin/skills/*/SKILL.md, ...
-.holoctl/context/*.md        ──┤                  .cursor/rules/holoctl.md, .cursor/commands/*.md
-holoctl/templates/commands/  ──┘                  .windsurfrules, .windsurf/workflows/*.md
-                                                  .github/copilot-instructions.md, .github/prompts/*.md
+.holoctl/agents/*.md         ──┐                  agents → AGENTS.md (cross-tool)
+.holoctl/commands/*.md       ──┤                  claude → CLAUDE.md, .claude/{agents,commands,
+.holoctl/instructions.md     ──┼──> compiler/X ──>          skills,rules}/*, .claude/settings.json
+.holoctl/context/*.md        ──┤                  copilot → .github/copilot-instructions.md,
+.holoctl/memory/*            ──┤                            .github/prompts/*.md, .vscode/mcp.json
+holoctl/templates/           ──┘                  codex → .codex/AGENTS.override.md, .codex/config.toml
 ```
+
+The four supported targets are `agents`, `claude`, `copilot`, `codex` (registered in `compiler/__init__.py:_COMPILERS`). The retired `cursor` / `windsurf` / `devin` / `generic` targets are filtered out of legacy configs on load (`config._REMOVED_TARGETS`).
 
 Each compiler module is a pure function from `(project_root, config) → list of (rel_path, content)`. Adding a new target is a single new module + an entry in the dispatch dict in `compiler/__init__.py`. See [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-compile-target).
 
@@ -117,22 +127,23 @@ The output is **always** prefixed with `<!-- Generated by holoctl. Do not edit d
 
 The contents of `.holoctl/board/WORKFLOW.md`, `.holoctl/commands/*.md`, and `.holoctl/board/tickets/_template.md` come from `holoctl/lib/templates.py`. When you upgrade holoctl, run `holoctl sync` to refresh those template-managed files **without** touching user-owned files (tickets, agent customizations, context docs, instructions.md).
 
-The list of synced files is hardcoded in `holoctl/cli/sync_.py` (`_SYNC_TARGETS`). Add a new template-managed file there if you introduce one.
+The list of synced files is a single shared constant — `SYNC_TARGETS` in `holoctl/lib/templates.py` — imported by all three call sites (`cli/sync_.py`, `cli/init_.py`, `cli/upgrade_.py`). Add a new template-managed file there once and every path picks it up.
 
 ## Web dashboard
 
-Single-page-app served from `holoctl/server/app.py` (FastAPI + uvicorn). All state read live from `.holoctl/`. Real-time board updates use **SSE** (Server-Sent Events) — the stream tails `index.json` `mtime` and pushes the new contents on change.
+Single-page-app served from `holoctl/server/app.py` (FastAPI + uvicorn, Jinja2 templates in `server/templates/`, route handlers in `server/routes/`, view builders in `server/views/`). All state read live from `.holoctl/`. Real-time board updates use **SSE** (Server-Sent Events) — the stream tails `index.json` `mtime` and pushes the new contents on change.
 
-Static assets live in `holoctl/server/static/holoctl.css` + `holoctl-ui.js`.
+Static assets live in `holoctl/server/static/css/*.css` and `holoctl/server/static/js/*.js` (ES modules).
 
 The server binds to `127.0.0.1` by default. `--host 0.0.0.0` is opt-in and prints a warning, since the dashboard has no auth.
 
 ## What's deliberately NOT here
 
 - **No global registry of projects.** Removed in 0.5.0. Workspace = `.holoctl/` next to your code, period.
-- **No global slash command installer.** The old `holoctl setup-global` is gone. Slash commands are per-workspace, generated by `compile`.
 - **No telemetry, no auto-update check, no network calls** outside what `compile` writes to your filesystem.
-- **No daemon.** `holoctl serve` is a foreground process you start when you want the dashboard.
+- **No daemon.** `holoctl serve` is a foreground process you start when you want the dashboard. The MCP server (`hctl serve --mcp`) is a short-lived stdio process each assistant spawns on demand — no PID files.
+
+Per-workspace slash commands are generated by `compile`. The optional `hctl setup-global` additionally installs the `/holoctl` *router* into user-level tool configs so the command works in any folder (even before `hctl init`) — this is the one exception to "everything in `.holoctl/`".
 
 ## File responsibility cheat sheet
 
@@ -144,5 +155,5 @@ The server binds to `127.0.0.1` by default. `--host 0.0.0.0` is opt-in and print
 | Ticket CRUD + .md ↔ index.json sync | `holoctl/lib/board.py` |
 | Generate AI-tool files | `holoctl/lib/compiler/*.py` |
 | `/holoctl` bootstrap per target | `holoctl/templates/commands/holoctl-*.md` + `compiler/template.py:load_bootstrap` |
-| Refresh template-managed files | `holoctl/cli/sync_.py` `_SYNC_TARGETS` |
+| Refresh template-managed files | `holoctl/lib/templates.py` `SYNC_TARGETS` |
 | Web dashboard server | `holoctl/server/app.py` |

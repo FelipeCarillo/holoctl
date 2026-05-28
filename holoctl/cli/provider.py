@@ -168,9 +168,9 @@ def provider_test(
         console.print(f"[yellow]No match.[/yellow] URL doesn't match {name!r}'s pattern.")
         console.print(f"  [dim]pattern:[/dim] {pattern}")
         raise typer.Exit(1)
-    console.print(f"[green]✓ Match.[/green]")
+    console.print("[green]✓ Match.[/green]")
     console.print(f"  [dim]provider:[/dim] {name}")
-    console.print(f"  [dim]captures:[/dim]")
+    console.print("  [dim]captures:[/dim]")
     for k, v in m.groupdict().items():
         console.print(f"    [bold]{k}[/bold] = {v!r}")
     console.print(f"  [dim]MCP tool (probe at runtime):[/dim] {entry.get('mcp_fetch_tool') or '—'}")

@@ -163,6 +163,21 @@ def test_initialized_notification_returns_none():
     assert resp is None
 
 
+def test_ping_returns_empty_result():
+    """F6a: MCP `ping` keep-alive must return an empty result object."""
+    resp = mcp.handle({"jsonrpc": "2.0", "id": 99, "method": "ping"})
+    assert resp == {"jsonrpc": "2.0", "id": 99, "result": {}}
+
+
+def test_unknown_notification_returns_none():
+    """F6a: an unknown method WITHOUT an id is a notification — the server must
+    not reply (replying would violate JSON-RPC and confuse strict clients)."""
+    resp = mcp.handle({"jsonrpc": "2.0", "method": "notifications/cancelled"})
+    assert resp is None
+    # Same for a totally unknown notification.
+    assert mcp.handle({"jsonrpc": "2.0", "method": "something/odd"}) is None
+
+
 def test_write_tools_have_write_flag():
     write_tools = mcp.list_tools(write=True)
     write_names = {t["name"] for t in write_tools}
@@ -185,6 +200,39 @@ def test_curate_suggestions_returns_open_curate_tickets(tmp_path: Path, monkeypa
     })
     parsed = json.loads(resp["result"]["content"][0]["text"])
     assert parsed["suggestions"] == []
+
+
+def test_coerce_set_value_maps_json_types_to_board_literals():
+    """Non-string MCP values must serialize to the string forms Board parses."""
+    assert mcp._coerce_set_value("p1") == "p1"
+    assert mcp._coerce_set_value(None) == "null"
+    assert mcp._coerce_set_value(True) == "true"
+    assert mcp._coerce_set_value(["a", "b"]) == '["a", "b"]'
+
+
+def test_board_set_via_mcp_accepts_array_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Regression: board_set with a real JSON array used to crash in
+    _parse_set_value (list has no .startswith). It must now round-trip."""
+    _seed_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    created = json.loads(mcp.handle({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "holoctl.board_create",
+                   "arguments": {"title": "tagme", "agent": "boardmaster"}},
+    })["result"]["content"][0]["text"])
+    tid = created["id"]
+
+    resp = mcp.handle({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "holoctl.board_set",
+                   "arguments": {"id": tid, "field": "tags", "value": ["auth", "security"]}},
+    })
+    assert "error" not in resp, resp
+    got = json.loads(mcp.handle({
+        "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+        "params": {"name": "holoctl.board_get", "arguments": {"id": tid}},
+    })["result"]["content"][0]["text"])
+    assert got["tags"] == ["auth", "security"]
 
 
 def test_curate_silence_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

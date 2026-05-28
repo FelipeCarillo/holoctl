@@ -5,26 +5,24 @@ Behavior is **merge, never overwrite**: if the user has their own hooks in
 without removing theirs. If a duplicate of our exact command already
 exists (idempotent re-run of `hctl init`/`compile`), we skip.
 
-Resolves `{{HCTL_BIN}}` to absolute path via `shutil.which("hctl")`.
+Resolves `{{HCTL_BIN}}` to the generalist `hctl` command (PATH-resolved), so
+the emitted `.claude/settings.json` stays portable when committed and shared
+across machines / users / assistants. Set `HOLOCTL_BIN` to override.
 """
 from __future__ import annotations
 
 import json
 import os
-import shutil
-import sys
 from pathlib import Path
 from typing import Any
 
 
 def _resolve_hctl_bin() -> str:
-    env = os.environ.get("HOLOCTL_BIN")
-    if env:
-        return env
-    via_path = shutil.which("hctl") or shutil.which("holoctl")
-    if via_path:
-        return via_path
-    return f"{sys.executable} -m holoctl"
+    # Emit the bare command name, not an absolute exe path: a machine-specific
+    # path (from `shutil.which`) breaks the moment the config is committed and
+    # used elsewhere. `HOLOCTL_BIN` is the explicit escape hatch for installs
+    # where `hctl` isn't on PATH.
+    return os.environ.get("HOLOCTL_BIN") or "hctl"
 
 
 def _load_template(filename: str) -> dict | None:

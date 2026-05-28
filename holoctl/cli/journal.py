@@ -36,7 +36,7 @@ def journal_record(
     ),
     source: str = typer.Option(
         "manual", "--source",
-        help="Origin of the event: claude | cursor | windsurf | copilot | devin | manual",
+        help="Origin of the event: claude | copilot | codex | manual",
     ),
     payload: Optional[str] = typer.Option(
         None, "--payload",
