@@ -242,7 +242,7 @@
 
 .ws-summary-cta:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 /* ── Workspace project link in metrics table ── */

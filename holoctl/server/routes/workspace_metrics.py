@@ -20,7 +20,7 @@ def _workspace_breadcrumbs() -> list[dict]:
     ]
 
 
-def _by_workspace_project(all_tickets: list[dict], alias: str) -> list[dict]:
+def _by_workspace_project(all_tickets: list[dict]) -> list[dict]:
     """Per-source-project breakdown for the cross-project comparison block.
 
     Each ticket carries a ``_source_alias`` field injected by the route to
@@ -86,7 +86,7 @@ def workspace_metrics():
             pass
 
     ctx = metrics_context(all_tickets)
-    by_ws_project = _by_workspace_project(all_tickets, alias="")
+    by_ws_project = _by_workspace_project(all_tickets)
     project_max = max((r["completed"] for r in by_ws_project), default=0)
 
     return render(
