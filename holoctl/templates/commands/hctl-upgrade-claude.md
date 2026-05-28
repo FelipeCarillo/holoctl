@@ -33,7 +33,7 @@ After the install (or after the user confirms they updated by other means / want
 Run `hctl upgrade` (without `--check`). This orchestrates internally, in order:
 
 1. `hctl sync --agents` — refreshes `.holoctl/agents/*`, `.holoctl/commands/*`, `.holoctl/board/WORKFLOW.md`, `.holoctl/board/tickets/_template.md`.
-2. `hctl compile --target <each>` for every target in `config["targets"]` — regenerates `CLAUDE.md`, `.claude/commands/*`, `AGENTS.md`, `.github/copilot-instructions.md`, `.codex/AGENTS.override.md`, etc.
+2. `hctl compile --target <each>` for every target in `config["targets"]` — regenerates `CLAUDE.md`, `.claude/commands/*`, `.claude/skills/*`, the `AGENTS.md` discovery shim and `.holoctl/foreign-bootstrap.md`.
 3. `hctl board rebuild-index` — re-reads every ticket .md and rewrites `index.json`. This is what migrates old ticket schemas (e.g. `scope` → `projects`, date-only → ISO 8601).
 4. `hctl doctor` — final health check.
 5. Bumps `holoctlVersion` in `.holoctl/config.json` to `installed_version`.

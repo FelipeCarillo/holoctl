@@ -1,0 +1,1265 @@
+/* ── Metrics page — per-project Metrics tab ── */
+
+/* Page wrapper */
+.metrics-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1100px;
+  padding-bottom: 40px;
+}
+
+/* ── Shared card shell ── */
+.metrics-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  box-shadow: var(--shadow-sm);
+  animation: fadeUp 0.28s var(--ease) both;
+}
+
+.metrics-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-2);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.metrics-card-subtitle {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-3);
+}
+
+.metrics-card-footer {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Empty state ── */
+.metrics-empty {
+  font-size: 13px;
+  color: var(--text-3);
+  padding: 12px 0 4px;
+}
+
+/* ── Top row: throughput + cycle ── */
+.metrics-top-row {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+  align-items: start;
+}
+
+/* ── Throughput SVG chart ── */
+.metrics-chart-wrap {
+  position: relative;
+  padding-bottom: 28px; /* room for axis */
+}
+
+.metrics-bar-svg {
+  width: 100%;
+  height: 80px;
+  display: block;
+  overflow: visible;
+}
+
+.metrics-bar {
+  fill: var(--accent);
+  opacity: 0.65;
+  transition: opacity 0.15s;
+}
+
+.metrics-bar:hover {
+  opacity: 1;
+}
+
+.metrics-bar-peak {
+  fill: var(--accent);
+  opacity: 0.9;
+}
+
+/* X-axis labels */
+.metrics-axis-x {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+}
+
+.metrics-axis-label {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+
+.metrics-chart-legend {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.metrics-legend-item strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+/* ── Cycle time stat cards ── */
+.metrics-stat-row {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.metrics-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 8px 12px;
+  gap: 2px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-0);
+}
+
+.metrics-stat:last-child {
+  border-right: none;
+}
+
+.metrics-stat-accent {
+  background: var(--accent-subtle);
+}
+
+.metrics-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--font-serif);
+  color: var(--text-0);
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.metrics-stat-accent .metrics-stat-value {
+  color: var(--accent);
+}
+
+.metrics-stat-unit {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  margin-bottom: 2px;
+}
+
+.metrics-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-3);
+}
+
+/* Count chip below cycle stats */
+.metrics-count-chip {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  letter-spacing: -0.1px;
+}
+
+/* ── WIP list ── */
+.metrics-wip-count-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.metrics-stale-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--yellow-subtle);
+  color: var(--yellow);
+  font-family: var(--font-mono);
+  cursor: help;
+}
+
+.metrics-wip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metrics-wip-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  transition: background 0.12s var(--ease);
+}
+
+.metrics-wip-item:hover {
+  background: var(--bg-hover);
+}
+
+.metrics-wip-stale {
+  border-color: var(--yellow);
+  background: var(--yellow-subtle);
+}
+
+.metrics-wip-id {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-2);
+  min-width: 68px;
+}
+
+.metrics-wip-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  letter-spacing: -0.1px;
+}
+
+.metrics-wip-status[data-status="doing"] {
+  background: var(--blue-subtle);
+  color: var(--blue);
+}
+
+.metrics-wip-status[data-status="review"] {
+  background: var(--purple-subtle);
+  color: var(--purple);
+}
+
+.metrics-wip-age {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.metrics-stale-dot {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--yellow);
+  color: var(--bg-card);
+  cursor: help;
+}
+
+/* ── By-group row ── */
+.metrics-group-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* When there's only the agent table (no project data), let it span full width */
+.metrics-group-row > .metrics-card:only-child {
+  grid-column: 1 / -1;
+}
+
+/* ── Group breakdown table ── */
+.metrics-group-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.metrics-group-table thead th {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-3);
+  padding: 0 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.metrics-group-table thead .mgt-col-bar {
+  width: 40%;
+}
+
+.metrics-group-table thead .mgt-col-count,
+.metrics-group-table thead .mgt-col-cycle,
+.metrics-group-table thead .mgt-col-wip {
+  width: 48px;
+  text-align: right;
+}
+
+.mgt-row {
+  transition: background 0.1s var(--ease);
+}
+
+.mgt-row:hover {
+  background: var(--bg-hover);
+}
+
+.mgt-row td {
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.mgt-row:last-child td {
+  border-bottom: none;
+}
+
+.mgt-cell-name {
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mgt-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+  letter-spacing: -0.1px;
+}
+
+.mgt-unassigned {
+  color: var(--text-3);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.mgt-cell-bar {
+  padding: 7px 8px;
+}
+
+.mgt-bar-track {
+  height: 6px;
+  background: var(--bg-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mgt-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 3px;
+  transition: width 0.3s var(--ease);
+}
+
+.mgt-cell-count {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-0);
+}
+
+.mgt-cell-cycle,
+.mgt-cell-wip {
+  text-align: right;
+}
+
+.mgt-cycle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.mgt-cycle-none {
+  color: var(--text-3);
+}
+
+.mgt-wip-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+/* ── Scrollable list containers (WIP, by-group when item count > 12) ── */
+.metrics-scrollable {
+  max-height: 360px;
+  overflow-y: auto;
+  /* Subtle inner shadow to hint at scrollability. */
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* When the scrollable wrap encloses a table, stick the thead. */
+.metrics-scrollable thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+  z-index: 1;
+}
+
+/* When the scrollable wrap is the WIP <ul>, give it a small top padding. */
+ul.metrics-scrollable {
+  padding: 4px 0;
+  border: none; /* WIP list uses item borders instead */
+}
+
+/* ── Filter toolbar ────────────────────────────────────────────────────────── */
+.metrics-filter-toolbar {
+  position: sticky;
+  top: 0;
+  background: var(--bg-0);
+  z-index: 10;
+  padding: 10px 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 4px;
+  /* Subtle blur so content scrolling under looks intentional. */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+[data-theme="light"] .metrics-filter-toolbar {
+  background: rgba(243, 242, 238, 0.92);
+}
+
+[data-theme="dark"] .metrics-filter-toolbar {
+  background: rgba(20, 19, 15, 0.92);
+}
+
+/* Form layout rows */
+.mft-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mft-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mft-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-3);
+  flex-shrink: 0;
+  min-width: 42px;
+}
+
+/* ── Date preset chips ── */
+.mft-presets {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.mft-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-1);
+  text-decoration: none;
+  letter-spacing: -0.1px;
+  transition: all 0.12s var(--ease);
+}
+
+.mft-preset-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.mft-preset-chip.mft-preset-active {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Facets row ── */
+.mft-facets-row {
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.mft-facet {
+  position: relative;
+}
+
+.mft-facet-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-1);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.mft-facet-summary::-webkit-details-marker { display: none; }
+.mft-facet-summary::marker { display: none; }
+
+.mft-facet[open] .mft-facet-summary {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.mft-facet-summary:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+
+.mft-facet-count {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+}
+
+.mft-facet-arrow {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+.mft-facet-body {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 20;
+  padding: 8px 0;
+}
+
+.mft-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 0.1s var(--ease);
+}
+
+.mft-checkbox-label:hover {
+  background: var(--bg-hover);
+}
+
+.mft-checkbox-label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mft-checkbox-label input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mft-checkbox-text {
+  font-size: 12px;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  letter-spacing: -0.1px;
+}
+
+/* Apply button */
+.mft-apply-btn {
+  padding: 5px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.12s var(--ease);
+  flex-shrink: 0;
+}
+
+.mft-apply-btn:hover {
+  opacity: 0.88;
+}
+
+.mft-apply-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Active filter chips row ── */
+.mft-active-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mft-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 9px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.mft-chip-axis {
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: capitalize;
+  opacity: 0.75;
+}
+
+.mft-chip-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: -0.2px;
+}
+
+.mft-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: inherit;
+  text-decoration: none;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.65;
+  transition: opacity 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.mft-chip-remove:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="light"] .mft-chip-remove:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.mft-chip-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mft-clear-all {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-decoration: none;
+  margin-left: 4px;
+  transition: color 0.12s var(--ease);
+}
+
+.mft-clear-all:hover {
+  color: var(--accent);
+}
+
+.mft-clear-all:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── F2: Executive KPI band ───────────────────────────────────────────────── */
+
+.mkpi-band {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.mkpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px 14px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: fadeUp 0.28s var(--ease) both;
+}
+
+.mkpi-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-3);
+}
+
+.mkpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--font-serif);
+  color: var(--text-0);
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.mkpi-unit {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+.mkpi-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 18px;
+}
+
+.mkpi-subtitle {
+  font-size: 10px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+.mkpi-subtitle--muted {
+  font-style: italic;
+}
+
+/* Delta arrows */
+.mkpi-delta {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.mkpi-delta--good {
+  background: var(--green-subtle);
+  color: var(--green);
+}
+
+.mkpi-delta--bad {
+  background: var(--red-subtle);
+  color: var(--red);
+}
+
+.mkpi-delta--flat {
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+
+.mkpi-delta--warn {
+  background: var(--yellow-subtle);
+  color: var(--yellow);
+}
+
+/* ── F2: Time-in-status chart ─────────────────────────────────────────────── */
+
+.mtis-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* SVG text elements use currentColor via class rules below */
+.mtis-label {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.mtis-label--bottleneck {
+  fill: var(--red);
+  font-weight: 700;
+}
+
+.mtis-track {
+  fill: var(--bg-2);
+}
+
+.mtis-bar {
+  fill: var(--accent);
+  opacity: 0.65;
+}
+
+.mtis-bar--bottleneck {
+  fill: var(--red);
+  opacity: 0.8;
+}
+
+.mtis-bar--terminal {
+  fill: var(--green);
+  opacity: 0.4;
+}
+
+.mtis-value {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.mtis-value--bottleneck {
+  fill: var(--red);
+  font-weight: 700;
+}
+
+.mtis-count {
+  fill: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+.mtis-bottleneck-marker {
+  fill: var(--red);
+}
+
+.mtis-legend {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mtis-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mtis-legend-dot--bottleneck {
+  background: var(--red);
+  opacity: 0.8;
+}
+
+/* ── F3: WIP + Stalled side-by-side row ───────────────────────────────────── */
+
+.metrics-wip-stalled-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* When one column is missing, let the remaining one span full width. */
+.metrics-wip-stalled-row > .metrics-card:only-child {
+  grid-column: 1 / -1;
+}
+
+/* ── F3: Cycle-time distribution histogram ────────────────────────────────── */
+
+.mcd-chart-wrap {
+  position: relative;
+  padding-bottom: 24px;
+}
+
+.mcd-svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+  overflow: visible;
+}
+
+.mcd-bar {
+  fill: var(--accent);
+  opacity: 0.55;
+  transition: opacity 0.14s;
+}
+
+.mcd-bar:hover {
+  opacity: 1;
+}
+
+.mcd-bar-peak {
+  opacity: 0.85;
+}
+
+/* X-axis labels */
+.mcd-axis-x {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+}
+
+.mcd-axis-label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  letter-spacing: -0.2px;
+}
+
+/* Percentile chips row */
+.mcd-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.mcd-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.mcd-chip-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+.mcd-chip-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-0);
+}
+
+.mcd-chip-p95 {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
+
+.mcd-chip-p95 .mcd-chip-value {
+  color: var(--accent);
+}
+
+.mcd-chip-count {
+  margin-left: auto;
+}
+
+/* ── F3: Throughput trend overlay chart ───────────────────────────────────── */
+
+/* Previous-period ghost bars */
+.mto-bar-prev {
+  fill: var(--accent);
+  opacity: 0.18;
+}
+
+/* Current bars inherit .metrics-bar styles */
+.mto-bar-curr {
+  /* Additional override if needed — inherits from .metrics-bar */
+}
+
+/* Legend row */
+.mto-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.mto-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.mto-swatch-curr {
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.mto-swatch-prev {
+  background: var(--accent);
+  opacity: 0.25;
+}
+
+.mto-legend-label {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.mto-legend-count {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.mto-legend-count-prev {
+  color: var(--text-2);
+}
+
+.mto-legend-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 4px;
+  display: inline-block;
+}
+
+/* Delta arrow chip */
+.mto-delta {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 2px;
+}
+
+.mto-delta-up {
+  background: var(--green-subtle);
+  color: var(--green);
+}
+
+.mto-delta-down {
+  background: var(--red-subtle);
+  color: var(--red);
+}
+
+.mto-delta-flat {
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+
+/* ── F3: Stalled tickets list ─────────────────────────────────────────────── */
+
+.mst-count-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--yellow-subtle);
+  color: var(--yellow);
+}
+
+.mst-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mst-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  flex-wrap: wrap;
+  transition: background 0.12s var(--ease);
+}
+
+.mst-item:hover {
+  background: var(--bg-hover);
+}
+
+/* Status chip */
+.mst-status-chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  letter-spacing: -0.1px;
+  flex-shrink: 0;
+}
+
+.mst-status-chip[data-status="doing"] {
+  background: var(--blue-subtle);
+  color: var(--blue);
+}
+
+.mst-status-chip[data-status="review"] {
+  background: var(--purple-subtle);
+  color: var(--purple);
+}
+
+.mst-status-chip[data-status="backlog"] {
+  background: var(--bg-2);
+  color: var(--text-3);
+}
+
+/* Ticket ID link */
+.mst-ticket-id {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: opacity 0.12s var(--ease);
+}
+
+.mst-ticket-id:hover {
+  opacity: 0.75;
+}
+
+/* Ticket title */
+.mst-ticket-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Age indicator */
+.mst-age {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Reason chips container */
+.mst-reasons {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 2px;
+}
+
+/* Individual reason chip */
+.mst-reason-chip {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--yellow-subtle);
+  color: var(--yellow);
+  font-family: var(--font-mono);
+  letter-spacing: -0.1px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 720px) {
+  .metrics-top-row {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics-group-row {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics-wip-stalled-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mkpi-band {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mft-facet-body {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    min-width: unset;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 50vh;
+  }
+}
+
+@media (max-width: 480px) {
+  .mkpi-band {
+    grid-template-columns: 1fr;
+  }
+}

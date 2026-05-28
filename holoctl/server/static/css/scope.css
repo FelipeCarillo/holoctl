@@ -19,5 +19,5 @@
 }
 
 .scope-btn:hover { border-color: var(--accent); color: var(--text-1); }
-.scope-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.scope-btn.active { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
 

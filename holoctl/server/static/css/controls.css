@@ -281,6 +281,8 @@
   flex-direction: column;
   gap: 2px;
 }
+.bc-popover-axes { max-height: 264px; overflow-y: auto; }
+.bc-popover-values { max-height: 264px; overflow-y: auto; }
 
 .bc-popover-axis,
 .bc-popover-value {

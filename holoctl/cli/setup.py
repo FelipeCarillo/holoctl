@@ -57,13 +57,6 @@ def _targets() -> list[dict]:
             "skill_path": home / ".claude" / "commands" / "holoctl.md",
             "format": "claude",
         },
-        {
-            "name": "Copilot",
-            "key": "copilot",
-            "detect": [home / ".copilot"],
-            "skill_path": home / ".copilot" / "prompts" / "holoctl.prompt.md",
-            "format": "copilot",
-        },
     ]
 
 
@@ -160,13 +153,6 @@ def _frontmatter(fmt: str) -> str:
             "allowed-tools: [Bash, Read]\n"
             "---\n\n"
         )
-    if fmt == "copilot":
-        return (
-            "---\n"
-            f'description: "{desc}"\n'
-            'mode: "agent"\n'
-            "---\n\n"
-        )
     return ""
 
 
@@ -174,7 +160,7 @@ def _frontmatter(fmt: str) -> str:
 def setup_cmd(
     only: Optional[list[str]] = typer.Option(
         None, "--only",
-        help="Restrict to specific assistants (claude, copilot). Repeatable.",
+        help="Restrict to specific assistants (claude). Repeatable.",
     ),
     force: bool = typer.Option(
         False, "--force",

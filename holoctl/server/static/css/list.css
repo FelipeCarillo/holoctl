@@ -252,9 +252,9 @@
 .lr-status[data-status="cancelled"] { color: var(--red);    background: var(--red-subtle); }
 
 .lr-prio-pill[data-p="p0"] { color: var(--red);    background: var(--red-subtle); }
-.lr-prio-pill[data-p="p1"] { color: var(--yellow); background: var(--yellow-subtle); }
-.lr-prio-pill[data-p="p2"] { color: var(--blue);   background: var(--blue-subtle); }
-.lr-prio-pill[data-p="p3"] { color: var(--text-2); background: var(--bg-2); }
+.lr-prio-pill[data-p="p1"] { color: var(--accent); background: var(--accent-subtle); }
+.lr-prio-pill[data-p="p2"] { color: var(--text-2); background: var(--bg-2); }
+.lr-prio-pill[data-p="p3"] { color: var(--text-3); background: var(--bg-2); }
 
 /* Bulk-action bar — sticky at the bottom of the list-body so it floats
    above the rows but never escapes the view container. */

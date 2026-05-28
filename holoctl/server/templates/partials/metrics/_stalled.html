@@ -1,0 +1,50 @@
+{#
+  _stalled.html — Stalled tickets actionable list (Task F3).
+
+  Renders stalled_view = {count, items: [{id, title, status, age_days, reasons, link}], is_empty}
+
+  A ticket is stalled if:
+  - Active (doing/review) with no update in stale_days
+  - Backlog with no agent
+  - Backlog with no priority
+  - Done but missing completed timestamp
+#}
+{%- set sv = stalled_view -%}
+
+<div class="metrics-card" id="metrics-stalled">
+  <div class="metrics-card-title">
+    Stalled Tickets
+    {%- if not sv.is_empty %}
+    <span class="mst-count-badge" title="{{ sv.count }} stalled ticket{{ 's' if sv.count != 1 else '' }}">{{ sv.count }}</span>
+    {%- endif %}
+    <span class="metrics-card-subtitle">orphaned · aging · missing metadata</span>
+  </div>
+
+  {%- if sv.is_empty %}
+  <div class="metrics-empty">No stalled tickets — everything is moving.</div>
+
+  {%- else %}
+  <ul class="mst-list{% if sv.tickets | length > 12 %} metrics-scrollable{% endif %}" role="list">
+    {%- for item in sv.tickets %}
+    <li class="mst-item" role="listitem">
+      {# Status chip #}
+      <span class="mst-status-chip" data-status="{{ item.status }}">{{ item.status }}</span>
+
+      {# ID + title (linked) #}
+      <a href="{{ item.link }}" class="mst-ticket-id">{{ item.id }}</a>
+      <span class="mst-ticket-title" title="{{ item.title }}">{{ item.title }}</span>
+
+      {# Age indicator #}
+      <span class="mst-age" title="{{ item.age_days }}d since last update">{{ item.age_days }}d</span>
+
+      {# Reason chips #}
+      <span class="mst-reasons">
+        {%- for reason in item.reasons %}
+        <span class="mst-reason-chip">{{ reason }}</span>
+        {%- endfor %}
+      </span>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+</div>

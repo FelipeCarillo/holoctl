@@ -18,8 +18,8 @@
   flex-shrink: 0;
 }
 
-[data-theme="light"] .tabs { background: rgba(248,248,250,0.85); }
-[data-theme="dark"] .tabs { background: rgba(14,14,18,0.85); }
+[data-theme="light"] .tabs { background: rgba(243, 242, 238, 0.85); }
+[data-theme="dark"] .tabs { background: rgba(20, 19, 15, 0.85); }
 
 .tab {
   padding: 11px 16px;
@@ -36,8 +36,10 @@
 
 .tab:hover { color: var(--text-1); }
 
+/* Active tab: terracotta text + underline; inactive stays muted. */
 .tab.active {
-  color: var(--text-0);
+  color: var(--accent);
+  font-weight: 600;
   border-bottom-color: var(--accent);
 }
 

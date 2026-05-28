@@ -4,25 +4,15 @@ the shared doc_detail template."""
 from __future__ import annotations
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from ..jinja import render
+from ..paths import safe_resolve as _safe_resolve
 from ..views.doc import doc_context
 from .project_board import _PROJECT_TABS
 
 router = APIRouter()
-
-
-def _safe_resolve(root: Path, name: str) -> Path:
-    """Resolve `root / name` and assert it stays inside `root`. Raises 403
-    on traversal — matches the protection the legacy app.py routes had."""
-    candidate = (root / name).resolve()
-    try:
-        candidate.relative_to(root.resolve())
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    return candidate
 
 
 def _project_breadcrumbs(project: dict, listing_label: str, listing_path: str,
@@ -38,13 +28,14 @@ def _project_breadcrumbs(project: dict, listing_label: str, listing_path: str,
 
 @router.get("/project/{alias}/agents/{slug}", response_class=HTMLResponse)
 def project_agent_detail(alias: str, slug: str):
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
     from ...lib.markdown import parse_frontmatter
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     root = (Path(project["path"]) / ".holoctl" / "agents").resolve()
@@ -52,7 +43,7 @@ def project_agent_detail(alias: str, slug: str):
     if not f.exists():
         return HTMLResponse(
             render("base.html", title="Not Found",
-                   content=_not_found_html("Agent not found")),
+                   content=render("partials/_empty_state.html", msg="Agent not found")),
             status_code=404,
         )
     fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
@@ -81,13 +72,14 @@ def project_agent_detail(alias: str, slug: str):
 
 @router.get("/project/{alias}/commands/{slug}", response_class=HTMLResponse)
 def project_command_detail(alias: str, slug: str):
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
     from ...lib.markdown import parse_frontmatter
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     root = (Path(project["path"]) / ".holoctl" / "commands").resolve()
@@ -95,7 +87,7 @@ def project_command_detail(alias: str, slug: str):
     if not f.exists():
         return HTMLResponse(
             render("base.html", title="Not Found",
-                   content=_not_found_html("Command not found")),
+                   content=render("partials/_empty_state.html", msg="Command not found")),
             status_code=404,
         )
     fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
@@ -117,15 +109,16 @@ def project_command_detail(alias: str, slug: str):
     )
 
 
-@router.get("/project/{alias}/context/{filename}", response_class=HTMLResponse)
+@router.get("/project/{alias}/context/{filename:path}", response_class=HTMLResponse)
 def project_context_detail(alias: str, filename: str):
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
     from ...lib.markdown import parse_frontmatter
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     root = (Path(project["path"]) / ".holoctl" / "context").resolve()
@@ -133,7 +126,7 @@ def project_context_detail(alias: str, filename: str):
     if not f.exists() or not f.is_file():
         return HTMLResponse(
             render("base.html", title="Not Found",
-                   content=_not_found_html("Context document not found")),
+                   content=render("partials/_empty_state.html", msg="Context document not found")),
             status_code=404,
         )
     raw = f.read_text(encoding="utf-8")

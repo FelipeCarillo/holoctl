@@ -13,14 +13,15 @@ router = APIRouter()
 
 @router.get("/project/{alias}/board/{ticket_id}", response_class=HTMLResponse)
 def project_ticket(alias: str, ticket_id: str):
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
     from ...lib.board import Board
     from ...lib.markdown import parse_frontmatter
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
 
@@ -30,7 +31,7 @@ def project_ticket(alias: str, ticket_id: str):
     if not ticket:
         return HTMLResponse(
             render("base.html", title="Not Found",
-                   content=_not_found_html("Ticket not found")),
+                   content=render("partials/_empty_state.html", msg="Ticket not found")),
             status_code=404,
         )
 

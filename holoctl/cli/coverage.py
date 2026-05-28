@@ -5,7 +5,9 @@ Useful for:
   - Auditing cross-tool gaps in coverage.
 
 Output is a matrix: rows = source items in `.holoctl/`, columns = compile
-targets (agents, claude, copilot, codex).
+targets (agents, claude). holoctl maintains a deep compiler only for Claude;
+`agents` emits the minimal AGENTS.md discovery shim that points non-Claude
+assistants at the `holoctl-foreign-bootstrap` skill.
 """
 from __future__ import annotations
 
@@ -26,65 +28,52 @@ app = typer.Typer()
 # compilers — kept in sync manually but small enough to be obvious.
 _COVERAGE: dict[str, dict[str, str | None]] = {
     # Source path under .holoctl/  : { target: rel_path under repo root | None }
+    # `agents` no longer embeds source content — it emits a fixed discovery
+    # shim (see the synthetic bootstrap row). Non-Claude assistants read these
+    # sources directly via the holoctl-foreign-bootstrap skill.
     "instructions.md": {
         "claude":  "CLAUDE.md",
-        "copilot": ".github/copilot-instructions.md",
-        "codex":   ".codex/AGENTS.override.md",
-        "agents":  "AGENTS.md (Objective+Architecture sections)",
+        "agents":  None,
     },
     "agents/*.md": {
         "claude":  ".claude/agents/<name>.md",
-        "copilot": None,
-        "codex":   ".codex/AGENTS.override.md (summary)",
         "agents":  None,
     },
     "commands/*.md": {
         "claude":  ".claude/commands/<name>.md",
-        "copilot": ".github/prompts/<name>.prompt.md",
-        "codex":   None,
         "agents":  None,
     },
     "context/*.md": {
         "claude":  None,  # consumed via instructions.md / memory references
-        "copilot": None,
-        "codex":   None,
-        "agents":  "AGENTS.md (Objective/Architecture/Conventions)",
+        "agents":  None,
     },
     "memory/topics/*.md": {
         "claude":  ".claude/skills/holoctl-memory-<topic>/SKILL.md",
-        "copilot": ".github/instructions/holoctl-memory-<topic>.instructions.md",
-        "codex":   ".codex/AGENTS.override.md (index + list)",
         "agents":  None,
     },
     "hooks/*.json": {
         "claude":  ".claude/settings.json (merged)",
-        "copilot": ".copilot/config.json (merged)",
-        "codex":   None,
         "agents":  None,
     },
     "rules/*.md": {
         "claude":  ".claude/rules/<name>.md",
-        "copilot": None,
-        "codex":   None,
         "agents":  None,
     },
     "skills/*/SKILL.md": {
         "claude":  ".claude/skills/<name>/ (with references/scripts/)",
-        "copilot": None,
-        "codex":   None,
         "agents":  None,
     },
     "output_styles/*.md": {
         "claude":  ".claude/output_styles/<name>.md",
-        "copilot": None,
-        "codex":   None,
         "agents":  None,
     },
     "(MCP servers, defined in CLI/server)": {
         "claude":  ".claude/settings.json:mcpServers",
-        "copilot": ".vscode/mcp.json",
-        "codex":   ".codex/config.toml",
         "agents":  None,
+    },
+    "(foreign-assistant bootstrap)": {
+        "claude":  None,
+        "agents":  "AGENTS.md",
     },
 }
 
@@ -93,7 +82,7 @@ _COVERAGE: dict[str, dict[str, str | None]] = {
 def coverage_cmd(
     target_filter: Optional[str] = typer.Option(
         None, "--target", "-t",
-        help="Only show coverage for one target (agents, claude, copilot, codex).",
+        help="Only show coverage for one target (agents, claude).",
     ),
     only_present: bool = typer.Option(
         False, "--only-present",
@@ -132,8 +121,7 @@ def coverage_cmd(
             if dest is None:
                 cells.append("[dim]—[/dim]".ljust(12))
             else:
-                short = dest.replace(".claude/", ".cl/").replace(".github/", ".gh/")
-                short = short.replace(".codex/", ".cx/").replace(".vscode/", ".vs/")
+                short = dest.replace(".claude/", ".cl/").replace(".holoctl/", ".ho/")
                 cells.append(f"[green]✓[/green] {short[:10]}")
         row += " | ".join(cells)
         console.print(row)

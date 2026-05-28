@@ -11,7 +11,9 @@
   ('priority', 'Priority'),
   ('sprint', 'Sprint'),
   ('agent', 'Agent'),
-  ('tag', 'Tag')
+  ('tag', 'Tag'),
+  ('project', 'Project'),
+  ('kind', 'Kind')
 ] %}
 <div class="board-controls" id="board-controls" data-current-view="{{ view }}">
   <div class="bc-row bc-row-primary">
@@ -59,6 +61,8 @@
         <button class="bc-popover-axis" data-axis="sprint">Sprint</button>
         <button class="bc-popover-axis" data-axis="tag">Tag</button>
         <button class="bc-popover-axis" data-axis="project">Project</button>
+        <button class="bc-popover-axis" data-axis="kind">Kind</button>
+        <button class="bc-popover-axis" data-axis="source">Source</button>
       </div>
     </div>
     <div class="bc-popover-step" data-step="value" hidden>

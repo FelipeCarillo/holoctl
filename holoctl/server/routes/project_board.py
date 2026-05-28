@@ -19,19 +19,21 @@ _PROJECT_TABS = [
     {"id": "agents", "label": "Agents"},
     {"id": "commands", "label": "Commands"},
     {"id": "context", "label": "Context"},
+    {"id": "metrics", "label": "Metrics"},
 ]
 
 
 @router.get("/project/{alias}/board", response_class=HTMLResponse)
 def project_board(alias: str, view: str = "kanban"):
-    # Lazy import: project lookup helpers still live in app.py (PR #10).
-    from ..app import _get_project, _not_found_html
+    # Lazy import: project lookup helpers live in projects.py.
+    from ..projects import get_project
     from ...lib.board import Board
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
         return HTMLResponse(
-            render("base.html", title="Not Found", content=_not_found_html()),
+            render("base.html", title="Not Found",
+                   content=render("partials/_empty_state.html", msg="Not found")),
             status_code=404,
         )
     if view not in _VALID_VIEWS:
@@ -67,12 +69,12 @@ def project_board(alias: str, view: str = "kanban"):
 @router.get("/api/project/{alias}/board-html", response_class=HTMLResponse)
 def api_board_html(alias: str):
     """Kanban fragment for the SSE board-update swap."""
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
     from ...lib.board import Board
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+        return HTMLResponse(render("partials/_empty_state.html", msg="Project not found"), status_code=404)
     board = Board(Path(project["path"]), project["config"])
     tickets = board.ls()
     ctx = board_context(project, tickets, project["config"], view="kanban")
@@ -82,12 +84,12 @@ def api_board_html(alias: str):
 @router.get("/api/project/{alias}/list-html", response_class=HTMLResponse)
 def api_list_html(alias: str):
     """List view fragment for SSE swap. Mirrors api_board_html for list mode."""
-    from ..app import _get_project, _not_found_html
+    from ..projects import get_project
     from ...lib.board import Board
 
-    project = _get_project(alias)
+    project = get_project(alias)
     if not project:
-        return HTMLResponse(_not_found_html("Project not found"), status_code=404)
+        return HTMLResponse(render("partials/_empty_state.html", msg="Project not found"), status_code=404)
     board = Board(Path(project["path"]), project["config"])
     tickets = board.ls()
     statuses = project["config"]["board"]["statuses"]

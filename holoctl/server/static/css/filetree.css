@@ -1,4 +1,6 @@
-/* ── File tree ── */
+/* ── File tree (generic + context-panel editorial override) ── */
+
+/* ── Generic file tree (used by non-context pages) ── */
 .file-tree {
   padding: 0 var(--content-px) var(--content-px);
   font-size: 13px;
@@ -29,18 +31,33 @@
 .tree-indent { flex-shrink: 0; display: inline-block; }
 
 .tree-chevron {
-  font-size: 9px;
   color: var(--text-3);
-  transition: transform 0.15s;
+  transition: transform 0.15s var(--ease);
   flex-shrink: 0;
   width: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 details[open] > summary .tree-chevron { transform: rotate(90deg); }
-details[open] > summary .tree-icon { content: '📂'; }
 
-.tree-icon { font-size: 14px; flex-shrink: 0; }
-.tree-name { color: var(--text-1); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-icon {
+  flex-shrink: 0;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+}
+
+.tree-name {
+  color: var(--text-1);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tree-file-name { color: var(--text-2); cursor: pointer; }
 .tree-file-name:hover { color: var(--accent); }
 
@@ -63,3 +80,195 @@ details[open] > summary .tree-icon { content: '📂'; }
   font-size: 12px;
 }
 
+/* Context tree: file links + folder description */
+.tree-context-link {
+  color: var(--text-2);
+  text-decoration: none;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-context-link:hover { color: var(--accent); text-decoration: underline; }
+
+.tree-sep {
+  color: var(--text-3);
+  font-size: 11px;
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+.tree-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+
+/* ── Editorial Context Panel ── */
+/* Scoped entirely under .context-panel / .context-tree so the generic
+   .file-tree used elsewhere is completely unaffected. */
+
+.context-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.context-panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.context-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.context-panel-counter {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+/* The tree lives inside the panel — no extra padding wrapper needed. */
+.context-tree {
+  padding: 8px 0 12px;
+  font-size: 13px;
+}
+
+/* Override generic .tree-row inside context-tree */
+.context-tree .tree-row {
+  padding: 7px 20px;
+  border-radius: 0;
+  gap: 8px;
+  min-height: 34px;
+  transition: background 0.12s var(--ease);
+}
+
+.context-tree .tree-dir-row { cursor: pointer; }
+
+.context-tree .tree-dir-row:hover,
+.context-tree .tree-file-row:hover {
+  background: var(--bg-hover);
+}
+
+.context-tree .tree-dir-row:hover .tree-name,
+.context-tree .tree-file-row:hover .tree-name {
+  color: var(--text-0);
+}
+
+/* Chevron SVG — a small right-pointing stroke arrow */
+.context-tree .tree-chevron {
+  color: var(--text-3);
+  width: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s var(--ease), color 0.12s var(--ease);
+}
+
+.context-tree details[open] > summary .tree-chevron {
+  transform: rotate(90deg);
+  color: var(--text-2);
+}
+
+/* Folder/doc icons — 16px, currentColor stroke */
+.context-tree .tree-icon {
+  color: var(--text-3);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  transition: color 0.12s var(--ease);
+}
+
+.context-tree .tree-dir-row:hover .tree-icon,
+.context-tree .tree-file-row:hover .tree-icon {
+  color: var(--text-2);
+}
+
+.context-tree details[open] > summary .tree-icon-folder {
+  color: var(--accent);
+}
+
+/* Names */
+.context-tree .tree-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+  letter-spacing: -0.1px;
+}
+
+.context-tree .tree-context-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+  letter-spacing: -0.1px;
+  text-decoration: none;
+  transition: color 0.12s var(--ease);
+}
+
+.context-tree .tree-context-link:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* Descriptions stay muted at all times */
+.context-tree .tree-desc {
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+/* Indented children: subtle left indent visual */
+.context-tree .tree-children {
+  border-left: 1px solid var(--border-subtle);
+  margin-left: 32px;
+  margin-right: 0;
+}
+
+/* Lazy states */
+.context-tree .tree-lazy-loading {
+  padding: 8px 20px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-style: italic;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .context-tree .tree-lazy-loading {
+    animation: ctx-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes ctx-pulse {
+    0%, 100% { opacity: 0.6; }
+    50%       { opacity: 1; }
+  }
+}
+
+.context-tree .tree-lazy-error {
+  padding: 8px 20px;
+  color: var(--red);
+  font-size: 12px;
+}
+
+.context-tree .tree-lazy-empty {
+  padding: 6px 20px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-style: italic;
+}

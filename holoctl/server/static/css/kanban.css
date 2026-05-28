@@ -103,7 +103,7 @@
 
 .kanban {
   display: flex;
-  gap: 14px;
+  gap: 16px;
   align-items: stretch;
   /* Take all the height of .content-body so the horizontal scrollbar (when
      the kanban is wider than viewport) lands at the visible bottom edge,
@@ -124,7 +124,7 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   /* Each column is a flex column whose ticket-list scrolls internally. */
   max-height: 100%;
   min-height: 0;
@@ -141,11 +141,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 4px 10px;
+  padding: 8px 4px 12px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.05em;
   color: var(--text-1);
   background: var(--bg-0);
 }
@@ -156,7 +156,7 @@
    neutral so the cards do the talking. */
 .kanban-col-header .count {
   background: var(--bg-2);
-  color: var(--text-2);
+  color: var(--text-3);
   border-radius: 999px;
   padding: 2px 9px;
   font-size: 11px;
@@ -179,7 +179,7 @@
 .kanban-cards {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   /* Per-column vertical scroll. With `flex: 1; min-height: 0` the cards
      area takes whatever room is left after the column header and scrolls
      internally instead of pushing the column past its parent. */

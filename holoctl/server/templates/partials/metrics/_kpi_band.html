@@ -1,0 +1,106 @@
+{#
+  _kpi_band.html — Executive KPI band (Task F2).
+
+  Expected context: kpis (dict), since_days (int), since_label (str).
+
+  Arrow polarity:
+    - throughput: up = good (green), down = bad (red)
+    - cycle p50/p95: down = good (green), up = bad (red)
+    - stale count: no delta shown (count only, yellow)
+    - flow efficiency: higher = better (shown as ratio)
+    - forecast: informational only
+#}
+{%- set k = kpis -%}
+
+<div class="mkpi-band" aria-label="Executive KPI summary">
+
+  {# ── Throughput (label driven by since_label) ── #}
+  <div class="mkpi-card">
+    <div class="mkpi-label">Throughput · {{ since_label }}</div>
+    <div class="mkpi-value">{{ k.throughput_30d_count }}</div>
+    <div class="mkpi-meta">
+      {%- if k.throughput_30d_delta_pct is not none %}
+      {%- set arrow = k.throughput_30d_arrow %}
+      <span class="mkpi-delta mkpi-delta--{{ 'good' if arrow == 'up' else ('bad' if arrow == 'down' else 'flat') }}">
+        {%- if arrow == "up" %}↑{%- elif arrow == "down" %}↓{%- else %}→{%- endif %}
+        {{ k.throughput_30d_delta_pct | abs | round(1) }}%
+      </span>
+      <span class="mkpi-subtitle">vs prev {{ since_days }}d</span>
+      {%- else %}
+      <span class="mkpi-subtitle">completed tickets</span>
+      {%- endif %}
+    </div>
+  </div>
+
+  {# ── Cycle time p50 ── #}
+  <div class="mkpi-card">
+    <div class="mkpi-label">Cycle p50</div>
+    <div class="mkpi-value">
+      {%- if k.cycle_p50 is not none %}{{ k.cycle_p50 }}<span class="mkpi-unit">d</span>{%- else %}—{%- endif %}
+    </div>
+    <div class="mkpi-meta">
+      <span class="mkpi-subtitle">median cycle time</span>
+    </div>
+  </div>
+
+  {# ── Cycle time p95 ── #}
+  <div class="mkpi-card">
+    <div class="mkpi-label">Cycle p95</div>
+    <div class="mkpi-value">
+      {%- if k.cycle_p95 is not none %}{{ k.cycle_p95 }}<span class="mkpi-unit">d</span>{%- else %}—{%- endif %}
+    </div>
+    <div class="mkpi-meta">
+      <span class="mkpi-subtitle">95th-pct cycle time</span>
+    </div>
+  </div>
+
+  {# ── WIP + stale ── #}
+  <div class="mkpi-card">
+    <div class="mkpi-label">WIP</div>
+    <div class="mkpi-value">{{ k.wip_count }}</div>
+    <div class="mkpi-meta">
+      {%- if k.stale_count > 0 %}
+      <span class="mkpi-delta mkpi-delta--warn">{{ k.stale_count }} stale</span>
+      {%- else %}
+      <span class="mkpi-subtitle">in-progress tickets</span>
+      {%- endif %}
+    </div>
+  </div>
+
+  {# ── Flow efficiency ── #}
+  <div class="mkpi-card">
+    <div class="mkpi-label">Flow efficiency</div>
+    <div class="mkpi-value">
+      {%- if k.has_flow_data and k.flow_efficiency_pct is not none %}
+        {{ k.flow_efficiency_pct }}<span class="mkpi-unit">%</span>
+      {%- else %}—{%- endif %}
+    </div>
+    <div class="mkpi-meta">
+      {%- if k.has_flow_data and k.bottleneck %}
+      <span class="mkpi-subtitle">bottleneck: <strong>{{ k.bottleneck }}</strong></span>
+      {%- elif not k.has_flow_data %}
+      <span class="mkpi-subtitle mkpi-subtitle--muted">no transition data yet</span>
+      {%- else %}
+      <span class="mkpi-subtitle">active÷total non-terminal</span>
+      {%- endif %}
+    </div>
+  </div>
+
+  {# ── Forecast ── #}
+  <div class="mkpi-card">
+    <div class="mkpi-label">Forecast</div>
+    <div class="mkpi-value">
+      {%- if k.forecast_weeks_to_clear is not none %}
+        {{ k.forecast_weeks_to_clear }}<span class="mkpi-unit">w</span>
+      {%- else %}—{%- endif %}
+    </div>
+    <div class="mkpi-meta">
+      {%- if k.forecast_weeks_to_clear is not none %}
+      <span class="mkpi-subtitle">clears ~{{ k.forecast_eta }} · {{ k.forecast_weekly_rate }}/wk</span>
+      {%- else %}
+      <span class="mkpi-subtitle">insufficient throughput data</span>
+      {%- endif %}
+    </div>
+  </div>
+
+</div>

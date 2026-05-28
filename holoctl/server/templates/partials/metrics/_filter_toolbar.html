@@ -1,0 +1,105 @@
+{#
+  _filter_toolbar.html — Metrics filter bar (GET form, URL-driven state).
+
+  Expected context variables:
+    metrics_filter   — MetricsFilter TypedDict from holoctl.server.filters
+    filter_options   — dict[str, list[str]] from available_filter_options()
+    base_url         — page URL for form action (e.g. "/project/foo/metrics")
+    is_workspace     — bool; shows Project facet only on workspace view
+    chip_remove_urls — dict: {field+":"+value → remove_qs} pre-computed by route
+    preset_urls      — dict: {preset → qs_string} pre-computed by route
+#}
+{%- set f = metrics_filter -%}
+{%- set opts = filter_options -%}
+{%- set presets = [("7d", "7d"), ("30d", "30d"), ("90d", "90d"), ("sprint", "Sprint"), ("all", "All")] -%}
+{%- set active_preset = f.since_preset if f.since_preset else "30d" -%}
+
+<div class="metrics-filter-toolbar" role="search" aria-label="Metrics filters">
+  <form method="get" action="{{ base_url }}" class="mft-form">
+
+    {# ── Date preset chips (links, not part of form submit) ──────────────── #}
+    <div class="mft-row mft-presets-row" role="group" aria-label="Date range">
+      <span class="mft-label">Period</span>
+      <div class="mft-presets">
+        {%- for value, label in presets %}
+        <a href="{{ base_url }}?{{ preset_urls[value] }}"
+           class="mft-preset-chip{% if active_preset == value %} mft-preset-active{% endif %}"
+           aria-current="{{ 'true' if active_preset == value else 'false' }}">{{ label }}</a>
+        {%- endfor %}
+      </div>
+    </div>
+
+    {# ── Multi-select facets ─────────────────────────────────────────────── #}
+    <div class="mft-row mft-facets-row">
+
+      {# Preserve current since #}
+      <input type="hidden" name="since" value="{{ active_preset }}">
+
+      {%- macro facet(field, label, field_opts, active_set) %}
+      {%- if field_opts %}
+      <details class="mft-facet">
+        <summary class="mft-facet-summary">
+          {{ label }}
+          {%- if active_set %}<span class="mft-facet-count">{{ active_set | length }}</span>{% endif %}
+          <span class="mft-facet-arrow" aria-hidden="true">▾</span>
+        </summary>
+        <div class="mft-facet-body">
+          {%- for opt in field_opts %}
+          <label class="mft-checkbox-label">
+            <input type="checkbox" name="{{ field }}" value="{{ opt }}"
+                   {% if opt in active_set %}checked{% endif %}>
+            <span class="mft-checkbox-text">{{ opt }}</span>
+          </label>
+          {%- endfor %}
+        </div>
+      </details>
+      {%- endif %}
+      {%- endmacro %}
+
+      {{ facet("kind", "Kind", opts.kinds, f.kinds) }}
+      {{ facet("status", "Status", opts.statuses, f.statuses) }}
+      {{ facet("agent", "Agent", opts.agents, f.agents) }}
+      {{ facet("priority", "Priority", opts.priorities, f.priorities) }}
+      {{ facet("sprint", "Sprint", opts.sprints, f.sprints) }}
+      {{ facet("tags", "Tags", opts.tags, f.tags) }}
+      {%- if is_workspace %}
+      {{ facet("project", "Project", opts.projects, f.projects) }}
+      {%- endif %}
+
+      <button type="submit" class="mft-apply-btn">Apply</button>
+    </div>
+
+  </form>
+
+  {# ── Active filter chips ─────────────────────────────────────────────────── #}
+  {%- set has_active = (f.kinds or f.statuses or f.agents or f.priorities or f.sprints or f.tags or f.projects) %}
+  {%- if has_active %}
+  <div class="mft-active-chips" role="group" aria-label="Active filters">
+
+    {%- macro remove_chip(field, value, display_label) %}
+    {%- set chip_key = field ~ ":" ~ value %}
+    {%- set remove_url = chip_remove_urls.get(chip_key, base_url) %}
+    <span class="mft-chip">
+      <span class="mft-chip-axis">{{ display_label }}</span>
+      <span class="mft-chip-value">{{ value }}</span>
+      <a href="{{ base_url }}?{{ remove_url }}"
+         class="mft-chip-remove"
+         aria-label="Remove filter {{ display_label }}: {{ value }}">&times;</a>
+    </span>
+    {%- endmacro %}
+
+    {%- for v in f.kinds | sort %}{{ remove_chip("kind", v, "Kind") }}{%- endfor %}
+    {%- for v in f.statuses | sort %}{{ remove_chip("status", v, "Status") }}{%- endfor %}
+    {%- for v in f.agents | sort %}{{ remove_chip("agent", v, "Agent") }}{%- endfor %}
+    {%- for v in f.priorities | sort %}{{ remove_chip("priority", v, "Priority") }}{%- endfor %}
+    {%- for v in f.sprints | sort %}{{ remove_chip("sprint", v, "Sprint") }}{%- endfor %}
+    {%- for v in f.tags | sort %}{{ remove_chip("tags", v, "Tag") }}{%- endfor %}
+    {%- if is_workspace %}
+    {%- for v in f.projects | sort %}{{ remove_chip("project", v, "Project") }}{%- endfor %}
+    {%- endif %}
+
+    <a href="{{ base_url }}?since={{ active_preset }}" class="mft-clear-all">Clear all</a>
+  </div>
+  {%- endif %}
+
+</div>

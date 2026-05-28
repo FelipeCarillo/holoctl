@@ -3,11 +3,16 @@
 {% if is_empty %}
 <div class="empty-state"><p>No agents defined.</p></div>
 {% else %}
+<div class="meta-search-bar">
+  <span class="meta-search-glyph" aria-hidden="true">🔍</span>
+  <input type="search" class="meta-search" data-meta-search placeholder="Search agents…" autocomplete="off" spellcheck="false" aria-label="Search agents">
+</div>
 <div class="agent-grid">
   {% for a in cards %}
   <a href="{{ a.link }}" class="agent-card">
     <div class="agent-card-header">
       <span class="agent-card-name">{{ a.name }}</span>
+      {% if not a.managed %}<span class="foreign-badge" title="not managed by holoctl — run `hctl adopt`">foreign</span>{% endif %}
       <span class="trigger-badge">{{ a.trigger }}</span>
       <span class="model-badge {{ a.model }}">{{ a.model }}</span>
     </div>

@@ -1,217 +1,138 @@
-"""Compile target: AGENTS.md (cross-tool universal).
+"""Compile target: minimal AGENTS.md discovery shim + foreign-bootstrap body.
 
-Emits a root-level `AGENTS.md` that AGENTS.md-aware assistants respect
-(OpenAI Codex, GitHub Copilot, Claude Code, Zed, Aider, JetBrains Junie,
-Google Jules, Factory, goose, VS Code, UiPath Autopilot, ...).
+holoctl maintains a deep, native compiler only for Claude Code. Every other
+assistant is served by the `holoctl-foreign-bootstrap` skill rather than a
+bespoke per-tool compiler. This target emits the two files that make that work:
 
-Decoupled from any specific assistant: this is the *neutral interop file*.
-Tool-specific compilers (claude/copilot/codex/...) emit their own per-tool
-files; this one fills the gap that AGENTS.md is the only true cross-tool
-standard for instructions.
+  1. A **minimal `AGENTS.md`** at the repo root — the cross-tool convention
+     ([agents.md](https://agents.md/)) that every non-Claude assistant reads.
+     It no longer mirrors objective/architecture/conventions; it just points a
+     foreign assistant at the bootstrap below.
+  2. **`.holoctl/foreign-bootstrap.md`** — the bootstrap skill body (frontmatter
+     stripped, per-tool format hints inlined) at a tool-neutral path a foreign
+     assistant can read without knowing about `.claude/skills/`.
 
-Sourcing rules (priority):
-  1. `.holoctl/context/objective.md`        → Project / Objective sections
-  2. `.holoctl/context/architecture.md`     → Architecture overview
-  3. `.holoctl/context/conventions.md`      → Conventions
-  4. Detected build/test commands           → Build / Test sections
-  5. Subprojects (config.project.repos[])   → Sub-projects section
-  6. Holoctl quick reference                → How agents should operate
-
-The output is plain Markdown. No frontmatter (AGENTS.md spec doesn't define
-one — keeping it minimal maximizes adoption).
+Both are emitted **clean** (no header) and manifest-tracked via the ledger
+(`.holoctl/.compiled.json`), so the hand-edit guard and
+`hctl doctor --compile-drift` treat them like any other compiled output.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Optional
 
-from ._safe_write import HEADER as _HEADER, safe_write_md
+from .manifest import CompileLedger
 from .template import resolve_template
 
+_BOOTSTRAP_REL = ".holoctl/foreign-bootstrap.md"
+_SKILL_NAME = "holoctl-foreign-bootstrap"
 
-def compile_agents(project_root: Path, config: dict, dry_run: bool = False) -> dict:
-    """Emit `AGENTS.md` at the project root.
 
-    Idempotent: re-running produces the same content for unchanged inputs.
+def compile_agents(
+    project_root: Path,
+    config: dict,
+    dry_run: bool = False,
+    ledger: CompileLedger | None = None,
+) -> dict:
+    """Emit the minimal `AGENTS.md` shim + `.holoctl/foreign-bootstrap.md`.
+
+    Idempotent: re-running produces identical content for unchanged inputs.
+    Files are headerless and routed through *ledger* (manifest-tracked). When
+    no ledger is supplied (direct call / tests / drift scratch), a self-contained
+    one is created and finalized here.
     """
-    files = []
-    skipped: list[dict] = []
-
-    project_name = config.get("project", {}).get("name", project_root.name)
-    objective = _read_section(project_root / ".holoctl" / "context" / "objective.md")
-    architecture = _read_section(project_root / ".holoctl" / "context" / "architecture.md")
-    conventions = _read_section(project_root / ".holoctl" / "context" / "conventions.md")
-    build_cmds, test_cmds = _detect_commands(project_root)
-    subprojects = config.get("project", {}).get("repos", []) or []
-    holoctl_version = config.get("holoctlVersion", "?")
-
-    sections = []
-    sections.append(f"# AGENTS.md — {project_name}\n")
-    sections.append(
-        "This file gives coding agents the context to work productively in "
-        "this repo. It's the cross-tool standard ([agents.md](https://agents.md/)) "
-        "respected by OpenAI Codex, GitHub Copilot, Claude Code, Zed, Aider, "
-        "Junie, Jules, goose and other AGENTS.md-aware assistants.\n"
-    )
-
-    if objective:
-        sections.append("## Objective\n\n" + objective.strip() + "\n")
-
-    if architecture:
-        sections.append("## Architecture\n\n" + architecture.strip() + "\n")
-
-    if conventions:
-        sections.append("## Conventions\n\n" + conventions.strip() + "\n")
-
-    if build_cmds:
-        sections.append(
-            "## Build commands\n\n"
-            + "\n".join(f"- `{c}`" for c in build_cmds)
-            + "\n"
+    owns_ledger = ledger is None
+    if ledger is None:
+        from ._safe_write import force as _force
+        ledger = CompileLedger.for_target(
+            project_root, "agents", dry_run=dry_run, force=_force()
         )
 
-    if test_cmds:
-        sections.append(
-            "## Test commands\n\n"
-            + "\n".join(f"- `{c}`" for c in test_cmds)
-            + "\n"
-        )
+    files: list[str] = []
 
-    if subprojects:
-        rows = ["| Path | Name | Description |", "|---|---|---|"]
-        for r in subprojects:
-            path = r.get("path", "?")
-            name = r.get("name", "")
-            desc = (r.get("description") or "").replace("|", "\\|")
-            rows.append(f"| `{path}` | {name} | {desc} |")
-        sections.append("## Sub-projects\n\n" + "\n".join(rows) + "\n")
+    project_name = config.get("project", {}).get("name") or project_root.name
+    agents_md = resolve_template(_agents_shim(project_name), config)
+    if ledger.write("AGENTS.md", agents_md, source=".holoctl/instructions.md", target="agents"):
+        files.append("AGENTS.md")
 
-    sections.append(_holoctl_quick_reference(holoctl_version))
+    bootstrap = _foreign_bootstrap_body()
+    if ledger.write(_BOOTSTRAP_REL, bootstrap, source="builtin", target="agents"):
+        files.append(_BOOTSTRAP_REL)
 
-    body = "\n".join(sections)
-    body = resolve_template(body, config)
-    output = _HEADER + body
-
-    out_path = "AGENTS.md"
-    if not dry_run:
-        if safe_write_md(project_root / out_path, output, skipped=skipped):
-            files.append(out_path)
-    else:
-        files.append(out_path)
+    if owns_ledger:
+        from ... import __version__ as _ver
+        ledger.prune_orphans()
+        ledger.finalize(holoctl_version=_ver)
 
     result: dict[str, object] = {"files": files}
-    if skipped:
-        result["skipped"] = skipped
+    if ledger.skipped:
+        result["skipped"] = ledger.skipped
     return result
 
 
-def _read_section(path: Path) -> Optional[str]:
-    """Return the body of a markdown file (without frontmatter), or None."""
-    if not path.exists():
-        return None
-    raw = path.read_text(encoding="utf-8")
-    # Strip YAML frontmatter if present.
+def _agents_shim(project_name: str) -> str:
+    return f"""# AGENTS.md — {project_name}
+
+This repository is managed by **holoctl**. The canonical source of truth lives
+in `.holoctl/` (tool-neutral). The `hctl` CLI (on PATH) compiles it into Claude
+Code's native config only.
+
+## If you are Claude Code
+
+Your native config is already materialized in `.claude/` and `CLAUDE.md`. Use
+those — you can ignore the rest of this file.
+
+## If you are any other assistant (Copilot, Codex, Cursor, Aider, Zed, …)
+
+holoctl does not maintain a compiler for you. Bootstrap yourself:
+
+1. Read and follow **`.holoctl/foreign-bootstrap.md`** — it explains how to read
+   `.holoctl/` and generate your own native config dir from it.
+2. Quick map of where your output goes: Copilot → `.github/`; Codex → `.codex/`;
+   Cursor → `.cursor/rules/`; generic AGENTS.md-aware tools → this file.
+
+## Hard rules
+
+- Never edit `.holoctl/board/index.json` or `.holoctl/memory/MEMORY.md` by hand —
+  they are derived. Use `hctl <subcommand>` (e.g. `hctl board add`).
+- Treat any config you generate (`.github/`, `.codex/`, `.cursor/`) as derived;
+  regenerate it from `.holoctl/` after changes instead of hand-editing.
+"""
+
+
+def _foreign_bootstrap_body() -> str:
+    """The foreign-bootstrap skill body (frontmatter stripped) with its per-tool
+    format hints inlined, so the standalone `.holoctl/foreign-bootstrap.md` is
+    self-contained for an assistant that can't read `.claude/skills/`."""
+    skill_root = _package_skill_dir(_SKILL_NAME)
+    parts: list[str] = []
+    skill_md = skill_root / "SKILL.md"
+    if skill_md.exists():
+        parts.append(_strip_frontmatter(skill_md.read_text(encoding="utf-8")).strip())
+    hints = skill_root / "references" / "format-hints.md"
+    if hints.exists():
+        parts.append(hints.read_text(encoding="utf-8").strip())
+    if not parts:
+        return (
+            "# holoctl foreign-bootstrap\n\n"
+            "Read `.holoctl/` (instructions.md, context/, agents/, memory/, "
+            "commands/) and materialize it into your tool's native config dir.\n"
+        )
+    return "\n\n---\n\n".join(parts) + "\n"
+
+
+def _package_skill_dir(name: str) -> Path:
+    try:
+        from importlib.resources import files as _ires_files
+        root = _ires_files("holoctl") / "templates" / "skills" / name
+    except (ModuleNotFoundError, AttributeError):
+        root = Path(__file__).resolve().parent.parent.parent / "templates" / "skills" / name
+    return Path(str(root))
+
+
+def _strip_frontmatter(raw: str) -> str:
+    """Drop a leading YAML frontmatter block, if present."""
     if raw.startswith("---\n"):
         end = raw.find("\n---\n", 4)
         if end != -1:
-            raw = raw[end + 5 :]
-    return raw.strip() or None
-
-
-def _detect_commands(project_root: Path) -> tuple[list[str], list[str]]:
-    """Best-effort detection of build/test commands from package files.
-
-    Returns (build_cmds, test_cmds). Each list is small (<=4) and contains
-    actual invocations the agent can run directly.
-    """
-    build, test = [], []
-
-    pkg_json = project_root / "package.json"
-    if pkg_json.exists():
-        try:
-            data = json.loads(pkg_json.read_text(encoding="utf-8"))
-            scripts = data.get("scripts", {}) or {}
-            for key in ("build", "compile", "dev"):
-                if key in scripts:
-                    build.append(f"npm run {key}")
-            for key in ("test", "test:unit", "test:ci"):
-                if key in scripts:
-                    test.append(f"npm run {key}")
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    pyproject = project_root / "pyproject.toml"
-    if pyproject.exists():
-        try:
-            content = pyproject.read_text(encoding="utf-8")
-            # Heuristic — look for common scripts/build-system markers.
-            if "[tool.poetry.scripts]" in content or "[project.scripts]" in content:
-                build.append("# see pyproject.toml [project.scripts]")
-            if "pytest" in content:
-                test.append("pytest")
-            if "[tool.hatch" in content:
-                build.append("hatch build")
-            if "uv" in content.lower() or (project_root / "uv.lock").exists():
-                build.append("uv sync")
-        except OSError:
-            pass
-
-    if (project_root / "Cargo.toml").exists():
-        build.append("cargo build")
-        test.append("cargo test")
-
-    if (project_root / "go.mod").exists():
-        build.append("go build ./...")
-        test.append("go test ./...")
-
-    if (project_root / "Makefile").exists():
-        # Don't enumerate targets — just point at it.
-        build.append("make           # see Makefile for available targets")
-
-    if (project_root / "Justfile").exists() or (project_root / "justfile").exists():
-        build.append("just           # see Justfile for available recipes")
-
-    # Dedupe preserving order.
-    return _dedup(build), _dedup(test)
-
-
-def _dedup(items: list[str]) -> list[str]:
-    seen = set()
-    out = []
-    for it in items:
-        if it not in seen:
-            seen.add(it)
-            out.append(it)
-    return out
-
-
-def _holoctl_quick_reference(version: str) -> str:
-    return f"""## How to operate (holoctl-managed repo)
-
-This repo is managed by **holoctl** (`{version}`). The source of truth lives
-in `.holoctl/` — it materializes per-tool config via `hctl compile`.
-
-Common commands you can run:
-
-| Need | Command |
-|---|---|
-| Read project state | `hctl boot` |
-| Inspect everything | `hctl overview` |
-| List tickets | `hctl board ls` |
-| Create a ticket | `hctl board add '<json>'` |
-| List personas | `hctl agent list` |
-| Search memory | `hctl memory search <query>` |
-| Curator suggestions | `hctl curate show` |
-| End-of-session save | `hctl handoff` |
-
-**Hard rules:**
-
-- Never edit `.holoctl/board/index.json` or `.holoctl/memory/MEMORY.md` by
-  hand. Use `hctl <subcommand>`.
-- Never overwrite hand-edited AI configs (`CLAUDE.md`,
-  `.github/copilot-instructions.md`, `.codex/AGENTS.override.md`, or populated
-  `AGENTS.md` sections outside the holoctl-generated block) — read for context.
-- Slash command equivalent: `/holoctl` (or `holoctl` skill). It detects
-  workspace state and routes to init / upgrade / operate.
-"""
+            return raw[end + 5 :]
+    return raw

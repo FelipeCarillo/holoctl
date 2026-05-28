@@ -1,5 +1,8 @@
 /* ── Detail pages ── */
-.detail-page { max-width: 960px; }
+/* `padding-inline` gives the cards' box-shadow a few px of breathing room so
+   the left edge isn't clipped by the scroll containers' computed overflow-x
+   (`.content-body` for doc detail; `.detail-main`/`.detail-rail` for tickets). */
+.detail-page { max-width: 960px; padding-inline: 4px; }
 
 .detail-header { margin-bottom: 28px; }
 
@@ -19,9 +22,9 @@
 }
 
 .detail-title {
-  font-size: 24px;
-  font-weight: 800;
-  letter-spacing: -0.6px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
   line-height: 1.25;
 }
 
@@ -38,7 +41,8 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 20px 22px;
+  padding: 22px 24px;
+  box-shadow: var(--shadow-sm);
   animation: fadeUp 0.3s var(--ease) both;
 }
 
@@ -74,6 +78,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 20px 22px;
+  box-shadow: var(--shadow-sm);
   position: sticky;
   top: calc(var(--header-h) + 28px);
 }
@@ -195,7 +200,9 @@
 [data-detail-page] .detail-main {
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  /* Symmetric inset: right keeps content off the scrollbar; left stops the
+     card box-shadow from being clipped by the computed overflow-x. */
+  padding-inline: 4px;
 }
 
 [data-detail-page] .detail-section {
@@ -211,7 +218,9 @@
   min-height: 0;
   /* Independent vertical scroll, parallel to .detail-main. */
   overflow-y: auto;
-  padding-right: 4px;
+  /* Symmetric inset: right keeps content off the scrollbar; left stops the
+     card box-shadow from being clipped by the computed overflow-x. */
+  padding-inline: 4px;
 }
 
 /* Each card in the rail. Notion/Things-style: same chrome as cards
@@ -220,7 +229,8 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 14px 16px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   gap: 8px;

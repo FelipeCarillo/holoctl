@@ -3,6 +3,10 @@
 {% if is_empty %}
 <div class="empty-state"><p>No repos registered. Run <code>holoctl repo add &lt;path&gt;</code>.</p></div>
 {% else %}
+<div class="meta-search-bar">
+  <span class="meta-search-glyph" aria-hidden="true">🔍</span>
+  <input type="search" class="meta-search" data-meta-search placeholder="Search repos…" autocomplete="off" spellcheck="false" aria-label="Search repos">
+</div>
 <div class="context-list">
   {% for r in items %}
   <div class="context-item">

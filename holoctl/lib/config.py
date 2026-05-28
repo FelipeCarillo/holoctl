@@ -41,12 +41,14 @@ _DEFAULTS: dict = {
         # corporate AV; off-by-default makes the dashboard instant.
         "checkDirty": False,
     },
-    # `agents` is the cross-tool universal AGENTS.md emitter (Codex / Aider /
-    # Zed / Junie / Jules / goose / etc. respect it). Always included so any
-    # AGENTS.md-aware assistant opening the repo gets context. `claude` adds
-    # Claude Code-native files (CLAUDE.md, .claude/agents/, .claude/commands/,
-    # settings.json). The other supported targets (`copilot`, `codex`) are
-    # opt-in via `hctl compile --target X` or by editing this list.
+    # holoctl maintains a deep, native compiler only for Claude Code (`claude`
+    # → CLAUDE.md, .claude/agents/, .claude/commands/, skills, settings.json).
+    # `agents` emits a minimal AGENTS.md discovery shim (the cross-tool
+    # convention) plus `.holoctl/foreign-bootstrap.md`, which points any
+    # non-Claude assistant (Copilot, Codex, Cursor, Aider, Zed, …) at the
+    # `holoctl-foreign-bootstrap` skill so it can generate its own config dir
+    # from `.holoctl/`. Both targets ship by default; `agents` is listed first
+    # so a foreign assistant finds the pointer immediately.
     "targets": ["agents", "claude"],
     "server": {
         "port": 4242,
@@ -170,8 +172,10 @@ def find_project_root(start: Path | None = None) -> Path | None:
 
 # Targets that holoctl previously shipped but were retired. Filtered silently
 # from workspace configs on load so legacy workspaces (whose `targets` array
-# still lists them) don't blow up at compile time.
-_REMOVED_TARGETS = frozenset({"cursor", "windsurf", "devin", "generic"})
+# still lists them) don't blow up at compile time. `copilot`/`codex` joined
+# this set in 0.20.0 when holoctl narrowed to a Claude-only compiler — those
+# assistants are now served by the `holoctl-foreign-bootstrap` skill instead.
+_REMOVED_TARGETS = frozenset({"cursor", "windsurf", "devin", "generic", "copilot", "codex"})
 
 
 def _filter_removed_targets(config: dict) -> dict:

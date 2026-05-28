@@ -1,7 +1,7 @@
 """Tests for the dashboard's empty-section stripper."""
 from __future__ import annotations
 
-from holoctl.server.app import _strip_empty_sections, _is_placeholder_only
+from holoctl.server.markdown import strip_empty_sections as _strip_empty_sections, _is_placeholder_only
 
 
 def test_keeps_section_with_real_content():
@@ -42,7 +42,9 @@ def test_drops_section_with_only_placeholder_checklist():
     assert "(criteria" not in out
 
 
-def test_drops_empty_section():
+def test_keeps_empty_section():
+    # Empty body (no content at all) is not treated as a placeholder —
+    # the heading is preserved so lone section titles remain visible.
     body = """\
 # Out of scope
 
@@ -52,7 +54,7 @@ def test_drops_empty_section():
 real content here
 """
     out = _strip_empty_sections(body)
-    assert "Out of scope" not in out
+    assert "Out of scope" in out
     assert "Context" in out
 
 
@@ -96,8 +98,10 @@ def test_is_placeholder_only_recognizes_html_comment():
     assert _is_placeholder_only("<!-- hint -->\n")
 
 
-def test_is_placeholder_only_recognizes_blank():
-    assert _is_placeholder_only("\n  \n\t\n")
+def test_is_placeholder_only_rejects_blank():
+    # An entirely blank body is NOT a placeholder — it means the author left
+    # the section empty intentionally; the heading should still render.
+    assert not _is_placeholder_only("\n  \n\t\n")
 
 
 def test_is_placeholder_only_rejects_real_content():

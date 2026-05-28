@@ -36,7 +36,7 @@ app = typer.Typer()
 def boot_cmd(
     target: Optional[str] = typer.Option(
         None, "--target",
-        help="Hint of which assistant is calling (claude|copilot|codex). Recorded in journal.",
+        help="Hint of which assistant is calling (e.g. claude). Recorded in journal.",
     ),
     cwd: Optional[str] = typer.Option(
         None, "--cwd",

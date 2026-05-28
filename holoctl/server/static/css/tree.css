@@ -93,10 +93,10 @@
   height: 8px;
   border-radius: 50%;
 }
-.tr-prio-dot[data-p="p0"] { background: var(--prio-p0, #ef4444); }
-.tr-prio-dot[data-p="p1"] { background: var(--prio-p1, #f59e0b); }
-.tr-prio-dot[data-p="p2"] { background: var(--prio-p2, #6b7280); }
-.tr-prio-dot[data-p="p3"] { background: var(--prio-p3, #9ca3af); }
+.tr-prio-dot[data-p="p0"] { background: var(--red); }
+.tr-prio-dot[data-p="p1"] { background: var(--accent); }
+.tr-prio-dot[data-p="p2"] { background: var(--text-2); }
+.tr-prio-dot[data-p="p3"] { background: var(--text-3); }
 .tr-id {
   font-family: var(--font-mono);
   font-size: 11px;

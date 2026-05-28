@@ -18,7 +18,7 @@ app = typer.Typer()
 def init_cmd(
     name: Optional[str] = typer.Option(None, "--name", help="Project name"),
     prefix: Optional[str] = typer.Option(None, "--prefix", help="Ticket ID prefix (e.g. MP)"),
-    targets: Optional[str] = typer.Option(None, "--targets", help="Compile targets (agents,claude,copilot,codex)"),
+    targets: Optional[str] = typer.Option(None, "--targets", help="Compile targets (agents,claude)"),
     skip_compile: bool = typer.Option(False, "--skip-compile", help="Skip auto-compile after init"),
     bare: bool = typer.Option(False, "--bare", help="Create only the directory skeleton; skip compile, hooks, MCP."),
 ):
@@ -66,7 +66,7 @@ def init_cmd(
 
     project_name = name or cwd.name
     project_prefix = prefix or _derive_prefix(project_name)
-    target_list = [t.strip() for t in targets.split(",")] if targets else ["claude"]
+    target_list = [t.strip() for t in targets.split(",")] if targets else ["agents", "claude"]
 
     config = get_defaults()
     config["holoctlVersion"] = __version__

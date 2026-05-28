@@ -14,6 +14,7 @@ import { initInlineAdd } from './inline-add.js';
 import { initViewSwitcher } from './view-switcher.js';
 import { initListSelection } from './list-selection.js';
 import { initInlineEdit } from './inline-edit.js';
+import { initMetaSearch } from './meta-search.js';
 
 // Side-effect imports — these modules only export window-scoped handlers
 // consumed via onclick attributes, no init() to call.
@@ -47,5 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initViewSwitcher();
   initListSelection();
   initInlineEdit();
+  initMetaSearch();
   initRoleButtonKeys();
 });

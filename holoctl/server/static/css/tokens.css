@@ -1,9 +1,10 @@
-﻿/* holoctl — Refined Utilitarian Dashboard */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+/* holoctl — Editorial Dashboard */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 /* ── Theme tokens ── */
 :root {
-  --font: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   --radius: 12px;
   --radius-sm: 8px;
@@ -15,93 +16,108 @@
   --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-[data-theme="dark"] {
-  --bg-0: #0f0f12;
-  --bg-1: #15151a;
-  --bg-2: #1b1b21;
-  --bg-3: #22222a;
-  --bg-card: #17171c;
-  --bg-hover: #1f1f26;
-  --bg-elevated: #23232c;
-
-  --border: #25252d;
-  --border-hover: #36363f;
-  --border-active: #474751;
-
-  --text-0: #f4f4f6;
-  --text-1: #b0b0be;
-  --text-2: #7a7a8c;
-  --text-3: #4e4e60;
-
-  --accent: #6b6bff;
-  --accent-hover: #8585ff;
-  --accent-subtle: rgba(107, 107, 255, 0.10);
-  --accent-glow: rgba(107, 107, 255, 0.20);
-  --accent-warm: #f08a3e;
-
-  --green: #30d158;
-  --green-subtle: rgba(48, 209, 88, 0.10);
-  --yellow: #ffd60a;
-  --yellow-subtle: rgba(255, 214, 10, 0.10);
-  --red: #ff453a;
-  --red-subtle: rgba(255, 69, 58, 0.10);
-  --blue: #0a84ff;
-  --blue-subtle: rgba(10, 132, 255, 0.10);
-  --cyan: #64d2ff;
-  --cyan-subtle: rgba(100, 210, 255, 0.10);
-  --purple: #bf5af2;
-  --purple-subtle: rgba(191, 90, 242, 0.10);
-  --orange: #ff9f0a;
-  --orange-subtle: rgba(255, 159, 10, 0.10);
-
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.20), 0 1px 3px rgba(0,0,0,0.18);
-  --shadow-md: 0 1px 2px rgba(0,0,0,0.22), 0 6px 16px rgba(0,0,0,0.28);
-  --shadow-lg: 0 4px 8px rgba(0,0,0,0.30), 0 16px 40px rgba(0,0,0,0.36);
-  --shadow-glow: 0 0 24px var(--accent-glow);
-}
-
+/* Light theme — canonical, warm editorial off-white. */
 [data-theme="light"] {
-  --bg-0: #fafaf7;
-  --bg-1: #f4f4ef;
-  --bg-2: #eeeee9;
-  --bg-3: #e6e6e0;
+  --bg-0: #f3f2ee;
+  --bg-1: #eeede7;
+  --bg-2: #e8e7e0;
+  --bg-3: #e0dfd6;
   --bg-card: #ffffff;
-  --bg-hover: #f1f1ec;
+  --bg-hover: #f1f0ea;
   --bg-elevated: #ffffff;
 
-  --border: #e2e2dc;
-  --border-hover: #d0d0c8;
-  --border-active: #b8b8b0;
+  --border-subtle: #ece9e2;
+  --border: #e6e5dd;
+  --border-hover: #d8d6ca;
+  --border-active: #c4c1b2;
 
   --text-0: #1a1a16;
-  --text-1: #4a4a44;
-  --text-2: #8a8a82;
-  --text-3: #b0b0a8;
+  --text-1: #46453d;
+  --text-2: #6a6a62;
+  --text-3: #9a9488;
 
-  --accent: #4f46e5;
-  --accent-hover: #635bff;
-  --accent-subtle: rgba(79, 70, 229, 0.06);
-  --accent-glow: rgba(79, 70, 229, 0.15);
-  --accent-warm: #d97706;
+  --accent: #c2410c;
+  --accent-hover: #ea580c;
+  --accent-subtle: rgba(194, 65, 12, 0.07);
+  --accent-glow: rgba(194, 65, 12, 0.16);
+  --accent-warm: #b45309;
 
   --green: #16a34a;
-  --green-subtle: rgba(22, 163, 74, 0.07);
+  --green-subtle: rgba(22, 163, 74, 0.08);
   --yellow: #b45309;
-  --yellow-subtle: rgba(180, 83, 9, 0.07);
+  --yellow-subtle: rgba(180, 83, 9, 0.08);
   --red: #dc2626;
-  --red-subtle: rgba(220, 38, 38, 0.07);
+  --red-subtle: rgba(220, 38, 38, 0.08);
   --blue: #2563eb;
-  --blue-subtle: rgba(37, 99, 235, 0.07);
+  --blue-subtle: rgba(37, 99, 235, 0.08);
   --cyan: #0891b2;
-  --cyan-subtle: rgba(8, 145, 178, 0.07);
+  --cyan-subtle: rgba(8, 145, 178, 0.08);
   --purple: #7c3aed;
-  --purple-subtle: rgba(124, 58, 237, 0.07);
+  --purple-subtle: rgba(124, 58, 237, 0.08);
   --orange: #c2410c;
-  --orange-subtle: rgba(194, 65, 12, 0.07);
+  --orange-subtle: rgba(194, 65, 12, 0.08);
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06);
-  --shadow-lg: 0 2px 4px rgba(0,0,0,0.04), 0 12px 32px rgba(0,0,0,0.08);
+  --shadow-sm: 0 1px 2px rgba(40, 34, 20, 0.05);
+  --shadow-md: 0 1px 2px rgba(40, 34, 20, 0.05), 0 8px 22px rgba(40, 34, 20, 0.07);
+  --shadow-lg: 0 2px 4px rgba(40, 34, 20, 0.06), 0 16px 38px rgba(40, 34, 20, 0.10);
   --shadow-glow: 0 0 24px var(--accent-glow);
+
+  /* Horizontal inset for content panels (file tree, scope filter). Theme-
+     independent layout token; referenced by scope.css + filetree.css. */
+  --content-px: 16px;
+
+  /* Text color for elements rendered on the accent background (e.g. filled
+     CTA buttons).  White reads clearly against the dark terracotta accent. */
+  --text-on-accent: #fff;
 }
 
+/* Dark theme — warm near-black, still editorial (not cool gray). */
+[data-theme="dark"] {
+  --bg-0: #14130f;
+  --bg-1: #1a1812;
+  --bg-2: #201d16;
+  --bg-3: #26231a;
+  --bg-card: #1c1a15;
+  --bg-hover: #23201a;
+  --bg-elevated: #252219;
+
+  --border-subtle: #242219;
+  --border: #2c2a22;
+  --border-hover: #3a372d;
+  --border-active: #4a4638;
+
+  --text-0: #f4f1e8;
+  --text-1: #c4bdac;
+  --text-2: #9a9486;
+  --text-3: #6b6658;
+
+  --accent: #f0884e;
+  --accent-hover: #f59b6a;
+  --accent-subtle: rgba(240, 136, 78, 0.12);
+  --accent-glow: rgba(240, 136, 78, 0.22);
+  --accent-warm: #e0a060;
+
+  --green: #5fd07f;
+  --green-subtle: rgba(95, 208, 127, 0.12);
+  --yellow: #e0b050;
+  --yellow-subtle: rgba(224, 176, 80, 0.12);
+  --red: #f06a5e;
+  --red-subtle: rgba(240, 106, 94, 0.12);
+  --blue: #5b9bf5;
+  --blue-subtle: rgba(91, 155, 245, 0.12);
+  --cyan: #5fc7e8;
+  --cyan-subtle: rgba(95, 199, 232, 0.12);
+  --purple: #b98af0;
+  --purple-subtle: rgba(185, 138, 240, 0.12);
+  --orange: #f0884e;
+  --orange-subtle: rgba(240, 136, 78, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.30), 0 8px 22px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.35), 0 16px 40px rgba(0, 0, 0, 0.50);
+  --shadow-glow: 0 0 24px var(--accent-glow);
+
+  /* Dark accent (#f0884e) is light enough that white still reads clearly;
+     keep consistent with light theme. */
+  --text-on-accent: #fff;
+}

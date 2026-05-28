@@ -10,7 +10,7 @@ function bcStorageKey() {
 
 const BC_DEFAULT = {
   search: '',
-  filter: { status: '', priority: '', agent: '', sprint: '', tag: '', project: '' },
+  filter: { status: '', priority: '', agent: '', sprint: '', tag: '', project: '', kind: '', source: '' },
   sort: 'created',
   group: 'status',
 };
@@ -25,6 +25,8 @@ const BC_AXIS = {
   sprint:   { label: 'Sprint',   attr: 'sprint',   multi: false },
   tag:      { label: 'Tag',      attr: 'tags',     multi: true  },
   project:  { label: 'Project',  attr: 'projects', multi: true  },
+  kind:     { label: 'Kind',     attr: 'kind',     multi: false },
+  source:   { label: 'Source',   attr: 'source',   multi: false },
 };
 
 function bcLoad() {
@@ -124,9 +126,9 @@ function bcGetComparator(mode) {
 }
 
 // Axis name → data-* attribute used by the card markup.
-const BC_GROUP_ATTR = { priority: 'p', sprint: 'sprint', agent: 'agent', tag: 'tags' };
+const BC_GROUP_ATTR = { priority: 'p', sprint: 'sprint', agent: 'agent', tag: 'tags', project: 'projects', kind: 'kind' };
 // Axes where a comma-separated list means "ticket belongs to multiple buckets".
-const BC_GROUP_MULTI = new Set(['agent', 'tags']);
+const BC_GROUP_MULTI = new Set(['agent', 'tags', 'projects']);
 
 function bcBucketKeys(card, axisAttr) {
   const raw = card.getAttribute('data-' + axisAttr) || '';

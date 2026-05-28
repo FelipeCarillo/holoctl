@@ -3,12 +3,16 @@
 {% if is_empty %}
 <div class="empty-state"><p>No commands defined.</p></div>
 {% else %}
+<div class="meta-search-bar">
+  <span class="meta-search-glyph" aria-hidden="true">🔍</span>
+  <input type="search" class="meta-search" data-meta-search placeholder="Search commands…" autocomplete="off" spellcheck="false" aria-label="Search commands">
+</div>
 <div class="context-list">
   {% for c in items %}
   <a href="{{ c.link }}" class="context-item">
     <div class="context-item-icon command">{% include "icons/cmd.svg" %}</div>
     <div>
-      <div class="context-item-name">/{{ c.name }}</div>
+      <div class="context-item-name">/{{ c.name }}{% if not c.managed %} <span class="foreign-badge" title="not managed by holoctl — run `hctl adopt`">foreign</span>{% endif %}</div>
       <div class="context-item-desc">{{ c.desc }}</div>
     </div>
   </a>
