@@ -37,30 +37,34 @@ def commands_context(commands: list[dict], alias: str) -> dict:
     return {"items": items, "is_empty": not commands}
 
 
-_CONTEXT_ICON_MAP = {
-    "objective": "objective",
-    "architecture": "architecture",
-    "conventions": "conventions",
-    "decisions": "folder",
-    "documents": "folder",
-}
-
-
 def context_context(docs: list[dict], alias: str) -> dict:
     items = []
+    folder_count = 0
+    file_count = 0
     for d in docs:
-        stem = d["name"].replace(".md", "").lower()
         is_dir = d["isDir"]
-        icon_cls = _CONTEXT_ICON_MAP.get(stem, "folder" if is_dir else "doc")
-        link = "#" if is_dir else f"/project/{alias}/context/{d['name']}"
+        if is_dir:
+            folder_count += 1
+        else:
+            file_count += 1
+        # Directories are lazy-expanded by filetree.js; files link directly.
+        link = None if is_dir else f"/project/{alias}/context/{d['name']}"
+        # data_path carries the subpath filetree.js will fetch children for.
+        data_path = d["name"] if is_dir else None
         items.append({
             "name": d["name"],
             "desc": d["description"],
             "is_dir": is_dir,
-            "icon_cls": icon_cls,
             "link": link,
+            "data_path": data_path,
         })
-    return {"items": items, "is_empty": not docs}
+    return {
+        "items": items,
+        "is_empty": not docs,
+        "alias": alias,
+        "folder_count": folder_count,
+        "file_count": file_count,
+    }
 
 
 def repos_context(repos: list[dict], alias: str) -> dict:

@@ -3,20 +3,45 @@
 {% if is_empty %}
 <div class="empty-state"><p>No context documents.</p></div>
 {% else %}
-<div class="meta-search-bar">
-  <span class="meta-search-glyph" aria-hidden="true">🔍</span>
-  <input type="search" class="meta-search" data-meta-search placeholder="Search context…" autocomplete="off" spellcheck="false" aria-label="Search context">
-</div>
-<div class="context-list">
-  {% for d in items %}
-  <a href="{{ d.link }}" class="context-item">
-    <div class="context-item-icon {{ d.icon_cls }}">{% if d.is_dir %}{% include "icons/folder.svg" %}{% else %}{% include "icons/doc.svg" %}{% endif %}</div>
-    <div>
-      <div class="context-item-name">{{ d.name }}</div>
-      <div class="context-item-desc">{{ d.desc }}</div>
+<div class="context-panel">
+  <div class="context-panel-header">
+    <span class="context-panel-title">Context documents</span>
+    <span class="context-panel-counter">
+      {% if folder_count %}{{ folder_count }} folder{% if folder_count != 1 %}s{% endif %}{% if file_count %}, {% endif %}{% endif %}{% if file_count %}{{ file_count }} file{% if file_count != 1 %}s{% endif %}{% endif %}
+    </span>
+  </div>
+  <div id="context-tree"
+       class="context-tree"
+       data-alias="{{ alias }}"
+       data-tree-endpoint="/api/project/{{ alias }}/context/tree"
+       data-file-href-base="/project/{{ alias }}/context/">
+    {% for d in items %}
+    {% if d.is_dir %}
+    <details class="tree-dir context-tree-dir">
+      <summary class="tree-row tree-dir-row" data-path="{{ d.data_path }}">
+        <span class="tree-chevron" aria-hidden="true">
+          <svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor"><path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </span>
+        <span class="tree-icon tree-icon-folder" aria-hidden="true">{% include "icons/folder.svg" %}</span>
+        <span class="tree-name">{{ d.name }}</span>
+        {% if d.desc %}<span class="tree-sep" aria-hidden="true">·</span><span class="tree-desc">{{ d.desc }}</span>{% endif %}
+      </summary>
+      <div class="tree-children tree-lazy"
+           id="children-{{ d.data_path | replace('/', '-') }}"
+           data-path="{{ d.data_path }}"
+           data-depth="0"
+           data-loaded="false"
+           style="display:none"></div>
+    </details>
+    {% else %}
+    <div class="tree-row tree-file-row">
+      <span class="tree-icon tree-icon-doc" aria-hidden="true">{% include "icons/doc.svg" %}</span>
+      <a href="{{ d.link }}" class="tree-name tree-context-link">{{ d.name }}</a>
+      {% if d.desc %}<span class="tree-sep" aria-hidden="true">·</span><span class="tree-desc">{{ d.desc }}</span>{% endif %}
     </div>
-  </a>
-  {% endfor %}
+    {% endif %}
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
 {% endblock %}

@@ -1,5 +1,5 @@
-// meta-search.js — client-side text filter for agents / commands / context lists.
-// Filters .agent-card and .context-item elements by their text content.
+// meta-search.js — client-side text filter for agents / commands lists.
+// Filters .agent-card elements by their text content.
 
 /**
  * Debounce a function by `delay` ms.
@@ -17,13 +17,13 @@ function debounce(fn, delay) {
 
 /**
  * Initialise the meta search bar if [data-meta-search] is present on this page.
- * Filters .agent-card and .context-item elements by their textContent.
+ * Filters .agent-card elements by their textContent.
  */
 export function initMetaSearch() {
   const input = document.querySelector('[data-meta-search]');
   if (!input) return;
 
-  const ITEM_SEL = '.agent-card, .context-item';
+  const ITEM_SEL = '.agent-card';
 
   function applyFilter() {
     const q = input.value.trim().toLowerCase();

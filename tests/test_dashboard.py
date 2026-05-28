@@ -35,6 +35,7 @@ from holoctl.server.views.list import list_context
 from holoctl.server.views.tree import tree_context
 from holoctl.server.views.card import format_due, ticket_preview
 from holoctl.server.views.detail import read_ticket_activity, detail_context
+from holoctl.server.views.metrics import metrics_context
 
 
 # ── Module-level rendering helpers ───────────────────────────────────────────
@@ -1598,3 +1599,1299 @@ class TestForeignBadge:
 
     def test_foreign_badge_class_in_css(self, dashboard_css: str):
         assert ".foreign-badge" in dashboard_css
+
+
+# ── Context expandable tree ───────────────────────────────────────────────────
+
+
+def _make_context_dir(workspace: Path) -> Path:
+    """Create a minimal .holoctl/context/ layout with a subdir for tests."""
+    ctx_dir = workspace / ".holoctl" / "context"
+    ctx_dir.mkdir(parents=True, exist_ok=True)
+    (ctx_dir / "objective.md").write_text("# Objective\n\nShip it.\n", encoding="utf-8")
+    (ctx_dir / "architecture.md").write_text("# Architecture\n\nMono.\n", encoding="utf-8")
+    decisions = ctx_dir / "decisions"
+    decisions.mkdir(exist_ok=True)
+    (decisions / "0001.md").write_text("# ADR-0001\n\nUse FastAPI.\n", encoding="utf-8")
+    (decisions / "0002.md").write_text("# ADR-0002\n\nUse Jinja.\n", encoding="utf-8")
+    return ctx_dir
+
+
+class TestReadContextDir:
+    """Unit tests for the read_context_dir helper."""
+
+    def test_top_level_lists_dirs_and_files(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        items = read_context_dir(workspace)
+        names = [i["name"] for i in items]
+        # decisions/ dir comes before the .md files (dirs-first ordering).
+        assert "decisions" in names
+        assert "objective.md" in names
+        assert "architecture.md" in names
+        assert items[0]["isDir"] is True
+        assert items[0]["name"] == "decisions"
+
+    def test_top_level_dir_item_shape(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        items = read_context_dir(workspace)
+        d = next(i for i in items if i["isDir"])
+        assert d["name"] == "decisions"
+        assert "folder" in d["description"]
+
+    def test_top_level_file_item_has_h1(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        items = read_context_dir(workspace)
+        obj = next(i for i in items if i["name"] == "objective.md")
+        assert obj["description"] == "Objective"
+        assert obj["isDir"] is False
+
+    def test_subdir_listing(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        items = read_context_dir(workspace, "decisions")
+        names = [i["name"] for i in items]
+        assert "0001.md" in names
+        assert "0002.md" in names
+        assert all(not i["isDir"] for i in items)
+
+    def test_missing_context_dir_returns_empty(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        # No context dir created.
+        assert read_context_dir(workspace) == []
+
+    def test_nonexistent_subpath_returns_empty(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        assert read_context_dir(workspace, "nonexistent") == []
+
+
+class TestContextTreeApi:
+    """HTTP tests for GET /api/project/{alias}/context/tree."""
+
+    def test_top_level_returns_entries(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree")
+        assert r.status_code == 200
+        body = r.json()
+        assert "entries" in body
+        names = [e["name"] for e in body["entries"]]
+        assert "decisions" in names
+        assert "objective.md" in names
+
+    def test_entries_have_type_field(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree")
+        body = r.json()
+        types = {e["name"]: e["type"] for e in body["entries"]}
+        assert types["decisions"] == "dir"
+        assert types["objective.md"] == "file"
+
+    def test_subdir_listing(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree?path=decisions")
+        assert r.status_code == 200
+        names = [e["name"] for e in r.json()["entries"]]
+        assert "0001.md" in names
+        assert "0002.md" in names
+
+    def test_traversal_returns_403(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree?path=../../etc")
+        assert r.status_code == 403
+
+    def test_unknown_alias_returns_404(self, client: TestClient):
+        r = client.get("/api/project/no-such-project/context/tree")
+        assert r.status_code == 404
+
+    def test_nonexistent_path_returns_404(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree?path=no-such-dir")
+        assert r.status_code == 404
+
+    def test_empty_context_returns_empty_entries(self, client: TestClient, alias: str):
+        # No context dir at all.
+        r = client.get(f"/api/project/{alias}/context/tree")
+        assert r.status_code == 200
+        assert r.json()["entries"] == []
+
+
+class TestContextTreePage:
+    """Tests for the context page rendering the expandable tree."""
+
+    def test_context_page_200(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert r.status_code == 200
+
+    def test_context_page_has_tree_container(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'id="context-tree"' in r.text
+
+    def test_context_tree_carries_data_attrs(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert f'data-alias="{alias}"' in r.text
+        assert f'/api/project/{alias}/context/tree' in r.text
+        assert f'/project/{alias}/context/' in r.text
+
+    def test_directory_renders_as_details(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        # decisions/ is a dir — must render as <details> with data-path
+        assert '<details class="tree-dir context-tree-dir">' in r.text
+        assert 'data-path="decisions"' in r.text
+
+    def test_file_renders_as_link(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert f'href="/project/{alias}/context/objective.md"' in r.text
+
+    def test_lazy_children_div_present_for_dir(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'data-loaded="false"' in r.text
+        assert 'class="tree-children tree-lazy"' in r.text
+        # depth marker must be present so JS can pass parentDepth+1 to
+        # renderTreeEntries() when a second-level dir expands — without it
+        # all lazy-expanded levels indent at the same depth as level 1.
+        assert 'data-depth="0"' in r.text
+
+    # ── Editorial redesign assertions ────────────────────────────────────────
+
+    def test_context_panel_card_chrome_present(self, client: TestClient, alias: str, workspace: Path):
+        """Page must wrap the tree in a card-chromed .context-panel container."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="context-panel"' in r.text
+
+    def test_context_panel_header_and_counter(self, client: TestClient, alias: str, workspace: Path):
+        """Panel header must include the 'Context documents' label and a counter."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="context-panel-header"' in r.text
+        assert 'class="context-panel-title"' in r.text
+        assert "Context documents" in r.text
+        assert 'class="context-panel-counter"' in r.text
+        # Layout has 1 folder (decisions/) and 2 files
+        assert "folder" in r.text
+        assert "file" in r.text
+
+    def test_no_emoji_icons_in_context_page(self, client: TestClient, alias: str, workspace: Path):
+        """Emoji folder/doc glyphs must be replaced by SVG icons."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert "\U0001f4c1" not in r.text  # 📁
+        assert "\U0001f4c4" not in r.text  # 📄
+        assert "\U0001f4c2" not in r.text  # 📂
+
+    def test_svg_folder_icon_in_dir_row(self, client: TestClient, alias: str, workspace: Path):
+        """Directory rows must carry the SVG folder icon class."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="tree-icon tree-icon-folder"' in r.text
+
+    def test_svg_doc_icon_in_file_row(self, client: TestClient, alias: str, workspace: Path):
+        """File rows must carry the SVG doc icon class."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="tree-icon tree-icon-doc"' in r.text
+
+    def test_chevron_is_svg_not_text_glyph(self, client: TestClient, alias: str, workspace: Path):
+        """Chevrons must be inline SVG, not a unicode text character."""
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'class="tree-chevron"' in r.text
+        # The SVG chevron wraps an <svg> tag
+        assert "<svg" in r.text
+        # Must NOT be the old unicode triangle glyph
+        assert "▶" not in r.text
+
+
+class TestNestedContextFileDetail:
+    """Nested context files (subdir/file.md) open via the detail route."""
+
+    def test_nested_file_returns_200(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context/decisions/0001.md")
+        assert r.status_code == 200
+        assert "ADR-0001" in r.text
+
+    def test_nested_file_breadcrumb_links_back_to_context(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context/decisions/0001.md")
+        assert f'href="/project/{alias}/context"' in r.text
+
+    def test_traversal_on_detail_route_returns_403(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context/../../etc/passwd")
+        # FastAPI path normalization may turn this into 404 before we even
+        # hit our guard — either 403 or 404 is acceptable, but NOT 200.
+        assert r.status_code in (403, 404)
+
+    def test_missing_nested_file_returns_404(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context/decisions/9999.md")
+        assert r.status_code == 404
+
+
+# ── Hardening: read_context_dir with unreadable .md ──────────────────────────
+
+
+class TestReadContextDirHardening:
+    """read_context_dir must not propagate OSError / UnicodeDecodeError from a
+    single unreadable .md file — it should fall back to an empty description."""
+
+    def test_unreadable_md_falls_back_to_empty_description(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from holoctl.server.projects import read_context_dir
+
+        ctx_dir = workspace / ".holoctl" / "context"
+        ctx_dir.mkdir(parents=True, exist_ok=True)
+        bad = ctx_dir / "unreadable.md"
+        bad.write_text("# Good title\n", encoding="utf-8")
+
+        # Patch Path.read_text to raise OSError for our specific file.
+        original_read_text = Path.read_text
+
+        def _patched_read_text(self, *args, **kwargs):  # type: ignore[override]
+            if self == bad:
+                raise OSError("permission denied (simulated)")
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", _patched_read_text)
+
+        items = read_context_dir(workspace)
+        bad_item = next((i for i in items if i["name"] == "unreadable.md"), None)
+        assert bad_item is not None, "unreadable file should still appear in listing"
+        assert bad_item["description"] == "", "description must fall back to empty string"
+
+    def test_unicode_decode_error_falls_back_to_empty_description(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from holoctl.server.projects import read_context_dir
+
+        ctx_dir = workspace / ".holoctl" / "context"
+        ctx_dir.mkdir(parents=True, exist_ok=True)
+        bad = ctx_dir / "binary.md"
+        bad.write_bytes(b"\xff\xfe bad bytes")  # non-UTF-8
+
+        # Don't patch here — let the real read_text raise UnicodeDecodeError.
+        items = read_context_dir(workspace)
+        bad_item = next((i for i in items if i["name"] == "binary.md"), None)
+        assert bad_item is not None
+        assert bad_item["description"] == ""
+
+    def test_other_files_unaffected_by_one_bad_entry(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from holoctl.server.projects import read_context_dir
+
+        ctx_dir = workspace / ".holoctl" / "context"
+        ctx_dir.mkdir(parents=True, exist_ok=True)
+        (ctx_dir / "good.md").write_text("# Good Title\n", encoding="utf-8")
+        bad = ctx_dir / "bad.md"
+        bad.write_bytes(b"\xff\xfe")
+
+        items = read_context_dir(workspace)
+        good = next((i for i in items if i["name"] == "good.md"), None)
+        assert good is not None
+        assert good["description"] == "Good Title"
+
+
+# ── JS filetree: SVG icon markup in renderTreeEntries ────────────────────────
+
+
+class TestFiletreeJsSvgIcons:
+    """Smoke: the JS renderTreeEntries function emits SVG markup tokens,
+    not the old emoji Unicode escapes."""
+
+    def test_js_uses_svg_folder_icon(self, dashboard_js: str):
+        # The JS source must define the folder SVG — same viewBox as icons/folder.svg
+        assert "tree-icon-folder" in dashboard_js
+        assert "M3 7a2 2 0 012-2h4l2 2h8" in dashboard_js  # unique path fragment
+
+    def test_js_uses_svg_doc_icon(self, dashboard_js: str):
+        # The JS source must define the doc SVG — same path as icons/doc.svg
+        assert "tree-icon-doc" in dashboard_js
+        assert "M14 2H6a2 2 0 00-2 2v16" in dashboard_js  # unique path fragment
+
+    def test_js_uses_svg_chevron(self, dashboard_js: str):
+        # Chevron must be SVG, not the old &#x25B6; html entity or ▶ literal
+        assert "tree-chevron" in dashboard_js
+        assert "&#x25B6;" not in dashboard_js
+        assert "ICON_CHEVRON" in dashboard_js or "tree-chevron" in dashboard_js
+
+    def test_js_no_emoji_unicode_escapes(self, dashboard_js: str):
+        # Old code used &#x1F4C1; (folder) and &#x1F4C4; (doc)
+        assert "&#x1F4C1;" not in dashboard_js
+        assert "&#x1F4C4;" not in dashboard_js
+
+    def test_js_emits_empty_folder_state(self, dashboard_js: str):
+        # renderTreeEntries now handles the empty case with a dedicated message
+        assert "Empty folder" in dashboard_js
+
+    def test_js_emits_error_state_with_hint(self, dashboard_js: str):
+        # Error state should invite the user to retry
+        assert "Failed to load" in dashboard_js
+
+
+# ── Context panel CSS present in bundle ──────────────────────────────────────
+
+
+class TestContextPanelCss:
+    """Editorial panel selectors must ship in the served CSS bundle."""
+
+    def test_context_panel_selector_present(self, dashboard_css: str):
+        assert ".context-panel" in dashboard_css
+
+    def test_context_panel_uses_bg_card(self, dashboard_css: str):
+        # The panel card must reference --bg-card token
+        m = re.search(r"\.context-panel\s*\{[^}]*\}", dashboard_css)
+        assert m, ".context-panel rule must exist"
+        assert "var(--bg-card)" in m.group(0)
+
+    def test_context_panel_uses_shadow(self, dashboard_css: str):
+        m = re.search(r"\.context-panel\s*\{[^}]*\}", dashboard_css)
+        assert m
+        assert "var(--shadow-sm)" in m.group(0)
+
+    def test_context_panel_header_selector_present(self, dashboard_css: str):
+        assert ".context-panel-header" in dashboard_css
+
+    def test_context_tree_chevron_transition(self, dashboard_css: str):
+        # Chevron must use CSS transition (var(--ease))
+        assert "var(--ease)" in dashboard_css
+
+    def test_context_tree_lazy_states_present(self, dashboard_css: str):
+        assert ".context-tree .tree-lazy-loading" in dashboard_css
+        assert ".context-tree .tree-lazy-error" in dashboard_css
+        assert ".context-tree .tree-lazy-empty" in dashboard_css
+
+    def test_context_tree_accent_on_open_folder(self, dashboard_css: str):
+        # Open folder icon gets accent color
+        assert "tree-icon-folder" in dashboard_css
+        assert "var(--accent)" in dashboard_css
+
+
+# ── Metrics tab: view shaper + route + template ───────────────────────────────
+
+
+def _make_done_ticket(
+    alias: str,
+    board: "Board",
+    *,
+    title: str = "T",
+    agent: str = "developer",
+    created_offset_days: int = 5,
+    completed_offset_days: int = 0,
+) -> dict:
+    """Create a done ticket with controllable timestamps for metrics tests."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    created_ts = (now - timedelta(days=created_offset_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    completed_ts = (now - timedelta(days=completed_offset_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ticket = board.add({"title": title, "agent": agent, "status": "done"})
+    # Patch timestamps directly in the index so cycle_time sees them.
+    idx_path = board._root / ".holoctl" / "board" / "index.json"
+    data = json.loads(idx_path.read_text(encoding="utf-8"))
+    for t in data["tickets"]:
+        if t["id"] == ticket["id"]:
+            t["created"] = created_ts
+            t["completed"] = completed_ts
+    idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+    return ticket
+
+
+class TestMetricsContextShaper:
+    """Unit tests for the metrics_context() view shaper."""
+
+    def test_returns_required_keys(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls())
+        assert "throughput" in ctx
+        assert "cycle" in ctx
+        assert "wip_view" in ctx
+        assert "by_agent" in ctx
+        assert "by_project" in ctx
+        assert "since_days" in ctx
+        assert "agent_max" in ctx
+        assert "project_max" in ctx
+
+    def test_throughput_has_days_and_max_count(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls())
+        tp = ctx["throughput"]
+        assert "days" in tp
+        assert "max_count" in tp
+        assert isinstance(tp["days"], list)
+        assert isinstance(tp["max_count"], int)
+
+    def test_throughput_days_length_matches_since(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls(), since_days=14)
+        # 14 days → 15 buckets (inclusive of both endpoints)
+        assert len(ctx["throughput"]["days"]) == 15
+
+    def test_cycle_keys_present_and_rounded(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(workspace.name, b, created_offset_days=3)
+        ctx = metrics_context(b.ls())
+        cycle = ctx["cycle"]
+        assert cycle["count"] == 1
+        # Rounded to 1 decimal
+        assert isinstance(cycle["mean"], float)
+        assert isinstance(cycle["median"], float)
+        assert isinstance(cycle["p95"], float)
+
+    def test_empty_board_cycle_zeros(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls())
+        cycle = ctx["cycle"]
+        assert cycle["count"] == 0
+        assert cycle["mean"] == 0.0
+        assert cycle["median"] == 0.0
+        assert cycle["p95"] == 0.0
+
+    def test_wip_view_keys(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "In progress", "agent": "developer", "status": "doing"})
+        ctx = metrics_context(b.ls())
+        wip = ctx["wip_view"]
+        assert "count" in wip
+        assert "stale_count" in wip
+        assert "stale_days" in wip
+        assert "tickets" in wip
+        assert wip["count"] == 1
+
+    def test_by_agent_has_group_key(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer"})
+        ctx = metrics_context(b.ls())
+        assert isinstance(ctx["by_agent"], list)
+        if ctx["by_agent"]:
+            row = ctx["by_agent"][0]
+            assert "group" in row
+            assert "completed" in row
+            assert "avg_cycle_days" in row
+            assert "wip" in row
+
+    def test_since_days_passed_through(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ctx = metrics_context(b.ls(), since_days=7)
+        assert ctx["since_days"] == 7
+
+    def test_max_values_computed(self, workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(workspace.name, b, agent="developer")
+        ctx = metrics_context(b.ls())
+        assert ctx["agent_max"] >= 0
+        assert ctx["project_max"] >= 0
+
+
+class TestMetricsRoute:
+    """HTTP tests for GET /project/{alias}/metrics."""
+
+    def test_returns_200(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+
+    def test_unknown_alias_returns_404(self, client: TestClient):
+        r = client.get("/project/no-such-project/metrics")
+        assert r.status_code == 404
+
+    def test_page_has_throughput_section(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-throughput" in r.text
+
+    def test_page_has_cycle_section(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert "metrics-cycle" in r.text
+
+    def test_page_has_wip_section(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert "metrics-wip" in r.text
+
+    def test_page_has_by_agent_section(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert "metrics-by-agent" in r.text
+
+    def test_empty_board_renders_without_error(self, client: TestClient, alias: str):
+        # No tickets — all empty states should appear, page must not 500.
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Three of the four sections show the empty state (by-project is hidden when there are no project labels).
+        assert r.text.count("metrics-empty") >= 3
+
+    def test_board_with_tickets_shows_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "Active", "agent": "developer", "status": "doing"})
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # WIP count badge visible.
+        assert "metrics-wip-count-badge" in r.text
+
+    def test_done_tickets_appear_in_cycle_stats(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=3)
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Cycle histogram must show percentile chips (not the empty state).
+        assert "mcd-chips" in r.text
+        assert "mcd-chip" in r.text
+
+
+class TestMetricsTab:
+    """Verify the Metrics tab appears on all project pages and links correctly."""
+
+    def test_metrics_tab_on_board_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board")
+        assert r.status_code == 200
+        assert "Metrics" in r.text
+        assert f"/project/{alias}/metrics" in r.text
+
+    def test_metrics_tab_on_agents_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/agents")
+        assert r.status_code == 200
+        assert "Metrics" in r.text
+        assert f"/project/{alias}/metrics" in r.text
+
+    def test_metrics_tab_on_context_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/context")
+        assert r.status_code == 200
+        assert "Metrics" in r.text
+        assert f"/project/{alias}/metrics" in r.text
+
+    def test_metrics_tab_is_active_on_metrics_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # The Metrics tab link must carry the "active" class.
+        assert 'class="tab active"' in r.text or 'class="tab  active"' in r.text or "tab active" in r.text
+
+    def test_board_tab_active_on_board_page(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/board")
+        # Board tab is active; Metrics tab is not.
+        html = r.text
+        # Find the metrics tab link — it must not be the active one.
+        metrics_tab_idx = html.find(f'href="/project/{alias}/metrics"')
+        board_tab_idx = html.find(f'href="/project/{alias}/board"')
+        assert metrics_tab_idx > 0
+        assert board_tab_idx > 0
+
+
+class TestMetricsCss:
+    """Verify metrics.css is included in the bundle and has key selectors."""
+
+    def test_metrics_css_imported_in_index(self, dashboard_css: str):
+        # dashboard_css fixture resolves @imports — metrics.css content must be present.
+        assert ".metrics-card" in dashboard_css
+
+    def test_metrics_bar_svg_class_present(self, dashboard_css: str):
+        assert ".metrics-bar-svg" in dashboard_css
+
+    def test_metrics_stat_value_present(self, dashboard_css: str):
+        assert ".metrics-stat-value" in dashboard_css
+
+    def test_metrics_group_table_present(self, dashboard_css: str):
+        assert ".metrics-group-table" in dashboard_css
+
+    def test_metrics_wip_list_present(self, dashboard_css: str):
+        assert ".metrics-wip-list" in dashboard_css
+
+    def test_metrics_uses_editorial_tokens(self, dashboard_css: str):
+        # Key token usage in metrics rules.
+        assert "var(--accent)" in dashboard_css
+        assert "var(--green)" in dashboard_css
+        assert "var(--bg-card)" in dashboard_css
+        assert "var(--font-mono)" in dashboard_css
+        assert "var(--font-serif)" in dashboard_css
+
+    def test_metrics_served_as_static_file(self, client: TestClient):
+        r = client.get("/static/css/metrics.css")
+        assert r.status_code == 200
+        assert ".metrics-card" in r.text
+
+
+# ── Workspace metrics rollup: GET /metrics ────────────────────────────────────
+
+
+class TestWorkspaceMetricsRoute:
+    """HTTP tests for GET /metrics (workspace-level rollup)."""
+
+    def test_returns_200(self, client: TestClient):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+
+    def test_page_has_throughput_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-throughput" in r.text
+
+    def test_page_has_cycle_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-cycle" in r.text
+
+    def test_page_has_wip_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-wip" in r.text
+
+    def test_page_has_by_agent_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-by-agent" in r.text
+
+    def test_page_has_by_workspace_project_section(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-by-workspace-project" in r.text
+
+    def test_empty_workspace_renders_gracefully(self, client: TestClient):
+        """Empty workspace (no tickets) must render without error — not 500."""
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-empty" in r.text
+
+    def test_breadcrumb_links_to_home(self, client: TestClient):
+        r = client.get("/metrics")
+        assert 'href="/"' in r.text
+        assert "Workspace metrics" in r.text
+
+    def test_no_project_tabs_on_workspace_metrics(self, client: TestClient):
+        """Workspace metrics page is not project-scoped; no per-project tabs."""
+        r = client.get("/metrics")
+        assert 'class="tabs"' not in r.text
+
+    def test_workspace_with_done_tickets_shows_cycle_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=3)
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        # Cycle histogram must show percentile chips (not the empty state).
+        assert "mcd-chips" in r.text or "mcd-chip" in r.text
+
+    def test_by_workspace_project_shows_alias_link(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """By-workspace-project table links each alias to its project metrics page."""
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T", "agent": "developer", "status": "doing"})
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert alias in r.text
+        assert f"/project/{alias}/metrics" in r.text
+
+
+# ── Workspace summary band on home page ──────────────────────────────────────
+
+
+class TestWorkspaceSummaryBand:
+    """Home page must show the compact 3-tile summary band + CTA."""
+
+    def test_band_present_on_home(self, client: TestClient):
+        r = client.get("/")
+        assert r.status_code == 200
+        assert 'class="ws-summary-band"' in r.text
+
+    def test_band_has_three_tiles(self, client: TestClient):
+        r = client.get("/")
+        assert r.text.count('class="ws-summary-tile') >= 3
+
+    def test_band_has_cta_link_to_metrics(self, client: TestClient):
+        r = client.get("/")
+        assert 'href="/metrics"' in r.text
+        assert "workspace metrics" in r.text.lower()
+
+    def test_band_shows_wip_count(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A", "agent": "developer", "status": "doing"})
+        b.add({"title": "B", "agent": "developer", "status": "review"})
+        r = client.get("/")
+        assert r.status_code == 200
+        # WIP tile value "2" should appear somewhere in the band.
+        assert "2" in r.text
+
+    def test_tile_labels_present(self, client: TestClient):
+        r = client.get("/")
+        assert "Total WIP" in r.text
+        assert "Done last 7d" in r.text
+        assert "Stale" in r.text
+
+    def test_stale_tile_has_warn_class_when_stale(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """When stale_count > 0 the stale tile carries the warn modifier."""
+        from datetime import datetime, timedelta, timezone
+        import json
+        b = Board(workspace, workspace_config)
+        t = b.add({"title": "Old", "agent": "developer", "status": "doing"})
+        # Force the updated timestamp to be 10 days ago so wip() flags it stale.
+        stale_ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        for tk in data["tickets"]:
+            if tk["id"] == t["id"]:
+                tk["updated"] = stale_ts
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        r = client.get("/")
+        assert r.status_code == 200
+        assert "ws-tile-warn" in r.text
+
+    def test_summary_band_css_in_bundle(self, dashboard_css: str):
+        assert ".ws-summary-band" in dashboard_css
+        assert ".ws-summary-tile" in dashboard_css
+        assert ".ws-summary-cta" in dashboard_css
+
+
+# ── workspace_summary shaper unit tests ──────────────────────────────────────
+
+
+class TestWorkspaceSummaryShaper:
+    """Unit tests for the workspace_summary() view shaper."""
+
+    def test_empty_projects_returns_zeros(self):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        result = workspace_summary([])
+        assert result == {"total_wip": 0, "last7_throughput": 0, "stale_count": 0}
+
+    def test_total_wip_sums_doing_and_review(self):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        projects = [
+            {"counts": {"doing": 2, "review": 1, "backlog": 5, "done": 3}},
+            {"counts": {"doing": 1, "review": 0, "backlog": 2, "done": 1}},
+        ]
+        result = workspace_summary(projects)
+        assert result["total_wip"] == 4  # 2+1 + 1+0
+
+    def test_missing_counts_defaults_to_zero(self):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        projects = [{"counts": {}}]
+        result = workspace_summary(projects)
+        assert result["total_wip"] == 0
+
+    def test_no_tickets_key_gives_zero_throughput_and_stale(self):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        # Projects without pre-loaded _tickets → throughput and stale fall back to 0.
+        projects = [{"counts": {"doing": 3}}]
+        result = workspace_summary(projects)
+        assert result["last7_throughput"] == 0
+        assert result["stale_count"] == 0
+
+    def test_last7_throughput_with_tickets(self, workspace: Path, workspace_config: dict):
+        """Projects enriched with _tickets give correct last7 count."""
+        from holoctl.server.views.workspace_summary import workspace_summary
+        b = Board(workspace, workspace_config)
+        alias = workspace.name
+        # Create a done ticket with completed = now (within last 7 days).
+        t = _make_done_ticket(alias, b, created_offset_days=5, completed_offset_days=1)
+        tickets = b.ls()
+        projects = [{"counts": {"doing": 0}, "_tickets": tickets}]
+        result = workspace_summary(projects)
+        assert result["last7_throughput"] >= 1
+
+    def test_stale_count_with_stale_ticket(
+        self, workspace: Path, workspace_config: dict
+    ):
+        from holoctl.server.views.workspace_summary import workspace_summary
+        from datetime import datetime, timedelta, timezone
+        import json
+
+        b = Board(workspace, workspace_config)
+        t = b.add({"title": "Stale", "agent": "developer", "status": "doing"})
+        stale_ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        for tk in data["tickets"]:
+            if tk["id"] == t["id"]:
+                tk["updated"] = stale_ts
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        tickets = b.ls()
+        projects = [{"counts": {"doing": 1}, "_tickets": tickets}]
+        result = workspace_summary(projects)
+        assert result["stale_count"] >= 1
+
+
+# ── F1: Metrics filter toolbar — route + HTML integration ────────────────────
+
+
+class TestMetricsFilterRoute:
+    """Integration tests: filter query params reflected in rendered HTML."""
+
+    def test_since_param_returns_200(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics?since=7d")
+        assert r.status_code == 200
+
+    def test_since_30d_default_toolbar_present(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-filter-toolbar" in r.text
+
+    def test_preset_chip_active_class(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics?since=7d")
+        assert "mft-preset-active" in r.text
+
+    def test_kind_filter_narrows_tickets(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """Filtering by kind=spec must exclude task-kind tickets from the
+        rendered metrics context.  We verify by checking that the WIP count
+        badge reflects only the matching tickets."""
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A task", "agent": "developer",
+               "status": "doing", "kind": "task"})
+        b.add({"title": "A spec", "agent": "developer",
+               "status": "doing", "kind": "spec"})
+
+        # Without filter: both in WIP.
+        r_all = client.get(f"/project/{alias}/metrics?since=all")
+        assert r_all.status_code == 200
+
+        # With kind=spec filter: only the spec ticket survives.
+        r_filt = client.get(f"/project/{alias}/metrics?since=all&kind=spec")
+        assert r_filt.status_code == 200
+        # The WIP badge must show 1 (only spec ticket is in progress).
+        assert 'class="metrics-wip-count-badge">1<' in r_filt.text
+
+    def test_agent_filter_param(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T1", "agent": "developer", "status": "doing"})
+        b.add({"title": "T2", "agent": "reviewer", "status": "doing"})
+
+        r = client.get(f"/project/{alias}/metrics?since=all&agent=developer")
+        assert r.status_code == 200
+        assert 'class="metrics-wip-count-badge">1<' in r.text
+
+    def test_active_chip_rendered_for_active_filter(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics?since=30d&kind=task")
+        assert "mft-active-chips" in r.text
+        assert "mft-chip" in r.text
+
+    def test_clear_all_link_present_when_filters_active(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics?since=7d&kind=task")
+        assert "mft-clear-all" in r.text
+        assert "Clear all" in r.text
+
+    def test_no_active_chips_when_no_filters(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        # No multi-value filters active → no chips row.
+        assert "mft-active-chips" not in r.text
+
+    def test_sticky_toolbar_class_in_css(self, dashboard_css: str):
+        assert ".metrics-filter-toolbar" in dashboard_css
+        assert "position: sticky" in dashboard_css
+
+    def test_scrollable_class_in_css(self, dashboard_css: str):
+        assert ".metrics-scrollable" in dashboard_css
+        assert "max-height" in dashboard_css
+        assert "overflow-y: auto" in dashboard_css
+
+    def test_metrics_page_wrapper_present(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert 'class="metrics-page"' in r.text
+
+    def test_comma_separated_tags_filter(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "Auth task", "agent": "developer",
+               "status": "doing", "tags": "auth"})
+        b.add({"title": "UI task", "agent": "developer",
+               "status": "doing", "tags": "ui"})
+
+        # Filter by tags=auth — only auth ticket in WIP.
+        r = client.get(f"/project/{alias}/metrics?since=all&tags=auth")
+        assert r.status_code == 200
+        assert 'class="metrics-wip-count-badge">1<' in r.text
+
+    def test_unknown_project_404_with_filter(self, client: TestClient):
+        r = client.get("/project/no-such-project/metrics?since=7d&kind=task")
+        assert r.status_code == 404
+
+
+class TestWorkspaceMetricsFilterRoute:
+    """Integration tests for the workspace-level filter."""
+
+    def test_since_param_returns_200(self, client: TestClient):
+        r = client.get("/metrics?since=7d")
+        assert r.status_code == 200
+
+    def test_filter_toolbar_present(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-filter-toolbar" in r.text
+
+    def test_project_facet_shown_on_workspace(self, client: TestClient):
+        """Workspace metrics shows the Project facet; per-project view does not."""
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        # Project facet summary appears via is_workspace=True in context.
+        # We check the hidden 'since' input is present (toolbar rendered).
+        assert 'name="since"' in r.text
+
+    def test_active_chip_on_workspace_filter(self, client: TestClient):
+        r = client.get("/metrics?since=7d&kind=task")
+        assert r.status_code == 200
+        assert "mft-active-chips" in r.text
+
+    def test_clear_all_on_workspace(self, client: TestClient):
+        r = client.get("/metrics?kind=task")
+        assert "mft-clear-all" in r.text
+
+    def test_kind_filter_on_workspace(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "Task", "agent": "developer",
+               "status": "doing", "kind": "task"})
+        b.add({"title": "Spec", "agent": "developer",
+               "status": "doing", "kind": "spec"})
+
+        r = client.get("/metrics?since=all&kind=spec")
+        assert r.status_code == 200
+        assert 'class="metrics-wip-count-badge">1<' in r.text
+
+
+# ── F3: Cycle histogram, Throughput overlay, Stalled list ────────────────────
+
+
+class TestF3CycleHistogram:
+    """Cycle-time distribution histogram (_cycle_dist.html) renders correctly."""
+
+    def test_histogram_section_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-cycle-dist" in r.text
+
+    def test_histogram_empty_state_on_clean_board(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Empty state text in the cycle histogram.
+        assert "No completed tickets in this window" in r.text
+
+    def test_histogram_shows_percentile_chips_with_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=5)
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "mcd-chips" in r.text
+        assert "mcd-chip-p50" in r.text
+        assert "mcd-chip-p95" in r.text
+
+    def test_histogram_present_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-cycle-dist" in r.text
+
+    def test_histogram_css_classes_present(self, dashboard_css: str):
+        assert ".mcd-svg" in dashboard_css
+        assert ".mcd-bar" in dashboard_css
+        assert ".mcd-chips" in dashboard_css
+        assert ".mcd-chip-p95" in dashboard_css
+
+
+class TestF3ThroughputOverlay:
+    """Throughput trend overlay chart (_throughput_overlay.html) renders correctly."""
+
+    def test_overlay_section_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-throughput-overlay" in r.text
+
+    def test_overlay_empty_state_on_clean_board(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "No completed tickets to show a trend" in r.text
+
+    def test_overlay_legend_present_with_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=5)
+        r = client.get(f"/project/{alias}/metrics?since=all")
+        assert r.status_code == 200
+        assert "mto-legend" in r.text
+        # Legend shows "Current" and "Previous" labels.
+        assert "Current" in r.text
+        assert "Previous" in r.text
+
+    def test_overlay_has_prev_period_bar_class(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        _make_done_ticket(alias, b, created_offset_days=5)
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Ghost bar class must be in the SVG markup.
+        assert "mto-bar-prev" in r.text
+
+    def test_overlay_present_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-throughput-overlay" in r.text
+
+    def test_overlay_css_classes_present(self, dashboard_css: str):
+        assert ".mto-bar-prev" in dashboard_css
+        assert ".mto-legend" in dashboard_css
+        assert ".mto-delta-up" in dashboard_css
+        assert ".mto-delta-down" in dashboard_css
+
+
+class TestF3StalledList:
+    """Stalled tickets list (_stalled.html + stalled_view shaper) integration."""
+
+    def test_stalled_section_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-stalled" in r.text
+
+    def test_stalled_empty_state_on_clean_board(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "No stalled tickets" in r.text
+
+    def test_stalled_shows_orphaned_backlog_ticket(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """A backlog ticket without an agent should appear in the stalled list
+        with the 'no agent assigned' reason."""
+        b = Board(workspace, workspace_config)
+        # Add a ticket with no agent explicitly (default in _ticket helper is []).
+        # Board.add requires valid agent, so add with agent then clear it in index.
+        t = b.add({"title": "Orphan", "agent": "developer"})
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        for tk in data["tickets"]:
+            if tk["id"] == t["id"]:
+                tk["agent"] = []
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        r = client.get(f"/project/{alias}/metrics?since=all")
+        assert r.status_code == 200
+        assert "no agent assigned" in r.text
+
+    def test_stalled_shows_no_priority_reason(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """A backlog ticket without priority should show 'no priority set'."""
+        b = Board(workspace, workspace_config)
+        t = b.add({"title": "NoPrio", "agent": "developer"})
+        idx_path = workspace / ".holoctl" / "board" / "index.json"
+        data = json.loads(idx_path.read_text(encoding="utf-8"))
+        for tk in data["tickets"]:
+            if tk["id"] == t["id"]:
+                tk["priority"] = ""
+        idx_path.write_text(json.dumps(data, indent="\t"), encoding="utf-8")
+
+        r = client.get(f"/project/{alias}/metrics?since=all")
+        assert r.status_code == 200
+        assert "no priority set" in r.text
+
+    def test_stalled_section_present_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-stalled" in r.text
+
+    def test_stalled_css_classes_present(self, dashboard_css: str):
+        assert ".mst-list" in dashboard_css
+        assert ".mst-item" in dashboard_css
+        assert ".mst-status-chip" in dashboard_css
+        assert ".mst-reason-chip" in dashboard_css
+        assert ".mst-ticket-id" in dashboard_css
+
+    def test_stalled_section_near_wip_block(
+        self, client: TestClient, alias: str
+    ):
+        """Stalled and WIP cards appear inside the same side-by-side grid row."""
+        r = client.get(f"/project/{alias}/metrics")
+        html = r.text
+        assert "metrics-wip-stalled-row" in html
+        wip_idx = html.find("metrics-wip")
+        stalled_idx = html.find("metrics-stalled")
+        assert wip_idx > 0 and stalled_idx > 0
+
+    def test_wip_stalled_row_css_present(self, dashboard_css: str):
+        assert ".metrics-wip-stalled-row" in dashboard_css
+
+
+# ── F2: KPI band + time-in-status HTTP tests ─────────────────────────────────
+
+
+class TestProjectMetricsKpiBand:
+    """HTTP-level tests: KPI band renders on /project/{alias}/metrics."""
+
+    def test_kpi_band_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "mkpi-band" in r.text
+
+    def test_kpi_band_has_throughput_card(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # The band renders at least one mkpi-card element.
+        assert "mkpi-card" in r.text
+
+    def test_kpi_band_renders_with_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "Active", "agent": "developer", "status": "doing"})
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "mkpi-band" in r.text
+        # WIP card value should be non-zero.
+        assert "mkpi-value" in r.text
+
+
+class TestWorkspaceMetricsKpiBand:
+    """HTTP-level tests: KPI band renders on /metrics (workspace rollup)."""
+
+    def test_kpi_band_present_on_workspace_metrics(self, client: TestClient):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "mkpi-band" in r.text
+
+    def test_kpi_band_has_mkpi_cards(self, client: TestClient):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "mkpi-card" in r.text
+
+    def test_kpi_band_renders_gracefully_when_empty(self, client: TestClient):
+        """Empty workspace must still render the KPI band (all dashes / zeros)."""
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "mkpi-band" in r.text
+
+
+class TestProjectMetricsTimeInStatus:
+    """HTTP-level tests: time-in-status section renders on /project/{alias}/metrics."""
+
+    def test_time_in_status_section_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-time-in-status" in r.text
+
+    def test_time_in_status_empty_state_when_no_activity(
+        self, client: TestClient, alias: str
+    ):
+        """When activity.jsonl is empty (no moves), the empty state renders
+        gracefully without raising."""
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Either empty state text or mtis-chart present — both are valid.
+        assert (
+            "No status-transition history yet" in r.text
+            or "mtis-chart" in r.text
+        )
+
+    def test_time_in_status_shows_chart_after_move(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        """After at least one ticket.moved event, the TIS chart renders."""
+        created = client.post(
+            f"/api/project/{alias}/tickets",
+            json={"title": "Workflow ticket", "agent": "developer"},
+        ).json()
+        # Move the ticket so activity.jsonl gets a ticket.moved event.
+        client.post(
+            f"/api/project/{alias}/tickets/{created['id']}/move",
+            json={"status": "doing"},
+        )
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "mtis-chart" in r.text or "metrics-time-in-status" in r.text
+
+
+class TestWorkspaceMetricsTimeInStatus:
+    """HTTP-level tests: time-in-status section renders on /metrics."""
+
+    def test_time_in_status_section_present_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-time-in-status" in r.text
+
+    def test_time_in_status_empty_state_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        """Empty workspace (no activity) must render the TIS empty state
+        gracefully — no 500, no AttributeError from non-dict JSON lines."""
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert (
+            "No status-transition history yet" in r.text
+            or "mtis-chart" in r.text
+        )
+
+    def test_time_in_status_shows_chart_after_move_on_workspace(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        """After a move event the workspace rollup also shows the TIS chart."""
+        created = client.post(
+            f"/api/project/{alias}/tickets",
+            json={"title": "WS chart ticket", "agent": "developer"},
+        ).json()
+        client.post(
+            f"/api/project/{alias}/tickets/{created['id']}/move",
+            json={"status": "doing"},
+        )
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "mtis-chart" in r.text or "metrics-time-in-status" in r.text

@@ -256,6 +256,40 @@ class Board:
             "by_status": by_status,
         }
 
+    def _apply_status_change(
+        self,
+        ticket: dict,
+        old_status: str,
+        new_status: str,
+        now: str,
+    ) -> dict:
+        """Apply a status transition on a ticket dict in-place.
+
+        Sets ``status``, ``updated``, and ``completed`` (set when entering
+        ``done``, cleared when leaving ``done``).
+
+        The ``"ticket.moved"`` activity log entry is intentionally NOT emitted
+        here — callers (``move`` and ``set``) emit it AFTER ``_save`` and
+        ``_patch_ticket_md`` have both completed, so the log never records a
+        transition that failed to persist (no partial-write window).
+
+        Returns a patches dict suitable for ``_patch_ticket_md``.
+        """
+        ticket["status"] = new_status
+        ticket["updated"] = now
+
+        patches: dict = {"status": new_status, "updated": now}
+
+        if new_status == "done":
+            ticket["completed"] = now
+            patches["completed"] = now
+        elif old_status == "done":
+            # Leaving done — clear the stale completion timestamp.
+            ticket["completed"] = None
+            patches["completed"] = None
+
+        return patches
+
     def move(self, ticket_id: str, new_status: str) -> dict:
         valid = self._config["board"]["statuses"]
         if new_status not in valid:
@@ -268,20 +302,36 @@ class Board:
 
         old_status = ticket["status"]
         now = _now()
-        ticket["status"] = new_status
-        ticket["updated"] = now
-        if new_status == "done":
-            ticket["completed"] = now
+
+        if old_status != new_status:
+            patches = self._apply_status_change(ticket, old_status, new_status, now)
+        else:
+            # No-op move: touch `updated` so the mutation is acknowledged even
+            # when status is unchanged, but don't log a ticket.moved event.
+            ticket["updated"] = now
+            patches = {"updated": now}
 
         data["meta"]["counts"] = self._recount(data["tickets"])
         data["meta"]["updated"] = now
         self._save(data)
 
-        patches = {"status": new_status, "updated": now}
-        if new_status == "done":
-            patches["completed"] = now
         if ticket.get("file"):
             self._patch_ticket_md(ticket["file"], patches)
+
+        # Log status change AFTER both _save and _patch_ticket_md have
+        # completed — this prevents a phantom activity entry in the rare case
+        # the process dies between persist and log.
+        if old_status != new_status:
+            _log_activity(
+                self._root,
+                {
+                    "type": "ticket.moved",
+                    "ticket": ticket_id,
+                    "from": old_status,
+                    "to": new_status,
+                    "actor": "cli",
+                },
+            )
 
         # Curator auto-execute (item 8A): when a meta:curate ticket transitions
         # to `done`, the curator action stored in the parallel metadata file
@@ -290,6 +340,7 @@ class Board:
         result = {"id": ticket_id, "from": old_status, "to": new_status}
         if (
             new_status == "done"
+            and old_status != new_status
             and "meta:curate" in (ticket.get("tags") or [])
         ):
             try:
@@ -336,15 +387,42 @@ class Board:
             parsed = self._validate_parent_change(data["tickets"], ticket_id, parsed)
 
         now = _now()
-        ticket[field] = parsed
-        ticket["updated"] = now
-        data["meta"]["updated"] = now
+
         if field == "status":
+            old_status = ticket["status"]
+            new_status = str(parsed)
+            if old_status != new_status:
+                md_patches = self._apply_status_change(ticket, old_status, new_status, now)
+            else:
+                # No-op status set: touch `updated` so the mutation is
+                # acknowledged even when status is unchanged, but don't log.
+                ticket["updated"] = now
+                md_patches = {"status": new_status, "updated": now}
             data["meta"]["counts"] = self._recount(data["tickets"])
+        else:
+            ticket[field] = parsed
+            ticket["updated"] = now
+            md_patches = {field: parsed, "updated": now}
+
+        data["meta"]["updated"] = now
         self._save(data)
 
         if ticket.get("file"):
-            self._patch_ticket_md(ticket["file"], {field: parsed, "updated": now})
+            self._patch_ticket_md(ticket["file"], md_patches)
+
+        # Log status change AFTER both _save and _patch_ticket_md have
+        # completed — mirrors the ordering in move() (no partial-write window).
+        if field == "status" and old_status != new_status:  # type: ignore[possibly-undefined]
+            _log_activity(
+                self._root,
+                {
+                    "type": "ticket.moved",
+                    "ticket": ticket_id,
+                    "from": old_status,
+                    "to": new_status,
+                    "actor": "cli",
+                },
+            )
 
         return {"id": ticket_id, "field": field, "value": parsed}
 
@@ -918,5 +996,5 @@ def _log_activity(project_root: Path, event: dict) -> None:
     """
     from .jsonl import append_jsonl_line
     log_path = project_root / ".holoctl" / "activity.jsonl"
-    entry = {"ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), **event}
+    entry = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"), **event}
     append_jsonl_line(log_path, json.dumps(entry) + "\n")

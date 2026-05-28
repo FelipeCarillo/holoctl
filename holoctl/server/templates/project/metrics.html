@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="metrics-page">
+
+  {# ── Filter toolbar (sticky) ── #}
+  {% include "partials/metrics/_filter_toolbar.html" %}
+
+  {# ── KPI band (Task F2) ── #}
+  {% include "partials/metrics/_kpi_band.html" %}
+
+  {# ── Row 1: Throughput overlay + Cycle Histogram ── #}
+  <div class="metrics-top-row">
+    {% include "partials/metrics/_throughput_overlay.html" %}
+    {% include "partials/metrics/_cycle_dist.html" %}
+  </div>
+
+  {# ── Row 2: WIP aging + Stalled tickets ── #}
+  <div class="metrics-wip-stalled-row">
+    {% include "partials/metrics/_wip.html" %}
+    {% include "partials/metrics/_stalled.html" %}
+  </div>
+
+  {# ── Row 3: By-agent + By-project ── #}
+  <div class="metrics-group-row">
+    {% with
+       group_id="by-agent",
+       group_label="By Agent",
+       group_key_label="Agent",
+       group_rows=by_agent,
+       group_max=agent_max
+    %}
+    {% include "partials/metrics/_by_group.html" %}
+    {% endwith %}
+
+    {% if by_project %}
+    {% with
+       group_id="by-project",
+       group_label="By Repo / Project",
+       group_key_label="Repo",
+       group_rows=by_project,
+       group_max=project_max
+    %}
+    {% include "partials/metrics/_by_group.html" %}
+    {% endwith %}
+    {% endif %}
+  </div>
+
+  {# ── Row 4: Time-in-status (Task F2) ── #}
+  {% include "partials/metrics/_time_in_status.html" %}
+
+</div>
+{% endblock %}

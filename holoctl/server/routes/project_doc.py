@@ -4,25 +4,15 @@ the shared doc_detail template."""
 from __future__ import annotations
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from ..jinja import render
+from ..paths import safe_resolve as _safe_resolve
 from ..views.doc import doc_context
 from .project_board import _PROJECT_TABS
 
 router = APIRouter()
-
-
-def _safe_resolve(root: Path, name: str) -> Path:
-    """Resolve `root / name` and assert it stays inside `root`. Raises 403
-    on traversal — matches the protection the legacy app.py routes had."""
-    candidate = (root / name).resolve()
-    try:
-        candidate.relative_to(root.resolve())
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    return candidate
 
 
 def _project_breadcrumbs(project: dict, listing_label: str, listing_path: str,
@@ -119,7 +109,7 @@ def project_command_detail(alias: str, slug: str):
     )
 
 
-@router.get("/project/{alias}/context/{filename}", response_class=HTMLResponse)
+@router.get("/project/{alias}/context/{filename:path}", response_class=HTMLResponse)
 def project_context_detail(alias: str, filename: str):
     from ..projects import get_project
     from ...lib.markdown import parse_frontmatter

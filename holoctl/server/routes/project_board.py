@@ -19,6 +19,7 @@ _PROJECT_TABS = [
     {"id": "agents", "label": "Agents"},
     {"id": "commands", "label": "Commands"},
     {"id": "context", "label": "Context"},
+    {"id": "metrics", "label": "Metrics"},
 ]
 
 

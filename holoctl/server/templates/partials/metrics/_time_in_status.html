@@ -1,0 +1,89 @@
+{#
+  _time_in_status.html — Horizontal bar chart: time per status (Task F2).
+
+  Expected context:
+    time_in_status_view  — result of time_in_status(): {per_status, bottleneck}
+#}
+{%- set tis = time_in_status_view -%}
+
+<div class="metrics-card" id="metrics-time-in-status">
+  <div class="metrics-card-title">
+    Time in Status
+    <span class="metrics-card-subtitle">avg days per status across ticket population</span>
+  </div>
+
+  {%- if not tis.per_status %}
+  <div class="metrics-empty">
+    No status-transition history yet — start moving tickets to see bottleneck signals.
+  </div>
+  {%- else %}
+
+  {# Find max avg_days for bar scaling (exclude terminal statuses) #}
+  {%- set ns = namespace(max_avg=0.001) %}
+  {%- for row in tis.per_status %}
+    {%- if row.status not in ("done", "cancelled") and row.avg_days > ns.max_avg %}
+      {%- set ns.max_avg = row.avg_days %}
+    {%- endif %}
+  {%- endfor %}
+
+  <svg class="mtis-chart"
+       role="img"
+       aria-label="Time in status horizontal bar chart"
+       viewBox="0 0 560 {{ tis.per_status | length * 44 + 8 }}"
+       xmlns="http://www.w3.org/2000/svg">
+
+    {%- for row in tis.per_status %}
+    {%- set y = loop.index0 * 44 + 4 %}
+    {%- set is_bottleneck = (row.status == tis.bottleneck) %}
+    {%- set is_terminal = row.status in ("done", "cancelled") %}
+    {%- set bar_pct = (row.avg_days / ns.max_avg * 100) | round(1) if not is_terminal else 0 %}
+    {%- set bar_w = (bar_pct / 100 * 340) | round(1) %}
+
+    {# Status label #}
+    <text class="mtis-label{% if is_bottleneck %} mtis-label--bottleneck{% endif %}"
+          x="0" y="{{ y + 20 }}"
+          font-size="11"
+          dominant-baseline="middle">{{ row.status }}</text>
+
+    {# Bar track #}
+    <rect class="mtis-track" x="100" y="{{ y + 12 }}" width="340" height="16" rx="3"/>
+
+    {# Bar fill #}
+    {%- if bar_w > 0 %}
+    <rect class="mtis-bar{% if is_bottleneck %} mtis-bar--bottleneck{% endif %}{% if is_terminal %} mtis-bar--terminal{% endif %}"
+          x="100" y="{{ y + 12 }}" width="{{ bar_w }}" height="16" rx="3"/>
+    {%- endif %}
+
+    {# Avg label #}
+    <text class="mtis-value{% if is_bottleneck %} mtis-value--bottleneck{% endif %}"
+          x="448" y="{{ y + 20 }}"
+          font-size="11"
+          dominant-baseline="middle">{{ row.avg_days }}d</text>
+
+    {# Ticket count #}
+    <text class="mtis-count"
+          x="510" y="{{ y + 20 }}"
+          font-size="10"
+          dominant-baseline="middle">{{ row.ticket_count }}t</text>
+
+    {# Bottleneck indicator #}
+    {%- if is_bottleneck %}
+    <text class="mtis-bottleneck-marker"
+          x="548" y="{{ y + 20 }}"
+          font-size="9"
+          dominant-baseline="middle"
+          aria-label="bottleneck">▲</text>
+    {%- endif %}
+
+    {%- endfor %}
+  </svg>
+
+  {%- if tis.bottleneck %}
+  <div class="mtis-legend">
+    <span class="mtis-legend-dot mtis-legend-dot--bottleneck"></span>
+    Bottleneck: <strong>{{ tis.bottleneck }}</strong> — highest avg wait time (non-terminal)
+  </div>
+  {%- endif %}
+
+  {%- endif %}
+</div>

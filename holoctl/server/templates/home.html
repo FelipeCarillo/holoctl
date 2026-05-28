@@ -1,5 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="ws-summary-band">
+  <div class="ws-summary-tiles">
+    <div class="ws-summary-tile">
+      <span class="ws-tile-value">{{ total_wip }}</span>
+      <span class="ws-tile-label">Total WIP</span>
+    </div>
+    <div class="ws-summary-tile">
+      <span class="ws-tile-value">{{ last7_throughput }}</span>
+      <span class="ws-tile-label">Done last 7d</span>
+    </div>
+    <div class="ws-summary-tile{% if stale_count > 0 %} ws-tile-warn{% endif %}">
+      <span class="ws-tile-value">{{ stale_count }}</span>
+      <span class="ws-tile-label">Stale</span>
+    </div>
+  </div>
+  <a href="/metrics" class="ws-summary-cta">View workspace metrics →</a>
+</div>
 {% if is_empty %}
 <div class="empty-state"><h3>No projects yet</h3><p>Run <code>holoctl init</code> in a directory to get started.</p></div>
 {% else %}
