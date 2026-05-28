@@ -3,19 +3,33 @@
 {% if is_empty %}
 <div class="empty-state"><p>No context documents.</p></div>
 {% else %}
-<div class="meta-search-bar">
-  <span class="meta-search-glyph" aria-hidden="true">🔍</span>
-  <input type="search" class="meta-search" data-meta-search placeholder="Search context…" autocomplete="off" spellcheck="false" aria-label="Search context">
-</div>
-<div class="context-list">
+<div id="context-tree"
+     class="file-tree"
+     data-alias="{{ alias }}"
+     data-tree-endpoint="/api/project/{{ alias }}/context/tree"
+     data-file-href-base="/project/{{ alias }}/context/">
   {% for d in items %}
-  <a href="{{ d.link }}" class="context-item">
-    <div class="context-item-icon {{ d.icon_cls }}">{% if d.is_dir %}{% include "icons/folder.svg" %}{% else %}{% include "icons/doc.svg" %}{% endif %}</div>
-    <div>
-      <div class="context-item-name">{{ d.name }}</div>
-      <div class="context-item-desc">{{ d.desc }}</div>
-    </div>
-  </a>
+  {% if d.is_dir %}
+  <details class="tree-dir context-tree-dir">
+    <summary class="tree-row tree-dir-row" data-path="{{ d.data_path }}">
+      <span class="tree-chevron">▶</span>
+      <span class="tree-icon">📁</span>
+      <span class="tree-name">{{ d.name }}</span>
+      <span class="tree-desc">{{ d.desc }}</span>
+    </summary>
+    <div class="tree-children tree-lazy"
+         id="children-{{ d.data_path | replace('/', '-') }}"
+         data-path="{{ d.data_path }}"
+         data-loaded="false"
+         style="display:none"></div>
+  </details>
+  {% else %}
+  <div class="tree-row tree-file-row">
+    <span class="tree-icon">📄</span>
+    <a href="{{ d.link }}" class="tree-name tree-context-link">{{ d.name }}</a>
+    <span class="tree-desc">{{ d.desc }}</span>
+  </div>
+  {% endif %}
   {% endfor %}
 </div>
 {% endif %}

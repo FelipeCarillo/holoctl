@@ -1598,3 +1598,192 @@ class TestForeignBadge:
 
     def test_foreign_badge_class_in_css(self, dashboard_css: str):
         assert ".foreign-badge" in dashboard_css
+
+
+# ── Context expandable tree ───────────────────────────────────────────────────
+
+
+def _make_context_dir(workspace: Path) -> Path:
+    """Create a minimal .holoctl/context/ layout with a subdir for tests."""
+    ctx_dir = workspace / ".holoctl" / "context"
+    ctx_dir.mkdir(parents=True, exist_ok=True)
+    (ctx_dir / "objective.md").write_text("# Objective\n\nShip it.\n", encoding="utf-8")
+    (ctx_dir / "architecture.md").write_text("# Architecture\n\nMono.\n", encoding="utf-8")
+    decisions = ctx_dir / "decisions"
+    decisions.mkdir(exist_ok=True)
+    (decisions / "0001.md").write_text("# ADR-0001\n\nUse FastAPI.\n", encoding="utf-8")
+    (decisions / "0002.md").write_text("# ADR-0002\n\nUse Jinja.\n", encoding="utf-8")
+    return ctx_dir
+
+
+class TestReadContextDir:
+    """Unit tests for the read_context_dir helper."""
+
+    def test_top_level_lists_dirs_and_files(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        items = read_context_dir(workspace)
+        names = [i["name"] for i in items]
+        # decisions/ dir comes before the .md files (dirs-first ordering).
+        assert "decisions" in names
+        assert "objective.md" in names
+        assert "architecture.md" in names
+        assert items[0]["isDir"] is True
+        assert items[0]["name"] == "decisions"
+
+    def test_top_level_dir_item_shape(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        items = read_context_dir(workspace)
+        d = next(i for i in items if i["isDir"])
+        assert d["name"] == "decisions"
+        assert "folder" in d["description"]
+
+    def test_top_level_file_item_has_h1(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        items = read_context_dir(workspace)
+        obj = next(i for i in items if i["name"] == "objective.md")
+        assert obj["description"] == "Objective"
+        assert obj["isDir"] is False
+
+    def test_subdir_listing(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        items = read_context_dir(workspace, "decisions")
+        names = [i["name"] for i in items]
+        assert "0001.md" in names
+        assert "0002.md" in names
+        assert all(not i["isDir"] for i in items)
+
+    def test_missing_context_dir_returns_empty(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        # No context dir created.
+        assert read_context_dir(workspace) == []
+
+    def test_nonexistent_subpath_returns_empty(self, workspace: Path):
+        from holoctl.server.projects import read_context_dir
+        _make_context_dir(workspace)
+        assert read_context_dir(workspace, "nonexistent") == []
+
+
+class TestContextTreeApi:
+    """HTTP tests for GET /api/project/{alias}/context/tree."""
+
+    def test_top_level_returns_entries(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree")
+        assert r.status_code == 200
+        body = r.json()
+        assert "entries" in body
+        names = [e["name"] for e in body["entries"]]
+        assert "decisions" in names
+        assert "objective.md" in names
+
+    def test_entries_have_type_field(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree")
+        body = r.json()
+        types = {e["name"]: e["type"] for e in body["entries"]}
+        assert types["decisions"] == "dir"
+        assert types["objective.md"] == "file"
+
+    def test_subdir_listing(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree?path=decisions")
+        assert r.status_code == 200
+        names = [e["name"] for e in r.json()["entries"]]
+        assert "0001.md" in names
+        assert "0002.md" in names
+
+    def test_traversal_returns_403(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree?path=../../etc")
+        assert r.status_code == 403
+
+    def test_unknown_alias_returns_404(self, client: TestClient):
+        r = client.get("/api/project/no-such-project/context/tree")
+        assert r.status_code == 404
+
+    def test_nonexistent_path_returns_404(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/api/project/{alias}/context/tree?path=no-such-dir")
+        assert r.status_code == 404
+
+    def test_empty_context_returns_empty_entries(self, client: TestClient, alias: str):
+        # No context dir at all.
+        r = client.get(f"/api/project/{alias}/context/tree")
+        assert r.status_code == 200
+        assert r.json()["entries"] == []
+
+
+class TestContextTreePage:
+    """Tests for the context page rendering the expandable tree."""
+
+    def test_context_page_200(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert r.status_code == 200
+
+    def test_context_page_has_tree_container(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'id="context-tree"' in r.text
+
+    def test_context_tree_carries_data_attrs(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert f'data-alias="{alias}"' in r.text
+        assert f'/api/project/{alias}/context/tree' in r.text
+        assert f'/project/{alias}/context/' in r.text
+
+    def test_directory_renders_as_details(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        # decisions/ is a dir — must render as <details> with data-path
+        assert '<details class="tree-dir context-tree-dir">' in r.text
+        assert 'data-path="decisions"' in r.text
+
+    def test_file_renders_as_link(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert f'href="/project/{alias}/context/objective.md"' in r.text
+
+    def test_lazy_children_div_present_for_dir(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context")
+        assert 'data-loaded="false"' in r.text
+        assert 'class="tree-children tree-lazy"' in r.text
+
+
+class TestNestedContextFileDetail:
+    """Nested context files (subdir/file.md) open via the detail route."""
+
+    def test_nested_file_returns_200(self, client: TestClient, alias: str, workspace: Path):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context/decisions/0001.md")
+        assert r.status_code == 200
+        assert "ADR-0001" in r.text
+
+    def test_nested_file_breadcrumb_links_back_to_context(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context/decisions/0001.md")
+        assert f'href="/project/{alias}/context"' in r.text
+
+    def test_traversal_on_detail_route_returns_403(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context/../../etc/passwd")
+        # FastAPI path normalization may turn this into 404 before we even
+        # hit our guard — either 403 or 404 is acceptable, but NOT 200.
+        assert r.status_code in (403, 404)
+
+    def test_missing_nested_file_returns_404(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        _make_context_dir(workspace)
+        r = client.get(f"/project/{alias}/context/decisions/9999.md")
+        assert r.status_code == 404

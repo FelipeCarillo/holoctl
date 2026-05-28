@@ -3,14 +3,16 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..lib.board import Board
+from .paths import safe_resolve as _safe_resolve
 from .projects import (
     get_projects as _get_projects,
     get_project as _get_project,
+    read_context_dir as _read_context_dir,
 )
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -145,6 +147,25 @@ def api_ticket_move(alias: str, ticket_id: str, payload: dict = Body(...)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return JSONResponse(content=result)
+
+
+@app.get("/api/project/{alias}/context/tree")
+def api_context_tree(alias: str, path: str = Query(default="")):
+    """Return one directory level of `.holoctl/context/<path>`.
+
+    ``path`` is empty / absent for the top level.  Traversal attempts
+    return 403; unknown alias or non-directory path return 404.
+    """
+    project = _get_project(alias)
+    if not project:
+        raise HTTPException(status_code=404, detail="Not found")
+    root = (Path(project["path"]) / ".holoctl" / "context").resolve()
+    if path:
+        target = _safe_resolve(root, path)
+        if not target.exists() or not target.is_dir():
+            raise HTTPException(status_code=404, detail="Not a directory")
+    entries = _read_context_dir(Path(project["path"]), path)
+    return {"entries": [{"name": e["name"], "type": "dir" if e["isDir"] else "file"} for e in entries]}
 
 
 @app.get("/api/project/{alias}/events")

@@ -63,3 +63,24 @@ details[open] > summary .tree-icon { content: '📂'; }
   font-size: 12px;
 }
 
+/* Context tree: file links + folder description */
+.tree-context-link {
+  color: var(--text-2);
+  text-decoration: none;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-context-link:hover { color: var(--accent); text-decoration: underline; }
+
+.tree-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+

@@ -157,16 +157,36 @@ def read_foreign_commands(project_path: Path) -> list[dict]:
     return _read_foreign(project_path, "commands")
 
 
-def read_context_docs(project_path: Path) -> list[dict]:
-    d = project_path / ".holoctl" / "context"
-    if not d.exists():
+def read_context_dir(project_path: Path, subpath: str = "") -> list[dict]:
+    """List ONE level of `.holoctl/context/<subpath>`.
+
+    Returns items shaped as ``{name, isDir, description}`` sorted
+    directories-first then alphabetically within each group, mirroring
+    the order produced by the old ``read_context_docs``.
+
+    ``subpath=""`` lists the context root; any other value lists that
+    subdirectory.  No traversal guard here — callers that receive
+    ``subpath`` from HTTP must validate it with ``safe_resolve`` first.
+    """
+    root = project_path / ".holoctl" / "context"
+    d = (root / subpath) if subpath else root
+    if not d.exists() or not d.is_dir():
         return []
-    items = []
+    dirs: list[dict] = []
+    files: list[dict] = []
     for entry in sorted(d.iterdir()):
         if entry.is_dir():
-            items.append({"name": entry.name, "isDir": True, "description": f"{entry.name}/ folder"})
+            dirs.append({"name": entry.name, "isDir": True, "description": f"{entry.name}/ folder"})
         elif entry.suffix == ".md":
             content = entry.read_text(encoding="utf-8")
-            first_h1 = next((l.removeprefix("# ") for l in content.splitlines() if l.startswith("# ")), "")
-            items.append({"name": entry.name, "isDir": False, "description": first_h1})
-    return items
+            first_h1 = next(
+                (line.removeprefix("# ") for line in content.splitlines() if line.startswith("# ")),
+                "",
+            )
+            files.append({"name": entry.name, "isDir": False, "description": first_h1})
+    return dirs + files
+
+
+def read_context_docs(project_path: Path) -> list[dict]:
+    """List the top level of `.holoctl/context/` (public API, unchanged)."""
+    return read_context_dir(project_path, "")
