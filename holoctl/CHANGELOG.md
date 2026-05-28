@@ -4,6 +4,40 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-05-28
+
+Dashboard UI patch: the left-edge "sliver clip" that 0.20.0 fixed only on
+detail pages was still happening on every other page (home, agents,
+commands, context, repos, metrics, workspace metrics). Same root cause —
+`.content-body { overflow-x: hidden }` clipped the cards' left
+`box-shadow`. Same fix, now applied globally. Also adds consistent
+horizontal centering for non-board pages so wide screens don't sprawl.
+
+### Fixed
+
+- **Global clip protection.** `padding-inline: 4px` now lives on the base
+  `.content-body` rule (`holoctl/server/static/css/main.css`), giving every
+  card's left box-shadow the same breathing room the detail pages got in
+  0.20.0. The board page (`.content-body:has(> .kanban)`) inherits the
+  padding without affecting its horizontal scroll; the detail pages already
+  have their own `.detail-page { padding-inline: 4px }` and stay unchanged.
+
+### Added
+
+- **`.page-shell` centering wrapper** (`max-width: 1200px; margin-inline:
+  auto`) on non-board page templates — `home.html`,
+  `project/{agents,commands,context,repos,metrics}.html`, and `metrics.html`
+  (workspace). Content frames consistently and stops sprawling edge-to-edge
+  on wide displays. `project/board.html` is intentionally NOT wrapped
+  (kanban needs full width for horizontal scroll); `detail.html` /
+  `doc_detail.html` are NOT wrapped (`.detail-page` already constrains them).
+
+### Internal
+
+- **CI smoke test** updated to drop references to `copilot` / `codex`
+  compile targets (retired in 0.20.0). The `release.yml` workflow was
+  unaffected — this just unbreaks the regular `ci.yml` smoke step on main.
+
 ## [0.20.0] — 2026-05-28
 
 0.20.0 is the largest single release since 0.17 — a Claude-only compiler refocus,
