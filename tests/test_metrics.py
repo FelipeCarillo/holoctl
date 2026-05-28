@@ -752,6 +752,20 @@ class TestReadActivityEvents:
         result = read_activity_events(root)
         assert result == []
 
+    def test_skips_non_dict_json_lines(self):
+        """Valid JSON non-dict values (null, int, list) must not raise AttributeError."""
+        lines = [
+            "null",
+            "42",
+            "[1, 2, 3]",
+            json.dumps({"ts": "2026-05-10T12:00:00Z", "type": "ticket.moved",
+                        "ticket": "T-1", "from": "backlog", "to": "doing"}),
+        ]
+        root = self._make_root(lines)
+        result = read_activity_events(root)
+        assert len(result) == 1
+        assert result[0]["ticket"] == "T-1"
+
 
 # ── time_in_status ────────────────────────────────────────────────────────────
 

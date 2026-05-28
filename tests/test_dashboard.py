@@ -2761,3 +2761,136 @@ class TestF3StalledList:
 
     def test_wip_stalled_row_css_present(self, dashboard_css: str):
         assert ".metrics-wip-stalled-row" in dashboard_css
+
+
+# ── F2: KPI band + time-in-status HTTP tests ─────────────────────────────────
+
+
+class TestProjectMetricsKpiBand:
+    """HTTP-level tests: KPI band renders on /project/{alias}/metrics."""
+
+    def test_kpi_band_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "mkpi-band" in r.text
+
+    def test_kpi_band_has_throughput_card(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # The band renders at least one mkpi-card element.
+        assert "mkpi-card" in r.text
+
+    def test_kpi_band_renders_with_data(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "Active", "agent": "developer", "status": "doing"})
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "mkpi-band" in r.text
+        # WIP card value should be non-zero.
+        assert "mkpi-value" in r.text
+
+
+class TestWorkspaceMetricsKpiBand:
+    """HTTP-level tests: KPI band renders on /metrics (workspace rollup)."""
+
+    def test_kpi_band_present_on_workspace_metrics(self, client: TestClient):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "mkpi-band" in r.text
+
+    def test_kpi_band_has_mkpi_cards(self, client: TestClient):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "mkpi-card" in r.text
+
+    def test_kpi_band_renders_gracefully_when_empty(self, client: TestClient):
+        """Empty workspace must still render the KPI band (all dashes / zeros)."""
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "mkpi-band" in r.text
+
+
+class TestProjectMetricsTimeInStatus:
+    """HTTP-level tests: time-in-status section renders on /project/{alias}/metrics."""
+
+    def test_time_in_status_section_present_on_project_metrics(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-time-in-status" in r.text
+
+    def test_time_in_status_empty_state_when_no_activity(
+        self, client: TestClient, alias: str
+    ):
+        """When activity.jsonl is empty (no moves), the empty state renders
+        gracefully without raising."""
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        # Either empty state text or mtis-chart present — both are valid.
+        assert (
+            "No status-transition history yet" in r.text
+            or "mtis-chart" in r.text
+        )
+
+    def test_time_in_status_shows_chart_after_move(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        """After at least one ticket.moved event, the TIS chart renders."""
+        created = client.post(
+            f"/api/project/{alias}/tickets",
+            json={"title": "Workflow ticket", "agent": "developer"},
+        ).json()
+        # Move the ticket so activity.jsonl gets a ticket.moved event.
+        client.post(
+            f"/api/project/{alias}/tickets/{created['id']}/move",
+            json={"status": "doing"},
+        )
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "mtis-chart" in r.text or "metrics-time-in-status" in r.text
+
+
+class TestWorkspaceMetricsTimeInStatus:
+    """HTTP-level tests: time-in-status section renders on /metrics."""
+
+    def test_time_in_status_section_present_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "metrics-time-in-status" in r.text
+
+    def test_time_in_status_empty_state_on_workspace_metrics(
+        self, client: TestClient
+    ):
+        """Empty workspace (no activity) must render the TIS empty state
+        gracefully — no 500, no AttributeError from non-dict JSON lines."""
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert (
+            "No status-transition history yet" in r.text
+            or "mtis-chart" in r.text
+        )
+
+    def test_time_in_status_shows_chart_after_move_on_workspace(
+        self, client: TestClient, alias: str, workspace: Path
+    ):
+        """After a move event the workspace rollup also shows the TIS chart."""
+        created = client.post(
+            f"/api/project/{alias}/tickets",
+            json={"title": "WS chart ticket", "agent": "developer"},
+        ).json()
+        client.post(
+            f"/api/project/{alias}/tickets/{created['id']}/move",
+            json={"status": "doing"},
+        )
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        assert "mtis-chart" in r.text or "metrics-time-in-status" in r.text

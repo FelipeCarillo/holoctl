@@ -571,6 +571,8 @@ def read_activity_events(
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(obj, dict):
+            continue
         if obj.get("type") != "ticket.moved":
             continue
         ts_str = obj.get("ts")
