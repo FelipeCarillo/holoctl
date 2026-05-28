@@ -4,6 +4,7 @@
   {% if not group_rows %}
   <div class="metrics-empty">No data yet.</div>
   {% else %}
+  <div class="{% if group_rows | length > 12 %}metrics-scrollable{% endif %}">
   <table class="metrics-group-table" aria-label="{{ group_label }} breakdown">
     <thead>
       <tr>
@@ -45,5 +46,6 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>

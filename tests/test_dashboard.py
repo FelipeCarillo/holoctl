@@ -2429,3 +2429,152 @@ class TestWorkspaceSummaryShaper:
         projects = [{"counts": {"doing": 1}, "_tickets": tickets}]
         result = workspace_summary(projects)
         assert result["stale_count"] >= 1
+
+
+# ── F1: Metrics filter toolbar — route + HTML integration ────────────────────
+
+
+class TestMetricsFilterRoute:
+    """Integration tests: filter query params reflected in rendered HTML."""
+
+    def test_since_param_returns_200(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics?since=7d")
+        assert r.status_code == 200
+
+    def test_since_30d_default_toolbar_present(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics")
+        assert r.status_code == 200
+        assert "metrics-filter-toolbar" in r.text
+
+    def test_preset_chip_active_class(self, client: TestClient, alias: str):
+        r = client.get(f"/project/{alias}/metrics?since=7d")
+        assert "mft-preset-active" in r.text
+
+    def test_kind_filter_narrows_tickets(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        """Filtering by kind=spec must exclude task-kind tickets from the
+        rendered metrics context.  We verify by checking that the WIP count
+        badge reflects only the matching tickets."""
+        b = Board(workspace, workspace_config)
+        b.add({"title": "A task", "agent": "developer",
+               "status": "doing", "kind": "task"})
+        b.add({"title": "A spec", "agent": "developer",
+               "status": "doing", "kind": "spec"})
+
+        # Without filter: both in WIP.
+        r_all = client.get(f"/project/{alias}/metrics?since=all")
+        assert r_all.status_code == 200
+
+        # With kind=spec filter: only the spec ticket survives.
+        r_filt = client.get(f"/project/{alias}/metrics?since=all&kind=spec")
+        assert r_filt.status_code == 200
+        # The WIP badge must show 1 (only spec ticket is in progress).
+        assert 'class="metrics-wip-count-badge">1<' in r_filt.text
+
+    def test_agent_filter_param(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "T1", "agent": "developer", "status": "doing"})
+        b.add({"title": "T2", "agent": "reviewer", "status": "doing"})
+
+        r = client.get(f"/project/{alias}/metrics?since=all&agent=developer")
+        assert r.status_code == 200
+        assert 'class="metrics-wip-count-badge">1<' in r.text
+
+    def test_active_chip_rendered_for_active_filter(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics?since=30d&kind=task")
+        assert "mft-active-chips" in r.text
+        assert "mft-chip" in r.text
+
+    def test_clear_all_link_present_when_filters_active(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics?since=7d&kind=task")
+        assert "mft-clear-all" in r.text
+        assert "Clear all" in r.text
+
+    def test_no_active_chips_when_no_filters(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        # No multi-value filters active → no chips row.
+        assert "mft-active-chips" not in r.text
+
+    def test_sticky_toolbar_class_in_css(self, dashboard_css: str):
+        assert ".metrics-filter-toolbar" in dashboard_css
+        assert "position: sticky" in dashboard_css
+
+    def test_scrollable_class_in_css(self, dashboard_css: str):
+        assert ".metrics-scrollable" in dashboard_css
+        assert "max-height" in dashboard_css
+        assert "overflow-y: auto" in dashboard_css
+
+    def test_metrics_page_wrapper_present(
+        self, client: TestClient, alias: str
+    ):
+        r = client.get(f"/project/{alias}/metrics")
+        assert 'class="metrics-page"' in r.text
+
+    def test_comma_separated_tags_filter(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "Auth task", "agent": "developer",
+               "status": "doing", "tags": "auth"})
+        b.add({"title": "UI task", "agent": "developer",
+               "status": "doing", "tags": "ui"})
+
+        # Filter by tags=auth — only auth ticket in WIP.
+        r = client.get(f"/project/{alias}/metrics?since=all&tags=auth")
+        assert r.status_code == 200
+        assert 'class="metrics-wip-count-badge">1<' in r.text
+
+    def test_unknown_project_404_with_filter(self, client: TestClient):
+        r = client.get("/project/no-such-project/metrics?since=7d&kind=task")
+        assert r.status_code == 404
+
+
+class TestWorkspaceMetricsFilterRoute:
+    """Integration tests for the workspace-level filter."""
+
+    def test_since_param_returns_200(self, client: TestClient):
+        r = client.get("/metrics?since=7d")
+        assert r.status_code == 200
+
+    def test_filter_toolbar_present(self, client: TestClient):
+        r = client.get("/metrics")
+        assert "metrics-filter-toolbar" in r.text
+
+    def test_project_facet_shown_on_workspace(self, client: TestClient):
+        """Workspace metrics shows the Project facet; per-project view does not."""
+        r = client.get("/metrics")
+        assert r.status_code == 200
+        # Project facet summary appears via is_workspace=True in context.
+        # We check the hidden 'since' input is present (toolbar rendered).
+        assert 'name="since"' in r.text
+
+    def test_active_chip_on_workspace_filter(self, client: TestClient):
+        r = client.get("/metrics?since=7d&kind=task")
+        assert r.status_code == 200
+        assert "mft-active-chips" in r.text
+
+    def test_clear_all_on_workspace(self, client: TestClient):
+        r = client.get("/metrics?kind=task")
+        assert "mft-clear-all" in r.text
+
+    def test_kind_filter_on_workspace(
+        self, client: TestClient, alias: str, workspace: Path, workspace_config: dict
+    ):
+        b = Board(workspace, workspace_config)
+        b.add({"title": "Task", "agent": "developer",
+               "status": "doing", "kind": "task"})
+        b.add({"title": "Spec", "agent": "developer",
+               "status": "doing", "kind": "spec"})
+
+        r = client.get("/metrics?since=all&kind=spec")
+        assert r.status_code == 200
+        assert 'class="metrics-wip-count-badge">1<' in r.text

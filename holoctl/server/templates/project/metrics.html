@@ -2,6 +2,12 @@
 {% block content %}
 <div class="metrics-page">
 
+  {# ── Filter toolbar (sticky) ── #}
+  {% include "partials/metrics/_filter_toolbar.html" %}
+
+  {# ── KPI band placeholder (Task F2 will fill this slot) ── #}
+  {# <div class="metrics-kpi-band"></div> #}
+
   {# ── Row 1: Throughput + Cycle Time ── #}
   <div class="metrics-top-row">
     {% include "partials/metrics/_throughput.html" %}

@@ -3,11 +3,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from ..jinja import render
 from ..views.metrics import metrics_context
+from ..filters import (
+    apply_filter,
+    available_filter_options,
+    build_chip_remove_urls,
+    build_preset_urls,
+    filter_to_query_string,
+    parse_filter_from_query,
+)
 from ...lib import metrics as _m
 
 router = APIRouter()
@@ -69,7 +77,7 @@ def _by_workspace_project(all_tickets: list[dict]) -> list[dict]:
 
 
 @router.get("/metrics", response_class=HTMLResponse)
-def workspace_metrics():
+def workspace_metrics(request: Request):
     from ..projects import get_projects
     from ...lib.board import Board
 
@@ -85,9 +93,25 @@ def workspace_metrics():
         except Exception:
             pass
 
-    ctx = metrics_context(all_tickets)
-    by_ws_project = _by_workspace_project(all_tickets)
+    # Parse filter from URL query params.
+    qp: dict[str, list[str]] = {}
+    for k, v in request.query_params.multi_items():
+        qp.setdefault(k, []).append(v)
+    f = parse_filter_from_query(qp)
+
+    # Derive options BEFORE filtering so dropdowns show all available values.
+    options = available_filter_options(all_tickets)
+
+    # Apply filter to get the analysis set.
+    tickets = apply_filter(all_tickets, f)
+
+    ctx = metrics_context(tickets, since_days=f.get("since_days", 30))  # type: ignore[arg-type]
+
+    # by_workspace_project runs AFTER apply_filter so it reflects the filter.
+    by_ws_project = _by_workspace_project(tickets)
     project_max = max((r["completed"] for r in by_ws_project), default=0)
+
+    base_url = "/metrics"
 
     return render(
         "metrics.html",
@@ -97,5 +121,13 @@ def workspace_metrics():
         actions="",
         by_ws_project=by_ws_project,
         ws_project_max=project_max,
+        # Filter context for toolbar.
+        metrics_filter=f,
+        filter_options=options,
+        filter_qs=filter_to_query_string(f),
+        chip_remove_urls=build_chip_remove_urls(f),
+        preset_urls=build_preset_urls(f),
+        base_url=base_url,
+        is_workspace=True,
         **ctx,
     )

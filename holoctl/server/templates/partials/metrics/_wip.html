@@ -9,7 +9,7 @@
   {% if wip_view.count == 0 %}
   <div class="metrics-empty">No tickets in progress right now.</div>
   {% else %}
-  <ul class="metrics-wip-list">
+  <ul class="metrics-wip-list{% if wip_view.tickets | length > 12 %} metrics-scrollable{% endif %}">
     {% for item in wip_view.tickets %}
     <li class="metrics-wip-item{% if item.stale %} metrics-wip-stale{% endif %}">
       <span class="metrics-wip-id">{{ item.id }}</span>
