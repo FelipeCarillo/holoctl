@@ -256,6 +256,48 @@ class Board:
             "by_status": by_status,
         }
 
+    def _apply_status_change(
+        self,
+        ticket: dict,
+        old_status: str,
+        new_status: str,
+        now: str,
+    ) -> dict:
+        """Apply a status transition on a ticket dict in-place.
+
+        Sets ``status``, ``updated``, and ``completed`` (set when entering
+        ``done``, cleared when leaving ``done``).  Also appends a
+        ``"ticket.moved"`` event to ``activity.jsonl`` — but only when the
+        status actually changes (no-op moves are skipped).
+
+        Returns a patches dict suitable for ``_patch_ticket_md``.
+        """
+        ticket["status"] = new_status
+        ticket["updated"] = now
+
+        patches: dict = {"status": new_status, "updated": now}
+
+        if new_status == "done":
+            ticket["completed"] = now
+            patches["completed"] = now
+        elif old_status == "done":
+            # Leaving done — clear the stale completion timestamp.
+            ticket["completed"] = None
+            patches["completed"] = None
+
+        _log_activity(
+            self._root,
+            {
+                "type": "ticket.moved",
+                "ticket": ticket["id"],
+                "from": old_status,
+                "to": new_status,
+                "actor": "cli",
+            },
+        )
+
+        return patches
+
     def move(self, ticket_id: str, new_status: str) -> dict:
         valid = self._config["board"]["statuses"]
         if new_status not in valid:
@@ -268,18 +310,18 @@ class Board:
 
         old_status = ticket["status"]
         now = _now()
-        ticket["status"] = new_status
-        ticket["updated"] = now
-        if new_status == "done":
-            ticket["completed"] = now
+
+        if old_status != new_status:
+            patches = self._apply_status_change(ticket, old_status, new_status, now)
+        else:
+            # No-op move: still update the timestamp, but don't log.
+            ticket["updated"] = now
+            patches = {"updated": now}
 
         data["meta"]["counts"] = self._recount(data["tickets"])
         data["meta"]["updated"] = now
         self._save(data)
 
-        patches = {"status": new_status, "updated": now}
-        if new_status == "done":
-            patches["completed"] = now
         if ticket.get("file"):
             self._patch_ticket_md(ticket["file"], patches)
 
@@ -290,6 +332,7 @@ class Board:
         result = {"id": ticket_id, "from": old_status, "to": new_status}
         if (
             new_status == "done"
+            and old_status != new_status
             and "meta:curate" in (ticket.get("tags") or [])
         ):
             try:
@@ -336,15 +379,27 @@ class Board:
             parsed = self._validate_parent_change(data["tickets"], ticket_id, parsed)
 
         now = _now()
-        ticket[field] = parsed
-        ticket["updated"] = now
-        data["meta"]["updated"] = now
+
         if field == "status":
+            old_status = ticket["status"]
+            new_status = str(parsed)
+            if old_status != new_status:
+                md_patches = self._apply_status_change(ticket, old_status, new_status, now)
+            else:
+                # No-op status set: update timestamp only, no logging.
+                ticket["updated"] = now
+                md_patches = {"status": new_status, "updated": now}
             data["meta"]["counts"] = self._recount(data["tickets"])
+        else:
+            ticket[field] = parsed
+            ticket["updated"] = now
+            md_patches = {field: parsed, "updated": now}
+
+        data["meta"]["updated"] = now
         self._save(data)
 
         if ticket.get("file"):
-            self._patch_ticket_md(ticket["file"], {field: parsed, "updated": now})
+            self._patch_ticket_md(ticket["file"], md_patches)
 
         return {"id": ticket_id, "field": field, "value": parsed}
 

@@ -800,3 +800,167 @@ def test_tree_rooted_at_parent_id(workspace: Path, workspace_config: dict):
     rows = board.tree(root=s1["id"])
     titles = {r["ticket"]["title"] for r in rows}
     assert titles == {"S1", "C1"}
+
+
+# ---- Status transition observability + completed reliability (Task B) --------
+
+
+def _activity_events(workspace: Path, ticket_id: str) -> list[dict]:
+    """Helper: read activity.jsonl and return events for a given ticket."""
+    log = workspace / ".holoctl" / "activity.jsonl"
+    if not log.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if line.strip() and json.loads(line).get("ticket") == ticket_id
+    ]
+
+
+def test_move_logs_ticket_moved_event(workspace: Path, workspace_config: dict):
+    """move() logs a ticket.moved event with correct from/to fields."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    board.move(t["id"], "doing")
+    events = _activity_events(workspace, t["id"])
+    moved = [e for e in events if e["type"] == "ticket.moved"]
+    assert len(moved) == 1
+    assert moved[0]["from"] == "backlog"
+    assert moved[0]["to"] == "doing"
+
+
+def test_move_noop_does_not_log(workspace: Path, workspace_config: dict):
+    """move() with the same status should not add a ticket.moved event."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    board.move(t["id"], "backlog")  # no-op: already backlog
+    events = _activity_events(workspace, t["id"])
+    moved = [e for e in events if e["type"] == "ticket.moved"]
+    assert moved == []
+
+
+def test_move_to_done_sets_completed_in_index_and_md(workspace: Path, workspace_config: dict):
+    """move() to done sets completed on the index entry AND the .md frontmatter."""
+    import re as _re
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    board.move(t["id"], "done")
+
+    # Index
+    fresh = board.get(t["id"])
+    assert fresh["completed"] is not None
+    assert _re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", fresh["completed"])
+
+    # .md frontmatter
+    md = (workspace / ".holoctl" / "board" / t["file"]).read_text(encoding="utf-8")
+    assert f"completed: {fresh['completed']}" in md
+
+
+def test_move_away_from_done_clears_completed(workspace: Path, workspace_config: dict):
+    """move() away from done clears completed in both index and .md."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    board.move(t["id"], "done")
+    board.move(t["id"], "doing")
+
+    fresh = board.get(t["id"])
+    assert fresh["completed"] is None
+
+    md = (workspace / ".holoctl" / "board" / t["file"]).read_text(encoding="utf-8")
+    assert "completed: null" in md
+
+
+def test_set_status_logs_ticket_moved_and_sets_completed(workspace: Path, workspace_config: dict):
+    """set(field='status', value='done') sets completed AND logs ticket.moved."""
+    import re as _re
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    board.set(t["id"], "status", "done")
+
+    # completed set
+    fresh = board.get(t["id"])
+    assert fresh["completed"] is not None
+    assert _re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", fresh["completed"])
+
+    # ticket.moved logged
+    events = _activity_events(workspace, t["id"])
+    moved = [e for e in events if e["type"] == "ticket.moved"]
+    assert len(moved) == 1
+    assert moved[0]["from"] == "backlog"
+    assert moved[0]["to"] == "done"
+
+
+def test_set_status_away_from_done_clears_completed(workspace: Path, workspace_config: dict):
+    """set(field='status') leaving done clears completed."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    board.set(t["id"], "status", "done")
+    board.set(t["id"], "status", "doing")
+
+    fresh = board.get(t["id"])
+    assert fresh["completed"] is None
+
+
+def test_set_status_noop_does_not_log(workspace: Path, workspace_config: dict):
+    """set(field='status') with the current value logs nothing."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    board.move(t["id"], "doing")
+    before = len(_activity_events(workspace, t["id"]))
+    board.set(t["id"], "status", "doing")  # no-op
+    after = len(_activity_events(workspace, t["id"]))
+    assert after == before
+
+
+def test_set_status_completed_written_to_md(workspace: Path, workspace_config: dict):
+    """set() status-to-done persists completed in .md frontmatter."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    board.set(t["id"], "status", "done")
+    fresh = board.get(t["id"])
+    md = (workspace / ".holoctl" / "board" / t["file"]).read_text(encoding="utf-8")
+    assert f"completed: {fresh['completed']}" in md
+
+
+def test_batch_move_logs_one_moved_event_per_changed_ticket(workspace: Path, workspace_config: dict):
+    """batch_move logs a ticket.moved for each ticket that actually changed."""
+    board = Board(workspace, workspace_config)
+    t1 = board.add({"title": "A"})
+    t2 = board.add({"title": "B"})
+    t3 = board.add({"title": "C"})
+    board.batch_move([t1["id"], t2["id"], t3["id"]], "doing")
+
+    for tid in (t1["id"], t2["id"], t3["id"]):
+        events = _activity_events(workspace, tid)
+        moved = [e for e in events if e["type"] == "ticket.moved"]
+        assert len(moved) == 1
+        assert moved[0]["from"] == "backlog"
+        assert moved[0]["to"] == "doing"
+
+
+def test_batch_move_to_done_sets_completed_per_ticket(workspace: Path, workspace_config: dict):
+    """batch_move to done sets completed on every ticket."""
+    board = Board(workspace, workspace_config)
+    t1 = board.add({"title": "A"})
+    t2 = board.add({"title": "B"})
+    board.batch_move([t1["id"], t2["id"]], "done")
+    assert board.get(t1["id"])["completed"] is not None
+    assert board.get(t2["id"])["completed"] is not None
+
+
+def test_move_and_set_produce_same_event_schema(workspace: Path, workspace_config: dict):
+    """ticket.moved events from move() and set() have identical fields."""
+    board = Board(workspace, workspace_config)
+    t1 = board.add({"title": "A"})
+    t2 = board.add({"title": "B"})
+
+    board.move(t1["id"], "doing")
+    board.set(t2["id"], "status", "doing")
+
+    ev1 = next(e for e in _activity_events(workspace, t1["id"]) if e["type"] == "ticket.moved")
+    ev2 = next(e for e in _activity_events(workspace, t2["id"]) if e["type"] == "ticket.moved")
+
+    # Both must have the same set of keys (ts may differ by value but same field).
+    assert set(ev1.keys()) == set(ev2.keys())
+    assert ev1["from"] == "backlog" and ev1["to"] == "doing"
+    assert ev2["from"] == "backlog" and ev2["to"] == "doing"
