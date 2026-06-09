@@ -136,21 +136,13 @@ jobs:
   eslint:
     name: ESLint — dashboard JS
     runs-on: ubuntu-latest
-    # REPORT-ONLY for now: the dashboard JS modules on main currently reference
-    # each other's functions as globals, which trips `no-undef`. That is fixed
-    # on the frontend branch (PR #44). Once it merges, make this job blocking:
-    # remove the `|| echo` suffix below. (`continue-on-error` alone still paints
-    # a red X on the PR, so the step itself must not fail until then.)
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Lint — eslint (flat config, report-only until PR #44 merges)
-        run: >
-          npx --yes eslint holoctl/server/static/js ||
-          echo "::warning::ESLint reported issues (known no-undef on main, fixed by PR #44 — job is report-only until it merges)"
+      - name: Lint — eslint (flat config)
+        run: npx --yes eslint holoctl/server/static/js
 
   build:
     name: Build wheel + sdist
