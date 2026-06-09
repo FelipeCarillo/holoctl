@@ -21,6 +21,27 @@ _INDEX_CACHE: dict[str, tuple[int, int, dict]] = {}
 _CHECKBOX_RE = re.compile(r"^(\s*-\s*\[)([ xX])(\]\s*)(.*)$", re.MULTILINE)
 
 
+def _replace_with_retry(src: str, dst: "Path | str", attempts: int = 20) -> None:
+    """``os.replace`` with a short bounded retry for Windows.
+
+    On Windows, replacing a file that a concurrent reader currently holds
+    open fails with ``PermissionError`` (WinError 5) — readers like the
+    dashboard SSE poller or another CLI's ``_load()`` only hold the index
+    open for the duration of a single ``read_text``, so a few millisecond
+    retries are enough. POSIX renames never take this path.
+    """
+    import time
+
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.005 * (attempt + 1))
+
+
 def _count_acceptance(body: str | None) -> tuple[int, int]:
     """Return ``(total, done)`` DoD checkboxes in a ticket body."""
     if not body:
@@ -115,7 +136,7 @@ class Board:
                     os.fsync(f.fileno())
                 except OSError:
                     pass
-            os.replace(tmp_name, self._index_path)
+            _replace_with_retry(tmp_name, self._index_path)
         except BaseException:
             try:
                 os.unlink(tmp_name)
