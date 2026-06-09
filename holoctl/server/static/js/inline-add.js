@@ -1,4 +1,5 @@
 import { showToast } from './toast.js';
+import { projectAlias } from './api.js';
 
 // ── Inline "+ Add ticket" form ──
 

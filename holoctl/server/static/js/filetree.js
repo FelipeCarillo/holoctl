@@ -1,4 +1,5 @@
 import { showToast } from './toast.js';
+import { esc } from './dom.js';
 
 // ── File tree (lazy expand + copy path) ──
 //
@@ -18,15 +19,6 @@ import { showToast } from './toast.js';
 //   data-file-href-base   — (optional) URL prefix for file links;
 //                           when present, file nodes render as <a> links
 //                           rather than copy-to-clipboard spans.
-
-/** Escape a string for safe insertion into HTML text/attribute content. */
-function esc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 // SVG icon strings — 16px, currentColor stroke, matches icons/folder.svg + icons/doc.svg
 const ICON_FOLDER = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';

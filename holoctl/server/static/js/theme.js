@@ -1,10 +1,26 @@
 // ── Theme ──
 
-export function initTheme() {
+function preferredTheme() {
   const saved = localStorage.getItem('holoctl-theme');
-  const theme = saved || 'light';
+  if (saved) return saved;
+  // No explicit override → honour the OS preference.
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light';
+}
+
+export function initTheme() {
+  const theme = preferredTheme();
   document.documentElement.setAttribute('data-theme', theme);
   updateThemeIcons(theme);
+
+  // Delegated toggle handler (replaces inline onclick="__toggleTheme()" so a
+  // future CSP can drop unsafe-inline).
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="toggle-theme"]')) {
+      toggleTheme();
+    }
+  });
 }
 
 function updateThemeIcons(theme) {
@@ -16,10 +32,10 @@ function updateThemeIcons(theme) {
   });
 }
 
-window.__toggleTheme = function () {
+function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme');
   const next = current === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('holoctl-theme', next);
   updateThemeIcons(next);
-};
+}
