@@ -12,6 +12,8 @@ node_modules/
 
 # Git worktrees (superpowers subagent-driven execution)
 .worktrees/
+# Ephemeral worktrees created by Claude Code background subagents.
+.claude/worktrees/
 
 # Ad-hoc drafts (linkedin posts, screenshots, etc.) — keep out of the repo.
 *-draft.jpg
