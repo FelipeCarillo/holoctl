@@ -31,8 +31,20 @@ jobs:
       - name: Lint — ruff
         run: uv run ruff check holoctl/ tests/
 
+      # Formatting check — non-blocking warning for now. The existing tree is
+      # not yet `ruff format`-clean and a repo-wide reformat is deferred to
+      # avoid churn / cross-branch merge conflicts. New code is formatted via
+      # the pre-commit hook; once the tree is reformatted this becomes blocking.
+      - name: Format check — ruff format (warn-only)
+        run: uv run ruff format --check holoctl/ tests/ || true
+
       - name: Type check — mypy
         run: uv run mypy holoctl/lib holoctl/cli
+
+      # Version consistency: pyproject [project].version must equal the latest
+      # released `## [X.Y.Z]` header in holoctl/CHANGELOG.md. Read-only check.
+      - name: Validate CHANGELOG ↔ pyproject version
+        run: uv run python scripts/validate_changelog.py
 
       - name: Smoke test — CLI loads
         run: |
@@ -117,7 +129,25 @@ jobs:
           echo "Migration smoke OK"
 
       - name: Run pytest
-        run: uv run pytest tests/ -q
+        # -n auto: parallel across CPU cores (pytest-xdist). Coverage is
+        # reported (term-missing) for visibility; no --cov-fail-under gate yet.
+        run: uv run pytest -q -n auto --cov=holoctl --cov-report=term-missing
+
+  eslint:
+    name: ESLint — dashboard JS
+    runs-on: ubuntu-latest
+    # NON-BLOCKING for now: the dashboard JS modules currently reference each
+    # other's functions as globals, which trips `no-undef`. That is being fixed
+    # on a separate frontend branch. Flip `continue-on-error` to false (make it
+    # blocking) once that branch merges.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Lint — eslint (flat config)
+        run: npx --yes eslint holoctl/server/static/js
 
   build:
     name: Build wheel + sdist

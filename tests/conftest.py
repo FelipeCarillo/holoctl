@@ -1,11 +1,84 @@
 """Shared pytest fixtures for holoctl tests."""
+
 from __future__ import annotations
 import json
 from pathlib import Path
+from typing import Any, Callable
 
 import pytest
+from typer.testing import CliRunner
 
 from holoctl.lib.config import get_defaults, save_config
+
+
+@pytest.fixture(scope="session")
+def cli_runner() -> CliRunner:
+    """A shared `typer.testing.CliRunner`.
+
+    Session-scoped: `CliRunner` is stateless between `invoke()` calls (each
+    invocation gets a fresh result), so a single instance is safely reused
+    across the whole test session instead of re-instantiating per test.
+    """
+    return CliRunner()
+
+
+@pytest.fixture
+def seed_workspace(tmp_path: Path) -> Callable[..., Path]:
+    """Factory fixture (function-scoped) that materializes a populated
+    `.holoctl/` workspace under the test's `tmp_path`.
+
+    Usage::
+
+        def test_x(seed_workspace):
+            root = seed_workspace()                       # defaults
+            root = seed_workspace(name="Foo", prefix="FO")  # config overrides
+
+    Recognized keyword overrides:
+        name   — project name   (default "TestProject")
+        prefix — project prefix  (default "TST")
+        any other key is applied verbatim to the top-level config dict.
+
+    Creates: `.holoctl/config.json`, an empty board (`board/index.json` +
+    `board/tickets/`), `activity.jsonl`, a `context/decisions/` dir, and the
+    default persona agent files (boardmaster + developer/reviewer/architect/
+    researcher) so board validation and boot-context queries succeed. Returns
+    the workspace root (== `tmp_path`).
+    """
+
+    def _seed(**config_overrides: Any) -> Path:
+        config = get_defaults()
+        config["project"]["name"] = config_overrides.pop("name", "TestProject")
+        config["project"]["prefix"] = config_overrides.pop("prefix", "TST")
+        for key, value in config_overrides.items():
+            config[key] = value
+        save_config(tmp_path, config)
+
+        board_dir = tmp_path / ".holoctl" / "board"
+        (board_dir / "tickets").mkdir(parents=True, exist_ok=True)
+        (board_dir / "index.json").write_text(
+            json.dumps(
+                {
+                    "meta": {"version": 1, "updated": "2026-01-01", "nextId": 1, "counts": {}},
+                    "tickets": [],
+                },
+                indent="\t",
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (tmp_path / ".holoctl" / "activity.jsonl").write_text("", encoding="utf-8")
+
+        agents_dir = tmp_path / ".holoctl" / "agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("boardmaster", "developer", "reviewer", "architect", "researcher"):
+            (agents_dir / f"{name}.md").write_text(
+                f"---\nname: {name}\ndescription: test agent\n---\n", encoding="utf-8"
+            )
+
+        (tmp_path / ".holoctl" / "context" / "decisions").mkdir(parents=True, exist_ok=True)
+        return tmp_path
+
+    return _seed
 
 
 @pytest.fixture
@@ -23,10 +96,14 @@ def workspace(tmp_path: Path) -> Path:
     board_dir = tmp_path / ".holoctl" / "board"
     (board_dir / "tickets").mkdir(parents=True, exist_ok=True)
     (board_dir / "index.json").write_text(
-        json.dumps({
-            "meta": {"version": 1, "updated": "2026-01-01", "nextId": 1, "counts": {}},
-            "tickets": [],
-        }, indent="\t") + "\n",
+        json.dumps(
+            {
+                "meta": {"version": 1, "updated": "2026-01-01", "nextId": 1, "counts": {}},
+                "tickets": [],
+            },
+            indent="\t",
+        )
+        + "\n",
         encoding="utf-8",
     )
     (tmp_path / ".holoctl" / "activity.jsonl").write_text("", encoding="utf-8")
@@ -47,15 +124,18 @@ def workspace(tmp_path: Path) -> Path:
 def workspace_config(workspace: Path) -> dict:
     """Load the config from the workspace fixture."""
     from holoctl.lib.config import load_config
+
     return load_config(workspace)
 
 
 @pytest.fixture
 def make_marker():
     """Factory fixture: create an empty project marker file inside a directory."""
+
     def _make(directory: Path, marker: str) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         (directory / marker).write_text("", encoding="utf-8")
+
     return _make
 
 
@@ -66,6 +146,7 @@ def dashboard_css() -> str:
     instead of the old monolithic `holoctl.css` (which was split per section)."""
     import re
     from holoctl.server import app as app_module
+
     css_dir = Path(app_module.__file__).parent / "static" / "css"
     index = (css_dir / "index.css").read_text("utf-8")
     parts: list[str] = []
@@ -81,6 +162,7 @@ def dashboard_js() -> str:
     Tests assert against this instead of the old monolithic `holoctl-ui.js`."""
     import re
     from holoctl.server import app as app_module
+
     js_dir = Path(app_module.__file__).parent / "static" / "js"
     index = (js_dir / "index.js").read_text("utf-8")
     parts: list[str] = [index]

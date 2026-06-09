@@ -85,6 +85,14 @@ package = true
 [dependency-groups]
 dev = [
     "pytest>=8",
+    # Parallel test execution (`pytest -n auto`) — the suite is CPU-light and
+    # filesystem-isolated (each test gets its own tmp_path), so it parallelizes
+    # cleanly with a large speedup.
+    "pytest-xdist>=3.5",
+    # Coverage reporting (`--cov=holoctl`). No fail-under gate yet — measuring first.
+    "pytest-cov>=5",
+    # Per-test timeout guard so a hung test fails loudly instead of stalling CI.
+    "pytest-timeout>=2.1",
     # Required by fastapi.testclient (used by tests/test_dashboard.py).
     "httpx>=0.27",
     # The dashboard moved to the optional `[dashboard]` extra; the dev env
@@ -103,11 +111,29 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-q"
+# --timeout=60: no single test may run longer than 60s (catches hangs/deadlocks).
+# --durations=10: report the 10 slowest tests so we can keep the suite fast.
+addopts = "-q --timeout=60 --durations=10"
+markers = [
+    # Opt-in marker for tests that must NOT run in parallel (shared global state,
+    # port binding, etc.). Apply with `@pytest.mark.serial` and run those under
+    # `-p no:xdist` or `--dist no` if a future test needs strict serialization.
+    # No test currently needs it — the suite passes cleanly under `-n auto`.
+    "serial: mark a test that must run serially (not under pytest-xdist parallelism)",
+]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.format]
+# Match the linter's line-length and the project's existing style. Enabled as a
+# CI *warning* (non-blocking) for now — the existing tree is not yet formatted,
+# and a repo-wide reformat is deferred to avoid churn/merge conflicts. New code
+# is auto-formatted via the pre-commit hook.
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
 
 [tool.ruff.lint]
 # Focused, high-signal set: pyflakes (dead code, bad f-strings) + bugbear
