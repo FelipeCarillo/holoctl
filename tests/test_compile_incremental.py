@@ -39,7 +39,7 @@ def _output_mtimes(root: Path) -> dict[str, int]:
         if d.exists():
             for p in sorted(d.rglob("*")):
                 if p.is_file():
-                    mtimes[str(p.relative_to(root))] = p.stat().st_mtime_ns
+                    mtimes[p.relative_to(root).as_posix()] = p.stat().st_mtime_ns
     for top in ("CLAUDE.md",):
         p = root / top
         if p.exists():
