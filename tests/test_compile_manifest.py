@@ -61,6 +61,43 @@ def test_outputs_headerless_and_manifest_lists_them(tmp_path: Path):
     assert tracked[".claude/agents/dev.md"]["source"] == ".holoctl/agents/dev.md"
 
 
+def test_bootstrap_commands_are_manifest_tracked(tmp_path: Path):
+    """The `/holoctl` + `/hctl-upgrade` bootstrap commands must go through the
+    ledger so they land in `.holoctl/.compiled.json` (doctor can then detect
+    staleness/hand-edits and prune can manage them)."""
+    config = _seed(tmp_path)
+    result = compile_project(tmp_path, config, "claude")
+
+    # Both files were emitted on disk.
+    assert (tmp_path / ".claude" / "commands" / "holoctl.md").exists()
+    assert (tmp_path / ".claude" / "commands" / "hctl-upgrade.md").exists()
+
+    # And both are tracked in the manifest with a hash + target.
+    tracked = load(tmp_path)["files"]
+    for rel in (".claude/commands/holoctl.md", ".claude/commands/hctl-upgrade.md"):
+        assert rel in tracked, f"{rel} not manifest-tracked"
+        assert tracked[rel]["target"] == "claude"
+        assert tracked[rel]["sha256"]
+        assert rel in result["files"]
+
+
+def test_hand_edited_bootstrap_command_is_preserved(tmp_path: Path):
+    """Now that bootstraps are ledger-managed, a hand-edited `/holoctl` command
+    is treated like any other owned output: preserved (not clobbered) and
+    reported as skipped, instead of being blindly overwritten."""
+    config = _seed(tmp_path)
+    compile_project(tmp_path, config, "claude")
+
+    boot = tmp_path / ".claude" / "commands" / "holoctl.md"
+    boot.write_text("# hand-edited bootstrap\n", encoding="utf-8")
+
+    result = compile_project(tmp_path, config, "claude")
+
+    assert boot.read_text(encoding="utf-8") == "# hand-edited bootstrap\n"
+    notes = [s for s in result.get("skipped", []) if s["path"] == ".claude/commands/holoctl.md"]
+    assert notes, "expected a skip note for the hand-edited bootstrap"
+
+
 def test_removing_agent_source_prunes_output_and_manifest(tmp_path: Path):
     config = _seed(tmp_path)
     compile_project(tmp_path, config, "claude")

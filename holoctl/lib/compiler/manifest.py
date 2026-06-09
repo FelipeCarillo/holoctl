@@ -345,6 +345,19 @@ class CompileLedger:
 
         if absent or owned:
             # Safe to write (new file or still owned-unmodified).
+            #
+            # Incremental skip: when the file is OWNED (on-disk hash == recorded
+            # hash) AND the freshly generated content hashes to that SAME value,
+            # the bytes on disk already match what we'd write. Skip the disk
+            # write to avoid churning mtimes / git diffs — but still ``_record``
+            # so the manifest entry is carried forward unchanged.
+            if (
+                owned
+                and not absent
+                and self.prev.get(rel, {}).get("sha256") == sha
+            ):
+                self._record(rel, sha, source=source, target=target)
+                return True
             if not self.dry_run:
                 abs_path.parent.mkdir(parents=True, exist_ok=True)
                 write_fn(abs_path)  # type: ignore[operator]
