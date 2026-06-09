@@ -1,12 +1,37 @@
 ﻿from __future__ import annotations
 import json
+import os
 import re
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .board_body import build_body
 from .board_tree import render_tree
+from .jsonl import file_lock
 from .markdown import parse_frontmatter, serialize_frontmatter
+
+# Process-wide cache of parsed index.json, keyed by absolute index path.
+# Each entry is (mtime_ns, size, data). Validated on every read against the
+# file's current stat so a concurrent writer (which calls os.replace, changing
+# mtime/size) is never served a stale or torn projection. Invalidated on save.
+_INDEX_CACHE: dict[str, tuple[int, int, dict]] = {}
+
+# Acceptance-checkbox pattern: `- [ ]` / `- [x]` under any heading.
+_CHECKBOX_RE = re.compile(r"^(\s*-\s*\[)([ xX])(\]\s*)(.*)$", re.MULTILINE)
+
+
+def _count_acceptance(body: str | None) -> tuple[int, int]:
+    """Return ``(total, done)`` DoD checkboxes in a ticket body."""
+    if not body:
+        return 0, 0
+    total = 0
+    done = 0
+    for m in _CHECKBOX_RE.finditer(body):
+        total += 1
+        if m.group(2).lower() == "x":
+            done += 1
+    return total, done
 
 
 def _now() -> str:
@@ -26,6 +51,26 @@ class Board:
         self._board_dir = project_root / ".holoctl" / "board"
         self._index_path = self._board_dir / "index.json"
         self._tickets_dir = self._board_dir / "tickets"
+        # Sidecar lock file guarding the load→mutate→save critical section.
+        # Distinct from index.json so a crash mid-write never leaves a held
+        # lock embedded in the data file, and so we can lock even before the
+        # index exists.
+        self._lock_path = self._board_dir / "index.json.lock"
+
+    @contextmanager
+    def _locked(self):
+        """Hold the board's cross-process lock for a mutation critical section.
+
+        Serializes concurrent CLI + MCP-server writers so a load→mutate→save
+        window is not last-write-wins. Reuses the OS-level locking primitive
+        from ``lib.jsonl``.
+        """
+        self._board_dir.mkdir(parents=True, exist_ok=True)
+        with file_lock(self._lock_path):
+            yield
+
+    def _cache_key(self) -> str:
+        return str(self._index_path.resolve())
 
     def _load(self) -> dict:
         if not self._index_path.exists():
@@ -33,7 +78,18 @@ class Board:
                 "meta": {"version": 1, "updated": _now(), "nextId": 1, "counts": {}},
                 "tickets": [],
             }
-        return json.loads(self._index_path.read_text(encoding="utf-8"))
+        # In-memory cache keyed by (path, mtime_ns, size). We re-stat on every
+        # read and only serve the cached object when both mtime AND size match,
+        # so a concurrent writer's os.replace (which changes the inode's stat)
+        # always forces a fresh parse — never a torn read.
+        st = self._index_path.stat()
+        key = self._cache_key()
+        cached = _INDEX_CACHE.get(key)
+        if cached is not None and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+            return cached[2]
+        data = json.loads(self._index_path.read_text(encoding="utf-8"))
+        _INDEX_CACHE[key] = (st.st_mtime_ns, st.st_size, data)
+        return data
 
     def _save(self, data: dict) -> None:
         self._board_dir.mkdir(parents=True, exist_ok=True)
@@ -42,9 +98,43 @@ class Board:
         # raw JSON (SSE payload, MCP responses, `git diff`). Default would
         # escape every non-ASCII codepoint to `\uXXXX` — functional, but
         # mojibake when a consumer prints the raw bytes without decoding.
-        self._index_path.write_text(
-            json.dumps(data, indent="\t", ensure_ascii=False) + "\n",
-            encoding="utf-8",
+        payload = json.dumps(data, indent="\t", ensure_ascii=False) + "\n"
+        # Atomic write: stage to a temp file in the same directory, fsync, then
+        # os.replace (atomic rename on POSIX & Windows). A reader either sees
+        # the old file or the new one — never a half-written index.
+        key = self._cache_key()
+        # Invalidate the cache first so a crash between replace and the cache
+        # update below can't leave a stale entry that outlives the file.
+        _INDEX_CACHE.pop(key, None)
+        fd, tmp_name = self._mk_tempfile()
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass
+            os.replace(tmp_name, self._index_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+        # Refresh the cache to the just-written object so the immediately
+        # following _load() in the same call is a cache hit (validated by stat).
+        try:
+            st = self._index_path.stat()
+            _INDEX_CACHE[key] = (st.st_mtime_ns, st.st_size, data)
+        except OSError:
+            pass
+
+    def _mk_tempfile(self) -> tuple[int, str]:
+        import tempfile
+
+        return tempfile.mkstemp(
+            dir=str(self._board_dir), prefix=".index.", suffix=".tmp"
         )
 
     def _recount(self, tickets: list[dict]) -> dict:
@@ -64,19 +154,41 @@ class Board:
         return slug[:40]
 
     def _patch_ticket_md(self, file_path: str, patches: dict) -> None:
+        """Apply frontmatter field patches to a ticket .md.
+
+        Parses the frontmatter into a dict, mutates the requested fields, then
+        re-serializes — rather than running a per-field ``re.sub`` (which
+        silently no-ops when a field is absent and can clobber a body line that
+        happens to start with ``key:``). Adding an absent field works (it's
+        appended). The body is preserved byte-for-byte: ``parse_frontmatter``
+        returns the body untouched and ``serialize_frontmatter`` re-emits it
+        verbatim.
+        """
         full_path = self._board_dir / file_path
         if not full_path.exists():
             return
         content = full_path.read_text(encoding="utf-8")
+        fm, body = parse_frontmatter(content)
+        if not fm:
+            # No parseable frontmatter — nothing to patch safely. Leave as-is.
+            return
+        # `serialize_frontmatter` re-inserts exactly one blank-line separator
+        # between the frontmatter block and the body. `parse_frontmatter`
+        # captures that separator as a leading newline on `body`, so we strip
+        # leading newlines here to keep a patch idempotent — otherwise the body
+        # would grow one blank line per mutation. (Mirrors memory.to_markdown.)
+        body = body.lstrip("\n")
         for key, val in patches.items():
-            str_val = _yaml_format(val)
-            content = re.sub(
-                rf"^({re.escape(key)}:\s*)(.*)$",
-                lambda m, v=str_val: f"{m.group(1)}{v}",  # type: ignore[misc]
-                content,
-                flags=re.MULTILINE,
-            )
-        full_path.write_text(content, encoding="utf-8")
+            # Store list-typed fields (agent/projects/files/depends/tags) in the
+            # same comma-joined string shape `_create_ticket_md` writes, so the
+            # on-disk form stays consistent and `rebuild_index` reads it back.
+            if isinstance(val, list):
+                fm[key] = ", ".join(str(v) for v in val) if val else "null"
+            elif val is None:
+                fm[key] = "null"
+            else:
+                fm[key] = val
+        full_path.write_text(serialize_frontmatter(fm, body), encoding="utf-8")
 
     def _valid_agents(self) -> set[str]:
         """Names of agents the agent file system has defined.
@@ -235,21 +347,28 @@ class Board:
         if not parent:
             raise KeyError(f"Ticket {parent_id} not found")
         children = [t for t in data["tickets"] if t.get("parent") == parent_id]
-        # Aggregate DoD progress by reading each child's body.
+        # Aggregate DoD progress from the denormalized counts stored in the
+        # index (task 4.3) — no longer reads every child .md per view. For an
+        # old index that predates these fields, fall back to reading the body
+        # once and backfill the index so the next call is cheap.
         total = 0
         acked = 0
+        backfilled = False
         for c in children:
-            if not c.get("file"):
+            if "acceptance_total" in c and "acceptance_done" in c:
+                total += int(c.get("acceptance_total") or 0)
+                acked += int(c.get("acceptance_done") or 0)
                 continue
-            md_path = self._board_dir / c["file"]
-            if not md_path.exists():
-                continue
-            content = md_path.read_text(encoding="utf-8")
-            _, body = parse_frontmatter(content)
-            for m in re.finditer(r"^(\s*-\s*\[)([ xX])(\]\s*)(.*)$", body, re.MULTILINE):
-                total += 1
-                if m.group(2).lower() == "x":
-                    acked += 1
+            c_total, c_done = self._backfill_acceptance(c)
+            total += c_total
+            acked += c_done
+            backfilled = True
+        if backfilled:
+            # Persist the backfilled counts under lock so we don't re-read next
+            # time. Re-load inside the lock to avoid clobbering a concurrent
+            # writer, re-applying the freshly-computed counts onto the current
+            # rows.
+            self._persist_backfill(parent_id)
         by_status: dict[str, int] = {}
         for c in children:
             s = c.get("status", "?")
@@ -261,6 +380,42 @@ class Board:
             "acked": acked,
             "by_status": by_status,
         }
+
+    def _backfill_acceptance(self, ticket: dict) -> tuple[int, int]:
+        """Read a ticket's .md body and return ``(total, done)`` DoD counts.
+
+        Used as the backward-compat fallback when an index entry predates the
+        ``acceptance_total``/``acceptance_done`` fields. Missing file → (0, 0).
+        """
+        if not ticket.get("file"):
+            return 0, 0
+        md_path = self._board_dir / ticket["file"]
+        if not md_path.exists():
+            return 0, 0
+        _, body = parse_frontmatter(md_path.read_text(encoding="utf-8"))
+        return _count_acceptance(body)
+
+    def _persist_backfill(self, parent_id: str) -> None:
+        """Backfill missing acceptance counts on a parent's children, persisted.
+
+        Re-reads the index under the board lock (so a concurrent writer isn't
+        clobbered), recomputes counts for any child still missing them, and
+        saves only if something changed.
+        """
+        with self._locked():
+            data = self._load()
+            changed = False
+            for c in data["tickets"]:
+                if c.get("parent") != parent_id:
+                    continue
+                if "acceptance_total" in c and "acceptance_done" in c:
+                    continue
+                t, d = self._backfill_acceptance(c)
+                c["acceptance_total"] = t
+                c["acceptance_done"] = d
+                changed = True
+            if changed:
+                self._save(data)
 
     def _apply_status_change(
         self,
@@ -301,28 +456,31 @@ class Board:
         if new_status not in valid:
             raise ValueError(f"Invalid status: {new_status}. Valid: {'|'.join(valid)}")
 
-        data = self._load()
-        ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
-        if not ticket:
-            raise KeyError(f"Ticket {ticket_id} not found")
+        # Hold the board lock across load→mutate→save so a concurrent CLI +
+        # MCP-server writer can't clobber this mutation (last-write-wins).
+        with self._locked():
+            data = self._load()
+            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            if not ticket:
+                raise KeyError(f"Ticket {ticket_id} not found")
 
-        old_status = ticket["status"]
-        now = _now()
+            old_status = ticket["status"]
+            now = _now()
 
-        if old_status != new_status:
-            patches = self._apply_status_change(ticket, old_status, new_status, now)
-        else:
-            # No-op move: touch `updated` so the mutation is acknowledged even
-            # when status is unchanged, but don't log a ticket.moved event.
-            ticket["updated"] = now
-            patches = {"updated": now}
+            if old_status != new_status:
+                patches = self._apply_status_change(ticket, old_status, new_status, now)
+            else:
+                # No-op move: touch `updated` so the mutation is acknowledged
+                # even when status is unchanged, but don't log a ticket.moved.
+                ticket["updated"] = now
+                patches = {"updated": now}
 
-        data["meta"]["counts"] = self._recount(data["tickets"])
-        data["meta"]["updated"] = now
-        self._save(data)
+            data["meta"]["counts"] = self._recount(data["tickets"])
+            data["meta"]["updated"] = now
+            self._save(data)
 
-        if ticket.get("file"):
-            self._patch_ticket_md(ticket["file"], patches)
+            if ticket.get("file"):
+                self._patch_ticket_md(ticket["file"], patches)
 
         # Log status change AFTER both _save and _patch_ticket_md have
         # completed — this prevents a phantom activity entry in the rare case
@@ -376,45 +534,46 @@ class Board:
         elif field == "priority":
             self._validate_priority(value)
 
-        data = self._load()
-        ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
-        if not ticket:
-            raise KeyError(f"Ticket {ticket_id} not found")
+        with self._locked():
+            data = self._load()
+            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            if not ticket:
+                raise KeyError(f"Ticket {ticket_id} not found")
 
-        parsed = _parse_set_value(value)
-        if field in ("agent", "depends", "tags", "projects"):
-            parsed = _normalize_array(parsed if isinstance(parsed, (list, str)) else value)
-            if field == "agent":
-                self._validate_agents(parsed)
-        elif field == "parent":
-            # Empty string / null → orphan the item (allowed). Otherwise
-            # the target must exist AND not be a descendant of this ticket,
-            # else we'd close a cycle in the hierarchy.
-            parsed = self._validate_parent_change(data["tickets"], ticket_id, parsed)
+            parsed = _parse_set_value(value)
+            if field in ("agent", "depends", "tags", "projects"):
+                parsed = _normalize_array(parsed if isinstance(parsed, (list, str)) else value)
+                if field == "agent":
+                    self._validate_agents(parsed)
+            elif field == "parent":
+                # Empty string / null → orphan the item (allowed). Otherwise
+                # the target must exist AND not be a descendant of this ticket,
+                # else we'd close a cycle in the hierarchy.
+                parsed = self._validate_parent_change(data["tickets"], ticket_id, parsed)
 
-        now = _now()
+            now = _now()
 
-        if field == "status":
-            old_status = ticket["status"]
-            new_status = str(parsed)
-            if old_status != new_status:
-                md_patches = self._apply_status_change(ticket, old_status, new_status, now)
+            if field == "status":
+                old_status = ticket["status"]
+                new_status = str(parsed)
+                if old_status != new_status:
+                    md_patches = self._apply_status_change(ticket, old_status, new_status, now)
+                else:
+                    # No-op status set: touch `updated` so the mutation is
+                    # acknowledged even when status is unchanged, but don't log.
+                    ticket["updated"] = now
+                    md_patches = {"status": new_status, "updated": now}
+                data["meta"]["counts"] = self._recount(data["tickets"])
             else:
-                # No-op status set: touch `updated` so the mutation is
-                # acknowledged even when status is unchanged, but don't log.
+                ticket[field] = parsed
                 ticket["updated"] = now
-                md_patches = {"status": new_status, "updated": now}
-            data["meta"]["counts"] = self._recount(data["tickets"])
-        else:
-            ticket[field] = parsed
-            ticket["updated"] = now
-            md_patches = {field: parsed, "updated": now}
+                md_patches = {field: parsed, "updated": now}
 
-        data["meta"]["updated"] = now
-        self._save(data)
+            data["meta"]["updated"] = now
+            self._save(data)
 
-        if ticket.get("file"):
-            self._patch_ticket_md(ticket["file"], md_patches)
+            if ticket.get("file"):
+                self._patch_ticket_md(ticket["file"], md_patches)
 
         # Log status change AFTER both _save and _patch_ticket_md have
         # completed — mirrors the ordering in move() (no partial-write window).
@@ -473,69 +632,80 @@ class Board:
         # `Start` matches reality. Optional on regular `add`.
         files = _normalize_array(patch.get("files"))
 
-        data = self._load()
-        next_num = data["meta"]["nextId"]
-        ticket_id = self._generate_id(next_num)
-        slug = self._slugify(title)
-        now = _now()
-
-        kind = patch.get("kind") or "task"
-        parent = patch.get("parent")
-        if parent is not None and not isinstance(parent, str):
-            parent = str(parent)
-        if parent:
-            # Existence check: a new ticket can't reference a parent that
-            # isn't on the board yet. (Cycle isn't possible — this row's
-            # ID doesn't exist yet, so no descendant can point back.)
-            if not any(t["id"] == parent for t in data["tickets"]):
-                raise KeyError(
-                    f"Parent ticket {parent} not found. "
-                    "Create the parent first, or omit `parent`."
-                )
-        elif parent == "":
-            parent = None
-
-        # External source linkage — when the work item came from a board
-        # outside holoctl (Trello card, Linear issue, Azure DevOps PBI,
-        # GitHub Issue, Slack thread, …) we store the reference so the
-        # round-trip is traceable. All optional; children inherit from parent
-        # when not explicitly set (handled in batch_add).
-        source_provider = patch.get("source_provider")
-        source_ref = patch.get("source_ref")
-        source_url = patch.get("source_url")
-        source_label = patch.get("source_label")
-
-        ticket: dict = {
-            "id": ticket_id,
-            "title": title,
-            "kind": kind,
-            "parent": parent,
-            "source_provider": source_provider,
-            "source_ref": source_ref,
-            "source_url": source_url,
-            "source_label": source_label,
-            "agent": agents,
-            "projects": projects,
-            "files": files,
-            "status": status,
-            "priority": priority,
-            "sprint": patch.get("sprint"),
-            "created": now,
-            "updated": now,
-            "completed": None,
-            "depends": depends,
-            "tags": tags,
-            "file": f"tickets/{ticket_id}-{slug}.md",
-        }
-
-        data["tickets"].append(ticket)
-        data["meta"]["nextId"] = next_num + 1
-        data["meta"]["counts"] = self._recount(data["tickets"])
-        data["meta"]["updated"] = now
-        self._save(data)
-
         body = build_body(patch)
-        self._create_ticket_md(ticket, body=body)
+        # Count DoD checkboxes against the body that will actually be written
+        # (build_body may return None → template/placeholder fallback), so the
+        # denormalized counts match the .md.
+        acc_total, acc_done = _count_acceptance(self._resolve_body(body))
+
+        with self._locked():
+            data = self._load()
+            next_num = data["meta"]["nextId"]
+            ticket_id = self._generate_id(next_num)
+            slug = self._slugify(title)
+            now = _now()
+
+            kind = patch.get("kind") or "task"
+            parent = patch.get("parent")
+            if parent is not None and not isinstance(parent, str):
+                parent = str(parent)
+            if parent:
+                # Existence check: a new ticket can't reference a parent that
+                # isn't on the board yet. (Cycle isn't possible — this row's
+                # ID doesn't exist yet, so no descendant can point back.)
+                if not any(t["id"] == parent for t in data["tickets"]):
+                    raise KeyError(
+                        f"Parent ticket {parent} not found. "
+                        "Create the parent first, or omit `parent`."
+                    )
+            elif parent == "":
+                parent = None
+
+            # External source linkage — when the work item came from a board
+            # outside holoctl (Trello card, Linear issue, Azure DevOps PBI,
+            # GitHub Issue, Slack thread, …) we store the reference so the
+            # round-trip is traceable. All optional; children inherit from
+            # parent when not explicitly set (handled in batch_add).
+            source_provider = patch.get("source_provider")
+            source_ref = patch.get("source_ref")
+            source_url = patch.get("source_url")
+            source_label = patch.get("source_label")
+
+            ticket: dict = {
+                "id": ticket_id,
+                "title": title,
+                "kind": kind,
+                "parent": parent,
+                "source_provider": source_provider,
+                "source_ref": source_ref,
+                "source_url": source_url,
+                "source_label": source_label,
+                "agent": agents,
+                "projects": projects,
+                "files": files,
+                "status": status,
+                "priority": priority,
+                "sprint": patch.get("sprint"),
+                "created": now,
+                "updated": now,
+                "completed": None,
+                "depends": depends,
+                "tags": tags,
+                # Denormalized DoD progress so `children()`/detail views don't
+                # have to re-read every child .md (see task 4.3).
+                "acceptance_total": acc_total,
+                "acceptance_done": acc_done,
+                "file": f"tickets/{ticket_id}-{slug}.md",
+            }
+
+            data["tickets"].append(ticket)
+            data["meta"]["nextId"] = next_num + 1
+            data["meta"]["counts"] = self._recount(data["tickets"])
+            data["meta"]["updated"] = now
+            self._save(data)
+
+            self._create_ticket_md(ticket, body=body)
+
         _log_activity(self._root, {"type": "ticket.created", "ticket": ticket_id, "actor": "cli"})
 
         return ticket
@@ -547,22 +717,23 @@ class Board:
         record). Use `delete` only when the ticket was created by mistake or
         is truly stale. The id is **not** reused — `nextId` keeps incrementing.
         """
-        data = self._load()
-        ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
-        if not ticket:
-            raise KeyError(f"Ticket {ticket_id} not found")
+        with self._locked():
+            data = self._load()
+            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            if not ticket:
+                raise KeyError(f"Ticket {ticket_id} not found")
 
-        # Remove the .md file if it exists.
-        if ticket.get("file"):
-            md_path = self._board_dir / ticket["file"]
-            if md_path.exists():
-                md_path.unlink()
+            # Remove the .md file if it exists.
+            if ticket.get("file"):
+                md_path = self._board_dir / ticket["file"]
+                if md_path.exists():
+                    md_path.unlink()
 
-        # Drop from index, recount.
-        data["tickets"] = [t for t in data["tickets"] if t["id"] != ticket_id]
-        data["meta"]["counts"] = self._recount(data["tickets"])
-        data["meta"]["updated"] = _now()
-        self._save(data)
+            # Drop from index, recount.
+            data["tickets"] = [t for t in data["tickets"] if t["id"] != ticket_id]
+            data["meta"]["counts"] = self._recount(data["tickets"])
+            data["meta"]["updated"] = _now()
+            self._save(data)
 
         _log_activity(self._root, {"type": "ticket.deleted", "ticket": ticket_id, "actor": "cli"})
         return {"id": ticket_id, "deleted": True}
@@ -632,40 +803,44 @@ class Board:
         or `- [x]`) under any heading. Index is zero-based across all
         checkboxes in the file in document order.
         """
-        data = self._load()
-        ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
-        if not ticket:
-            raise KeyError(f"Ticket {ticket_id} not found")
-        if not ticket.get("file"):
-            raise ValueError(f"Ticket {ticket_id} has no file path")
-        full_path = self._board_dir / ticket["file"]
-        if not full_path.exists():
-            raise FileNotFoundError(f"Ticket file missing: {full_path}")
+        with self._locked():
+            data = self._load()
+            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            if not ticket:
+                raise KeyError(f"Ticket {ticket_id} not found")
+            if not ticket.get("file"):
+                raise ValueError(f"Ticket {ticket_id} has no file path")
+            full_path = self._board_dir / ticket["file"]
+            if not full_path.exists():
+                raise FileNotFoundError(f"Ticket file missing: {full_path}")
 
-        content = full_path.read_text(encoding="utf-8")
-        fm, body = parse_frontmatter(content)
+            content = full_path.read_text(encoding="utf-8")
+            fm, body = parse_frontmatter(content)
 
-        checkbox_re = re.compile(r"^(\s*-\s*\[)([ xX])(\]\s*)(.*)$", re.MULTILINE)
-        matches = list(checkbox_re.finditer(body))
-        if not matches:
-            raise ValueError(f"Ticket {ticket_id} has no DoD checkboxes")
-        if idx < 0 or idx >= len(matches):
-            raise ValueError(
-                f"DoD index {idx} out of range; ticket has {len(matches)} checkbox(es)"
-            )
+            matches = list(_CHECKBOX_RE.finditer(body))
+            if not matches:
+                raise ValueError(f"Ticket {ticket_id} has no DoD checkboxes")
+            if idx < 0 or idx >= len(matches):
+                raise ValueError(
+                    f"DoD index {idx} out of range; ticket has {len(matches)} checkbox(es)"
+                )
 
-        m = matches[idx]
-        was_checked = m.group(2).lower() == "x"
-        new_state = " " if was_checked else "x"
-        new_body = body[:m.start()] + m.group(1) + new_state + m.group(3) + m.group(4) + body[m.end():]
+            m = matches[idx]
+            was_checked = m.group(2).lower() == "x"
+            new_state = " " if was_checked else "x"
+            new_body = body[:m.start()] + m.group(1) + new_state + m.group(3) + m.group(4) + body[m.end():]
 
-        now = _now()
-        fm["updated"] = now
-        full_path.write_text(serialize_frontmatter(fm, new_body), encoding="utf-8")
+            now = _now()
+            fm["updated"] = now
+            full_path.write_text(serialize_frontmatter(fm, new_body), encoding="utf-8")
 
-        ticket["updated"] = now
-        data["meta"]["updated"] = now
-        self._save(data)
+            # Refresh denormalized DoD counts in the index from the new body.
+            acc_total, acc_done = _count_acceptance(new_body)
+            ticket["acceptance_total"] = acc_total
+            ticket["acceptance_done"] = acc_done
+            ticket["updated"] = now
+            data["meta"]["updated"] = now
+            self._save(data)
 
         _log_activity(self._root, {"type": "ticket.ack", "ticket": ticket_id, "idx": idx, "checked": not was_checked, "actor": "cli"})
         return {"id": ticket_id, "idx": idx, "checked": not was_checked, "text": m.group(4).strip()}
@@ -678,66 +853,73 @@ class Board:
         """
         if not text or not text.strip():
             raise ValueError("Note text is empty.")
-        data = self._load()
-        ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
-        if not ticket:
-            raise KeyError(f"Ticket {ticket_id} not found")
-        if not ticket.get("file"):
-            raise ValueError(f"Ticket {ticket_id} has no file path")
-        full_path = self._board_dir / ticket["file"]
-        if not full_path.exists():
-            raise FileNotFoundError(f"Ticket file missing: {full_path}")
+        with self._locked():
+            data = self._load()
+            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            if not ticket:
+                raise KeyError(f"Ticket {ticket_id} not found")
+            if not ticket.get("file"):
+                raise ValueError(f"Ticket {ticket_id} has no file path")
+            full_path = self._board_dir / ticket["file"]
+            if not full_path.exists():
+                raise FileNotFoundError(f"Ticket file missing: {full_path}")
 
-        content = full_path.read_text(encoding="utf-8")
-        fm, body = parse_frontmatter(content)
-        now = _now()
-        clean = text.strip().replace("\n", " ")
-        new_entry = f"- **{now}** — {clean}"
+            content = full_path.read_text(encoding="utf-8")
+            fm, body = parse_frontmatter(content)
+            now = _now()
+            clean = text.strip().replace("\n", " ")
+            new_entry = f"- **{now}** — {clean}"
 
-        if re.search(r"^#\s+Notes\s*$", body, re.MULTILINE):
-            new_body = re.sub(
-                r"(^#\s+Notes\s*$\n)((?:.*\n?)*)",
-                lambda m: m.group(1) + (m.group(2).rstrip("\n") + "\n" if m.group(2).strip() else "") + new_entry + "\n",
-                body,
-                count=1,
-                flags=re.MULTILINE,
-            )
-        else:
-            new_body = body.rstrip("\n") + f"\n\n# Notes\n\n{new_entry}\n"
+            if re.search(r"^#\s+Notes\s*$", body, re.MULTILINE):
+                new_body = re.sub(
+                    r"(^#\s+Notes\s*$\n)((?:.*\n?)*)",
+                    lambda m: m.group(1) + (m.group(2).rstrip("\n") + "\n" if m.group(2).strip() else "") + new_entry + "\n",
+                    body,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+            else:
+                new_body = body.rstrip("\n") + f"\n\n# Notes\n\n{new_entry}\n"
 
-        fm["updated"] = now
-        full_path.write_text(serialize_frontmatter(fm, new_body), encoding="utf-8")
+            fm["updated"] = now
+            full_path.write_text(serialize_frontmatter(fm, new_body), encoding="utf-8")
 
-        ticket["updated"] = now
-        data["meta"]["updated"] = now
-        self._save(data)
+            ticket["updated"] = now
+            data["meta"]["updated"] = now
+            self._save(data)
 
         _log_activity(self._root, {"type": "ticket.note", "ticket": ticket_id, "actor": "cli"})
         return {"id": ticket_id, "note": clean, "ts": now}
 
     def set_body(self, ticket_id: str, body: str) -> dict:
         """Replace the body of a ticket .md, preserving frontmatter."""
-        data = self._load()
-        ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
-        if not ticket:
-            raise KeyError(f"Ticket {ticket_id} not found")
+        with self._locked():
+            data = self._load()
+            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            if not ticket:
+                raise KeyError(f"Ticket {ticket_id} not found")
 
-        if not ticket.get("file"):
-            raise ValueError(f"Ticket {ticket_id} has no file path; cannot edit body")
+            if not ticket.get("file"):
+                raise ValueError(f"Ticket {ticket_id} has no file path; cannot edit body")
 
-        full_path = self._board_dir / ticket["file"]
-        if not full_path.exists():
-            raise FileNotFoundError(f"Ticket file missing: {full_path}")
+            full_path = self._board_dir / ticket["file"]
+            if not full_path.exists():
+                raise FileNotFoundError(f"Ticket file missing: {full_path}")
 
-        existing = full_path.read_text(encoding="utf-8")
-        fm, _ = parse_frontmatter(existing)
-        now = _now()
-        fm["updated"] = now
-        full_path.write_text(serialize_frontmatter(fm, body), encoding="utf-8")
+            existing = full_path.read_text(encoding="utf-8")
+            fm, _ = parse_frontmatter(existing)
+            now = _now()
+            fm["updated"] = now
+            full_path.write_text(serialize_frontmatter(fm, body), encoding="utf-8")
 
-        ticket["updated"] = now
-        data["meta"]["updated"] = now
-        self._save(data)
+            # Replacing the body can change the DoD checkbox set — refresh the
+            # denormalized counts in the index.
+            acc_total, acc_done = _count_acceptance(body)
+            ticket["acceptance_total"] = acc_total
+            ticket["acceptance_done"] = acc_done
+            ticket["updated"] = now
+            data["meta"]["updated"] = now
+            self._save(data)
         _log_activity(self._root, {"type": "ticket.body_updated", "ticket": ticket_id, "actor": "cli"})
 
         return {"id": ticket_id, "bytes": len(body)}
@@ -862,13 +1044,15 @@ class Board:
         for f in files:
             if f.name.startswith("_"):
                 continue
-            data_fm, _ = parse_frontmatter(f.read_text(encoding="utf-8"))
+            data_fm, body = parse_frontmatter(f.read_text(encoding="utf-8"))
             if not data_fm.get("id"):
                 continue
             # Migration: legacy `scope: "X"` → `projects: ["X"]`.
             projects_fm = data_fm.get("projects")
             if projects_fm is None and data_fm.get("scope"):
                 projects_fm = data_fm["scope"]
+
+            acc_total, acc_done = _count_acceptance(body)
 
             def _scalar(v):
                 return v if v not in (None, "null", "") else None
@@ -892,6 +1076,9 @@ class Board:
                 "completed": data_fm.get("completed"),
                 "depends": _normalize_array(data_fm.get("depends")),
                 "tags": _normalize_array(data_fm.get("tags")),
+                # Denormalized DoD progress, recomputed from the .md body.
+                "acceptance_total": acc_total,
+                "acceptance_done": acc_done,
                 "file": f"tickets/{f.name}",
             })
 
@@ -907,25 +1094,37 @@ class Board:
             },
             "tickets": tickets,
         }
-        self._save(index)
+        with self._locked():
+            self._save(index)
         return {"ticketCount": len(tickets), "nextId": max_num + 1}
+
+    def _resolve_body(self, body: str | None) -> str:
+        """Resolve the body actually written for a new ticket.
+
+        Mirrors ``_create_ticket_md``'s fallback so callers (e.g. ``add``) can
+        compute denormalized acceptance counts from the same text that lands on
+        disk. When ``body`` is None, falls back to ``_template.md`` (if present)
+        or the built-in placeholder.
+        """
+        if body is not None:
+            return body
+        template_path = self._tickets_dir / "_template.md"
+        if template_path.exists():
+            _, tpl_body = parse_frontmatter(template_path.read_text(encoding="utf-8"))
+            return tpl_body
+        return (
+            "\n# Start\n\n(Current state before starting)\n\n"
+            "# Goal — Definition of Done\n\n- [ ] (criteria)\n\n"
+            "# Context\n\n(Why this ticket exists)\n\n"
+            "# Out of scope\n\n(What NOT to do)\n\n"
+            "# Execution notes\n\n(Agent fills during work)\n"
+        )
 
     def _create_ticket_md(self, ticket: dict, body: str | None = None) -> None:
         md_path = self._board_dir / ticket["file"]
         md_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if body is None:
-            template_path = self._tickets_dir / "_template.md"
-            if template_path.exists():
-                _, body = parse_frontmatter(template_path.read_text(encoding="utf-8"))
-            else:
-                body = (
-                    "\n# Start\n\n(Current state before starting)\n\n"
-                    "# Goal — Definition of Done\n\n- [ ] (criteria)\n\n"
-                    "# Context\n\n(Why this ticket exists)\n\n"
-                    "# Out of scope\n\n(What NOT to do)\n\n"
-                    "# Execution notes\n\n(Agent fills during work)\n"
-                )
+        body = self._resolve_body(body)
 
         agents_val = ticket["agent"]
         projects_val = ticket.get("projects") or []
