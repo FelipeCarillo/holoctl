@@ -60,6 +60,20 @@ def _project_root() -> Path:
     return root
 
 
+def _board() -> Any:
+    """Build a Board for the current workspace.
+
+    Collapses the `import Board, load_config; instantiate` preamble repeated
+    across every board_* handler. Imports stay inside the function so the
+    MCP module keeps its cheap cold-start (no eager lib imports at module
+    load) — see the module docstring.
+    """
+    from ..lib.board import Board
+    from ..lib.config import load_config
+    root = _project_root()
+    return Board(root, load_config(root))
+
+
 def _coerce_set_value(value: Any) -> str:
     """Normalize a board_set/batch_set value to the string form Board expects.
 
@@ -74,10 +88,7 @@ def _coerce_set_value(value: Any) -> str:
 
 
 def _tool_board_list(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     filters: dict[str, Any] = {}
     for key in ("status", "priority", "agent", "tag", "sprint", "kind", "parent", "project"):
         if key in args:
@@ -86,10 +97,7 @@ def _tool_board_list(args: dict) -> Any:
 
 
 def _tool_board_children(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     pid = args.get("id")
     if not pid:
         raise ValueError("missing required arg: id")
@@ -97,10 +105,7 @@ def _tool_board_children(args: dict) -> Any:
 
 
 def _tool_board_get(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     tid = args.get("id")
     if not tid:
         raise ValueError("missing required arg: id")
@@ -111,10 +116,7 @@ def _tool_board_get(args: dict) -> Any:
 
 
 def _tool_board_show(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     tid = args.get("id")
     if not tid:
         raise ValueError("missing required arg: id")
@@ -122,10 +124,7 @@ def _tool_board_show(args: dict) -> Any:
 
 
 def _tool_board_ack(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     tid = args.get("id")
     idx = args.get("idx")
     if not tid or idx is None:
@@ -134,10 +133,7 @@ def _tool_board_ack(args: dict) -> Any:
 
 
 def _tool_board_note(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     tid = args.get("id")
     text = args.get("text")
     if not tid or not text:
@@ -146,20 +142,14 @@ def _tool_board_note(args: dict) -> Any:
 
 
 def _tool_board_batch(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     shared = args.get("shared") or {}
     tickets = args.get("tickets") or []
     return board.batch_add(shared, tickets)
 
 
 def _tool_board_delete(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     tid = args.get("id")
     if not tid:
         raise ValueError("missing required arg: id")
@@ -167,10 +157,7 @@ def _tool_board_delete(args: dict) -> Any:
 
 
 def _tool_board_batch_move(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     ids = args.get("ids") or []
     status = args.get("status")
     if not ids or not status:
@@ -179,10 +166,7 @@ def _tool_board_batch_move(args: dict) -> Any:
 
 
 def _tool_board_batch_set(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     ids = args.get("ids") or []
     field = args.get("field")
     value = args.get("value")
@@ -192,10 +176,7 @@ def _tool_board_batch_set(args: dict) -> Any:
 
 
 def _tool_board_batch_delete(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     ids = args.get("ids") or []
     if not ids:
         raise ValueError("missing required arg: ids")
@@ -203,18 +184,12 @@ def _tool_board_batch_delete(args: dict) -> Any:
 
 
 def _tool_board_create(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     return board.add(args)
 
 
 def _tool_board_move(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     tid = args.get("id")
     status = args.get("status")
     if not tid or not status:
@@ -223,10 +198,7 @@ def _tool_board_move(args: dict) -> Any:
 
 
 def _tool_board_set(args: dict) -> Any:
-    from ..lib.board import Board
-    from ..lib.config import load_config
-    root = _project_root()
-    board = Board(root, load_config(root))
+    board = _board()
     tid = args.get("id")
     field = args.get("field")
     value = args.get("value")
