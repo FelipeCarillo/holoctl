@@ -38,6 +38,11 @@ def compile_claude(
             project_root, "claude", dry_run=dry_run, force=_force()
         )
 
+    # Enrich config with the computed keys (boardCliBin, prioritiesJoined,
+    # statusesJoined) so strict template resolution below has a COMPLETE config
+    # and only fails on genuine typos — not on a known-but-derived placeholder.
+    config = _enrich_config(config)
+
     files: list[str] = []
     # CLAUDE.md's bespoke preserve notes land directly in the ledger's skip
     # list, so the ledger is the single source of truth for "what we left alone".
@@ -77,7 +82,7 @@ def compile_claude(
                             fm_lines.append(f"  - {p}")
             fm_lines.append("---")
             frontmatter = "\n".join(fm_lines)
-            resolved_body = resolve_template(body, config)
+            resolved_body = resolve_template(body, config, strict=True)
             output = frontmatter + "\n" + resolved_body
             out_path = f".claude/agents/{f.name}"
             if ledger.write(out_path, output, source=f".holoctl/agents/{f.name}", target="claude"):
@@ -91,7 +96,7 @@ def compile_claude(
             claude_commands_dir.mkdir(parents=True, exist_ok=True)
         for f in sorted(commands_dir.glob("*.md")):
             content = f.read_text(encoding="utf-8")
-            output = resolve_template(content, config)
+            output = resolve_template(content, config, strict=True)
             out_path = f".claude/commands/{f.name}"
             if ledger.write(out_path, output, source=f".holoctl/commands/{f.name}", target="claude"):
                 files.append(out_path)
@@ -99,7 +104,7 @@ def compile_claude(
     instructions_path = project_root / ".holoctl" / "instructions.md"
     if instructions_path.exists():
         content = instructions_path.read_text(encoding="utf-8")
-        rendered = resolve_template(content, config)
+        rendered = resolve_template(content, config, strict=True)
         # Append a memory pointer block when .holoctl/memory/ exists. Coexists
         # with Claude's native auto-memory (item 11 of the multi-assistant plan).
         if (project_root / ".holoctl" / "memory").exists():
@@ -129,7 +134,7 @@ def compile_claude(
             rules_out.mkdir(parents=True, exist_ok=True)
         for f in sorted(rules_src.glob("*.md")):
             content = f.read_text(encoding="utf-8")
-            output = resolve_template(content, config)
+            output = resolve_template(content, config, strict=True)
             out_path = f".claude/rules/{f.name}"
             if ledger.write(out_path, output, source=f".holoctl/rules/{f.name}", target="claude"):
                 files.append(out_path)
@@ -153,7 +158,7 @@ def compile_claude(
             content = skill_md.read_text(encoding="utf-8")
             out_path = f".claude/skills/{name}/SKILL.md"
             if ledger.write(
-                out_path, resolve_template(content, config),
+                out_path, resolve_template(content, config, strict=True),
                 source=f".holoctl/skills/{name}", target="claude",
             ):
                 files.append(out_path)
@@ -187,7 +192,7 @@ def compile_claude(
             content = f.read_text(encoding="utf-8")
             out_path = f".claude/output_styles/{f.name}"
             if ledger.write(
-                out_path, resolve_template(content, config),
+                out_path, resolve_template(content, config, strict=True),
                 source=f".holoctl/output_styles/{f.name}", target="claude",
             ):
                 files.append(out_path)
@@ -201,21 +206,25 @@ def compile_claude(
     # MCP server config → .claude/settings.json:mcpServers.holoctl
     files.extend(mcp_emit.emit_claude(project_root, dry_run=dry_run))
 
+    # Bootstrap commands (`/holoctl`, `/hctl-upgrade`) go through the ledger like
+    # every other generated file so they are manifest-tracked: doctor can detect
+    # staleness/hand-edits and prune_orphans can manage them. (They used to be
+    # written with a bare ``Path.write_text``, invisible to the manifest.)
     bootstrap = load_bootstrap("holoctl-claude.md")
     if bootstrap:
         out_path = ".claude/commands/holoctl.md"
         if not dry_run:
             claude_commands_dir.mkdir(parents=True, exist_ok=True)
-            (project_root / out_path).write_text(bootstrap, encoding="utf-8")
-        files.append(out_path)
+        if ledger.write(out_path, bootstrap, source="builtin", target="claude"):
+            files.append(out_path)
 
     upgrade_bootstrap = load_bootstrap("hctl-upgrade-claude.md")
     if upgrade_bootstrap:
         out_path = ".claude/commands/hctl-upgrade.md"
         if not dry_run:
             claude_commands_dir.mkdir(parents=True, exist_ok=True)
-            (project_root / out_path).write_text(upgrade_bootstrap, encoding="utf-8")
-        files.append(out_path)
+        if ledger.write(out_path, upgrade_bootstrap, source="builtin", target="claude"):
+            files.append(out_path)
 
     # When this function owns the ledger (no orchestrator passed one), finalize
     # here so a direct call still prunes orphans + writes the manifest.
@@ -230,6 +239,19 @@ def compile_claude(
     if skipped:
         result["skipped"] = skipped
     return result
+
+
+def _enrich_config(config: dict) -> dict:
+    """Add computed template keys so strict resolution sees a complete config.
+
+    Mirrors the enrichment used when personas are materialized
+    (``agent_library._enrich``): ``board.statusesJoined``,
+    ``board.prioritiesJoined``, ``commands.boardCliBin``. Reusing it keeps the
+    compile-time placeholder vocabulary identical to init-time, so a known
+    derived key never trips strict mode.
+    """
+    from ..agent_library import _enrich
+    return _enrich(config)
 
 
 def _map_tools(tools) -> str:
@@ -274,7 +296,10 @@ def _materialize_claude_md(
 
     if ledger.is_owned_text(rel) or ledger.is_legacy(rel):
         # Ours (tracked or legacy-headered) — safe to regenerate.
-        claude_md_path.write_text(generated_content, encoding="utf-8")
+        # Incremental skip: if the on-disk content already equals the freshly
+        # generated content, skip the write (preserve mtime) but still record.
+        if claude_md_path.read_text(encoding="utf-8") != generated_content:
+            claude_md_path.write_text(generated_content, encoding="utf-8")
         _record()
         return True
 
@@ -373,7 +398,7 @@ def _emit_builtin_skills(
         content = skill_md.read_text(encoding="utf-8")
         out_skill_path = f".claude/skills/{name}/SKILL.md"
         if ledger.write(
-            out_skill_path, resolve_template(content, config),
+            out_skill_path, resolve_template(content, config, strict=True),
             source="builtin", target="claude",
         ):
             files.append(out_skill_path)

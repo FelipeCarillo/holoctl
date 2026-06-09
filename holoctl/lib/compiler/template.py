@@ -21,13 +21,44 @@ def load_bootstrap(filename: str) -> str | None:
         return None
 
 
-def resolve_template(template: str, config: dict) -> str:
+class UnresolvedPlaceholderError(KeyError):
+    """Raised by :func:`resolve_template` in strict mode for an unknown key.
+
+    Carries the offending placeholder key(s) so callers can report the typo
+    rather than silently shipping a literal ``{{...}}`` into a generated file.
+    """
+
+
+def resolve_template(template: str, config: dict, *, strict: bool = False) -> str:
+    """Substitute ``{{dotted.key}}`` placeholders from *config*.
+
+    By default an unresolved key is left as the literal ``{{key}}`` (lenient —
+    safe for partial configs). In ``strict`` mode an unresolved key raises
+    :class:`UnresolvedPlaceholderError` so typos surface at compile time instead
+    of leaking a stray placeholder into a generated file. The compile path,
+    where ``config`` should be complete, uses ``strict=True``.
+    """
+    unresolved: list[str] = []
+
     def replace(match: re.Match) -> str:
         key = match.group(1).strip()
         val = _get_nested(config, key)
-        return str(val) if val is not None else match.group(0)
+        if val is None:
+            unresolved.append(key)
+            return match.group(0)
+        return str(val)
 
-    return re.sub(r"\{\{([^}]+)\}\}", replace, template)
+    result = re.sub(r"\{\{([^}]+)\}\}", replace, template)
+    if strict and unresolved:
+        # De-dupe preserving order for a stable, readable message.
+        seen: dict[str, None] = {}
+        for k in unresolved:
+            seen.setdefault(k, None)
+        keys = ", ".join(seen)
+        raise UnresolvedPlaceholderError(
+            f"unresolved template placeholder(s): {keys}"
+        )
+    return result
 
 
 def _get_nested(obj: dict, key: str) -> object:

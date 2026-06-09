@@ -72,6 +72,9 @@ def emit_claude(project_root: Path, dry_run: bool = False) -> list[str]:
     path = project_root / ".claude" / "settings.json"
     existing = _read_json(path)
     merged = _merge_mcp_server(existing, SERVER_KEY, _holoctl_server_entry())
-    if not dry_run:
+    # Incremental skip: setting the same server entry is idempotent, so on an
+    # unchanged re-compile ``merged == existing``. Skip the write to preserve
+    # mtime / avoid git churn. Still report the file as emitted.
+    if not dry_run and merged != existing:
         _write_json(path, merged)
     return [".claude/settings.json"]

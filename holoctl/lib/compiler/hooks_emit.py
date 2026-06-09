@@ -129,7 +129,10 @@ def emit_claude(project_root: Path, dry_run: bool = False) -> list[str]:
     path = project_root / ".claude" / "settings.json"
     existing = _read_json(path)
     merged = _deep_merge_hooks(existing, incoming)
-    if not dry_run:
+    # Incremental skip: the merge is idempotent (dedup), so on an unchanged
+    # re-compile ``merged == existing``. Skip the disk write to preserve mtime
+    # and avoid churning the git diff. Still report the file as emitted.
+    if not dry_run and merged != existing:
         _write_json(path, merged)
     return [".claude/settings.json"]
 
