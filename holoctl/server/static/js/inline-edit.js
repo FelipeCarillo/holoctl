@@ -1,14 +1,35 @@
 import { showToast } from './toast.js';
 import { statusList } from './card-menu.js';
+import { esc } from './dom.js';
+import { moveTicket, patchTicket } from './api.js';
+import { positionPopover } from './popover.js';
 
 // ── Inline edit popover (status / priority) ──
 
 const PRIORITIES = ['p0', 'p1', 'p2', 'p3'];
 
+// Trigger that opened the current popover — focus returns here on close.
+let _editTrigger = null;
+let _textTrigger = null;
+
+// Reflect a saved status/priority on its trigger button in-place. Value pills
+// (list rows, detail properties) render the bare value as their text; static
+// labels like the toolbar "Move ▾" carry a "▾" glyph and must be left alone.
+function applyButtonValue(btn, newValue) {
+  const text = btn.textContent.trim();
+  if (text.includes('▾')) return;
+  btn.textContent = newValue;
+}
+
 function closeEditPopover() {
   document.querySelectorAll('.lr-edit-popover').forEach(p => p.remove());
   document.querySelectorAll('.lr-edit[aria-expanded="true"]').forEach(b =>
     b.setAttribute('aria-expanded', 'false'));
+  if (_editTrigger) {
+    const t = _editTrigger;
+    _editTrigger = null;
+    if (document.contains(t)) t.focus();
+  }
 }
 
 function openEditPopover(btn) {
@@ -37,19 +58,31 @@ function openEditPopover(btn) {
   pop.className = 'lr-edit-popover';
   pop.setAttribute('role', 'menu');
   pop.innerHTML = options.map(v =>
-    `<button type="button" class="lr-edit-option" data-value="${v}" ${v === current ? 'aria-current="true"' : ''}>
-      ${field === 'status' ? `<span class="kc-menu-status-dot" data-status="${v}"></span>` : ''}
-      ${v}
+    `<button type="button" class="lr-edit-option" data-value="${esc(v)}" ${v === current ? 'aria-current="true"' : ''}>
+      ${field === 'status' ? `<span class="kc-menu-status-dot" data-status="${esc(v)}"></span>` : ''}
+      ${esc(v)}
     </button>`
   ).join('');
   document.body.appendChild(pop);
   btn.setAttribute('aria-expanded', 'true');
-  const r = btn.getBoundingClientRect();
-  pop.style.top = (window.scrollY + r.bottom + 4) + 'px';
-  pop.style.left = Math.max(8, window.scrollX + r.left) + 'px';
-  if (r.bottom + pop.offsetHeight + 8 > window.innerHeight) {
-    pop.style.top = (window.scrollY + r.top - pop.offsetHeight - 4) + 'px';
-  }
+  _editTrigger = btn;
+  positionPopover(pop, btn);
+
+  // Focus the first option; ArrowUp/ArrowDown rove between options.
+  const optionEls = [...pop.querySelectorAll('.lr-edit-option')];
+  if (optionEls.length) optionEls[0].focus();
+  pop.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const focusables = [...pop.querySelectorAll('.lr-edit-option')];
+    if (!focusables.length) return;
+    const idx = focusables.indexOf(document.activeElement);
+    const next = e.key === 'ArrowDown'
+      ? (idx + 1) % focusables.length
+      : (idx - 1 + focusables.length) % focusables.length;
+    focusables[next].focus();
+  });
+
   pop.addEventListener('click', async (e) => {
     const opt = e.target.closest('.lr-edit-option');
     if (!opt) return;
@@ -60,9 +93,14 @@ function openEditPopover(btn) {
     try {
       if (field === 'status') {
         await moveTicket(id, value); // /move handles status changes (recounts)
+        btn.setAttribute('data-status', value);
       } else {
         await patchTicket(id, field, value);
+        btn.setAttribute('data-p', value);
       }
+      // Reflect the new value on the trigger in-place (SSE refreshes the
+      // board fully within ~2s; no forced reload needed).
+      applyButtonValue(btn, value);
       showToast(`${field}: ${value}`);
     } catch (err) {
       showToast(`Update failed: ${err.message}`);
@@ -79,6 +117,11 @@ function closeTextEditPopover() {
   document.querySelectorAll('.lr-edit-text-popover').forEach(p => p.remove());
   document.querySelectorAll('[data-edit-text-field][aria-expanded="true"]').forEach(b =>
     b.setAttribute('aria-expanded', 'false'));
+  if (_textTrigger) {
+    const t = _textTrigger;
+    _textTrigger = null;
+    if (document.contains(t)) t.focus();
+  }
 }
 
 function openTextEditPopover(btn) {
@@ -109,9 +152,9 @@ function openTextEditPopover(btn) {
   pop.className = 'lr-edit-text-popover';
   pop.setAttribute('role', 'dialog');
   pop.innerHTML = `
-    <div class="lr-edit-text-popover-label">${labelText}</div>
-    <input type="text" value="${String(current).replace(/"/g, '&quot;')}" autocomplete="off" spellcheck="false">
-    ${hintText ? `<div class="lr-edit-text-popover-hint">${hintText}</div>` : ''}
+    <div class="lr-edit-text-popover-label">${esc(labelText)}</div>
+    <input type="text" value="${esc(current)}" autocomplete="off" spellcheck="false">
+    ${hintText ? `<div class="lr-edit-text-popover-hint">${esc(hintText)}</div>` : ''}
     <div class="lr-edit-text-popover-error" data-error></div>
     <div class="lr-edit-text-popover-row">
       <button type="button" class="btn-sm" data-cancel>Cancel</button>
@@ -120,12 +163,8 @@ function openTextEditPopover(btn) {
   `;
   document.body.appendChild(pop);
   btn.setAttribute('aria-expanded', 'true');
-  const r = btn.getBoundingClientRect();
-  pop.style.top = (window.scrollY + r.bottom + 4) + 'px';
-  pop.style.left = Math.max(8, window.scrollX + r.left) + 'px';
-  if (r.bottom + pop.offsetHeight + 8 > window.innerHeight) {
-    pop.style.top = (window.scrollY + r.top - pop.offsetHeight - 4) + 'px';
-  }
+  _textTrigger = btn;
+  positionPopover(pop, btn);
   const input = pop.querySelector('input');
   input.focus();
   input.select();
@@ -146,12 +185,27 @@ function openTextEditPopover(btn) {
     }
     try {
       await patchTicket(id, field, value);
+      // Update the trigger in-place rather than forcing a reload. The detail
+      // page isn't covered by board SSE, so reflect the new value directly on
+      // the trigger: keep `data-current` (for the next popover open) in sync
+      // and rewrite the visible text. Rich formatting (avatar stacks, chips)
+      // is rebuilt server-side on the next full page load.
+      const display = Array.isArray(value) ? value.join(', ') : (value === null || value === undefined ? '' : String(value));
+      btn.setAttribute('data-current', display);
+      btn.replaceChildren(); // clear existing rich content safely
+      if (display) {
+        const span = document.createElement('span');
+        span.className = 'dr-prop-text';
+        span.textContent = field === 'sprint' ? `#${display}` : display;
+        btn.appendChild(span);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'dr-prop-empty';
+        span.textContent = '—';
+        btn.appendChild(span);
+      }
       showToast(`${field} updated`);
       closeTextEditPopover();
-      // Trigger a quick re-render of the page: SSE will pick the change
-      // up within ~2s, but a full reload feels snappier on the detail
-      // page where most edits happen.
-      setTimeout(() => window.location.reload(), 250);
     } catch (err) {
       errEl.textContent = err.message || 'Update failed';
       saveBtn.disabled = false;

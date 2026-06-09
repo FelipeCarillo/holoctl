@@ -38,11 +38,27 @@ export function initSSE() {
       const fresh = wrapper.firstElementChild;
       const current = document.getElementById('kanban')
                    || document.getElementById('list-view');
+      // Persist the set of selected list-view row ids so a board swap doesn't
+      // silently drop a bulk selection mid-action.
+      const selectedIds = [...document.querySelectorAll('.list-body .ticket-row[data-selected="true"]')]
+        .map(r => r.getAttribute('data-id'))
+        .filter(Boolean);
       if (fresh && current) current.replaceWith(fresh);
       // Reapply filter / sort / group state to the freshly-swapped DOM.
       if (window.__reapplyBoardControls) window.__reapplyBoardControls();
-      showToast('Board updated');
-    } catch (_) {
+      // Re-mark any rows that were selected before the swap.
+      if (selectedIds.length) {
+        const want = new Set(selectedIds);
+        document.querySelectorAll('.list-body .ticket-row').forEach(row => {
+          if (!want.has(row.getAttribute('data-id'))) return;
+          row.dataset.selected = 'true';
+          const cb = row.querySelector('[data-ticket-select]');
+          if (cb) cb.checked = true;
+        });
+        if (window.__refreshBulkBar) window.__refreshBulkBar();
+      }
+      showToast('Board updated', { reloadOnClick: true });
+    } catch {
       // Fall through; next event retries.
     } finally {
       inflight = false;

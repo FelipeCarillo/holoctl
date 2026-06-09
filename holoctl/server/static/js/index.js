@@ -1,7 +1,9 @@
-// holoctl — module entry. Loaded as <script type="module">; imports run
-// before any DOM is parsed, so module-level side-effects (window.__xxx
-// assignments in theme/project-filter/board-controls) wire the global
-// handlers that templates still call via `onclick="__foo()"`.
+// holoctl — module entry. Loaded as <script type="module">. Each feature
+// exposes an init() wired up on DOMContentLoaded below. Interactions use
+// delegated listeners + data-action attributes (no inline onclick / window
+// globals) so a future CSP can drop unsafe-inline. The one remaining global,
+// window.__reapplyBoardControls (board-controls.js), is consumed by the SSE
+// handler after it swaps the board DOM.
 
 import { initTheme } from './theme.js';
 import { initSSE } from './sse.js';
@@ -15,10 +17,7 @@ import { initViewSwitcher } from './view-switcher.js';
 import { initListSelection } from './list-selection.js';
 import { initInlineEdit } from './inline-edit.js';
 import { initMetaSearch } from './meta-search.js';
-
-// Side-effect imports — these modules only export window-scoped handlers
-// consumed via onclick attributes, no init() to call.
-import './project-filter.js';
+import { initProjectFilter } from './project-filter.js';
 
 // Keyboard activation for elements with role="button". Native <button>/<a>
 // already handle Enter/Space; this covers the few <div role="button">
@@ -49,5 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initListSelection();
   initInlineEdit();
   initMetaSearch();
+  initProjectFilter();
   initRoleButtonKeys();
 });
