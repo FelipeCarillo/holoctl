@@ -153,6 +153,36 @@ def api_ticket_move(alias: str, ticket_id: str, payload: dict = Body(...)):
     return JSONResponse(content=result)
 
 
+@app.post("/api/project/{alias}/tickets/bulk-move")
+def api_ticket_bulk_move(alias: str, payload: dict = Body(...)):
+    """Move many tickets to one status in a single request.
+
+    Body: `{"ids": ["TST-001", ...], "status": "doing"}`. Delegates to
+    `Board.batch_move`, which is atomic per-ticket: it moves what it can
+    and reports the rest. Returns the board's batch result verbatim —
+    `{"moved": [...], "errors": [{"id", "error"}, ...], "count": N}` —
+    so the caller sees per-id success/failure. The endpoint itself
+    returns 200 even on partial failure (mirrors the MCP batch_move
+    contract); only project-level / validation problems are 4xx.
+    """
+    project = _get_project(alias)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="ids must be a non-empty list")
+    if not all(isinstance(i, str) for i in ids):
+        raise HTTPException(status_code=400, detail="ids must be a list of strings")
+    new_status = (payload.get("status") or "").strip()
+    if not new_status:
+        raise HTTPException(status_code=400, detail="status is required")
+    board = Board(Path(project["path"]), project["config"])
+    result = board.batch_move(ids, new_status)
+    return JSONResponse(content=result)
+
+
 @app.get("/api/project/{alias}/context/tree")
 def api_context_tree(alias: str, path: str = Query(default="")):
     """Return one directory level of `.holoctl/context/<path>`.
@@ -172,42 +202,78 @@ def api_context_tree(alias: str, path: str = Query(default="")):
     return {"entries": [{"name": e["name"], "type": "dir" if e["isDir"] else "file"} for e in entries]}
 
 
+# Cap concurrent SSE streams. Each connection holds an event-loop task that
+# polls a file every 2s forever; without a bound, a handful of stuck browser
+# tabs (or a trivial DoS) can pin the loop and the threadpool. 32 is generous
+# for a localhost-first dashboard while still being a hard ceiling.
+_SSE_MAX_CONNECTIONS = 32
+_sse_semaphore = asyncio.Semaphore(_SSE_MAX_CONNECTIONS)
+
+# Poll cadence for the board index, and how often to emit an SSE heartbeat
+# comment so proxies / browsers don't treat an idle stream as dead.
+_SSE_POLL_SECONDS = 2
+_SSE_HEARTBEAT_SECONDS = 25
+
+
+def _read_index_snapshot(index_path: Path) -> tuple[float, str] | None:
+    """Read + compact the board index for the SSE payload.
+
+    Returns `(mtime, single_line_json)` or None if the file is absent.
+    Runs blocking filesystem I/O, so callers invoke it via
+    `asyncio.to_thread` to keep the event loop free.
+    """
+    if not index_path.exists():
+        return None
+    mtime = index_path.stat().st_mtime
+    # The on-disk index.json is pretty-printed (indent="\t"), but the SSE
+    # protocol treats every newline inside the `data:` field as a record
+    # terminator — the browser would only see "{" before the first newline.
+    # Compact it onto a single line so e.data is the full JSON.
+    raw = index_path.read_text(encoding="utf-8")
+    try:
+        # `ensure_ascii=False`: preserve accented titles in the SSE payload so
+        # DevTools / Network tab show readable text, not `é` escapes.
+        data = json.dumps(json.loads(raw), separators=(",", ":"), ensure_ascii=False)
+    except (json.JSONDecodeError, ValueError):
+        data = raw.replace("\n", " ").replace("\r", "")
+    return mtime, data
+
+
 @app.get("/api/project/{alias}/events")
 async def api_events(alias: str):
     project = _get_project(alias)
     if not project:
         raise HTTPException(status_code=404, detail="Not found")
 
+    if _sse_semaphore.locked():
+        # All slots in use — fail fast rather than queueing a new poller.
+        raise HTTPException(status_code=503, detail="Too many live connections")
+
     index_path = Path(project["path"]) / ".holoctl" / "board" / "index.json"
 
     async def event_stream():
-        last_mtime = None
-        while True:
-            try:
-                if index_path.exists():
-                    mtime = index_path.stat().st_mtime
-                    if mtime != last_mtime:
-                        last_mtime = mtime
-                        # The on-disk index.json is pretty-printed (indent="\t"),
-                        # but the SSE protocol treats every newline inside the
-                        # `data:` field as a record terminator — the browser
-                        # would only see "{" before the first newline. Compact
-                        # it onto a single line so e.data is the full JSON.
-                        raw = index_path.read_text(encoding="utf-8")
-                        try:
-                            # `ensure_ascii=False`: preserve accented titles
-                            # in the SSE payload so DevTools / Network tab
-                            # show readable text, not `é` escapes.
-                            data = json.dumps(
-                                json.loads(raw),
-                                separators=(",", ":"),
-                                ensure_ascii=False,
-                            )
-                        except (json.JSONDecodeError, ValueError):
-                            data = raw.replace("\n", " ").replace("\r", "")
-                        yield f"event: board-update\ndata: {data}\n\n"
-            except Exception:
-                pass
-            await asyncio.sleep(2)
+        async with _sse_semaphore:
+            last_mtime = None
+            since_heartbeat = 0.0
+            while True:
+                try:
+                    # File I/O off the event loop so blocking stat()/read_text()
+                    # can't stall every other request sharing this worker.
+                    snapshot = await asyncio.to_thread(_read_index_snapshot, index_path)
+                    if snapshot is not None:
+                        mtime, data = snapshot
+                        if mtime != last_mtime:
+                            last_mtime = mtime
+                            yield f"event: board-update\ndata: {data}\n\n"
+                            since_heartbeat = 0.0
+                except Exception:
+                    pass
+                # Keepalive comment (ignored by EventSource) so idle streams
+                # aren't reaped by proxies/browsers between board updates.
+                since_heartbeat += _SSE_POLL_SECONDS
+                if since_heartbeat >= _SSE_HEARTBEAT_SECONDS:
+                    since_heartbeat = 0.0
+                    yield ": keepalive\n\n"
+                await asyncio.sleep(_SSE_POLL_SECONDS)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
