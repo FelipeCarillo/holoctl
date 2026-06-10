@@ -17,6 +17,11 @@ from .markdown import parse_frontmatter, serialize_frontmatter
 # Each entry is (mtime_ns, size, data). Validated on every read against the
 # file's current stat so a concurrent writer (which calls os.replace, changing
 # mtime/size) is never served a stale or torn projection. Invalidated on save.
+#
+# Unbounded by design: one entry per board ever touched by this process, and a
+# parsed index is small (tens of KB for hundreds of tickets). The CLI sees one
+# board; the dashboard sees one per registered project. Revisit with an
+# eviction policy only if holoctl grows a long-running multi-tenant server.
 _INDEX_CACHE: dict[str, tuple[int, int, dict]] = {}
 
 # Acceptance-checkbox pattern: `- [ ]` / `- [x]` under any heading.

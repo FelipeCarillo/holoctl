@@ -35,19 +35,14 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
 
 
 def _split_key_value(line: str) -> tuple[str, bool, str]:
-    """Split a frontmatter line into ``(key, found, value)``.
+    """Split a frontmatter line into ``(key, found, value)`` at the FIRST colon.
 
-    The key is everything up to the first colon that is *not* inside a quoted
-    string. This keeps keys correct while letting values carry colons (e.g.
-    ``source_url: "https://example.com/x"``). Falls back to the first bare
-    colon for unquoted values like ``source_url: https://example.com`` — the
-    URL's ``https:`` colon lands in the value because the key portion has no
-    quotes and the split is on the first colon overall, which separates the
-    key from the value.
+    Plain ``line.find(":")`` — no quote-awareness needed: keys in this schema
+    never contain colons or quotes, so the first colon always terminates the
+    key, and everything after it (URLs, timestamps, ``title: a: b``) lands in
+    the value. Quoting only matters inside the value, where ``_parse_value``
+    handles it.
     """
-    # Find the first colon. Because keys never contain quotes or colons in this
-    # schema, the first colon always terminates the key. Values may then freely
-    # contain further colons (URLs, timestamps, titles).
     idx = line.find(":")
     if idx == -1:
         return line, False, ""
