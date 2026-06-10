@@ -1,0 +1,26 @@
+# Pre-commit hooks for holoctl.
+#
+# Copy this file to the repo root as `.pre-commit-config.yaml`, then install
+# once with `uvx pre-commit install`; run on demand with
+# `uvx pre-commit run --all-files`.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.16
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+
+  - repo: local
+    hooks:
+      - id: validate-changelog
+        name: validate changelog
+        entry: uv run python scripts/validate_changelog.py
+        language: system
+        pass_filenames: false

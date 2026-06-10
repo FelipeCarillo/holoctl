@@ -1,5 +1,5 @@
 import { showToast } from './toast.js';
-import { moveTicket } from './api.js';
+import { bulkMoveTickets, moveTicket } from './api.js';
 
 // ── List-view multi-select + bulk action bar ──
 
@@ -49,17 +49,38 @@ function clearSelection() {
   updateBulkBar();
 }
 
+// Cap per-id error toasts so a large failed batch doesn't flood the screen.
+const MAX_ERROR_TOASTS = 3;
+
 async function bulkMove(targetStatus) {
   const sel = selectedRows();
   if (sel.length === 0) return;
-  let ok = 0, fail = 0;
-  // Sequential so a single failure doesn't get drowned in noise.
-  for (const row of sel) {
-    const id = row.getAttribute('data-id');
-    try { await moveTicket(id, targetStatus); ok += 1; }
-    catch (e) { fail += 1; showToast(`Move ${id}: ${e.message}`); }
+  const ids = sel.map(r => r.getAttribute('data-id')).filter(Boolean);
+  let moved = 0;
+  const failures = [];
+  try {
+    // One round-trip: the server moves what it can and reports the rest
+    // (200 even on partial failure).
+    const result = await bulkMoveTickets(ids, targetStatus);
+    moved = (result.moved || []).length;
+    for (const e of result.errors || []) failures.push({ id: e.id, error: e.error });
+  } catch (err) {
+    if (err.status !== 404 && err.status !== 405) {
+      showToast(`Bulk move failed: ${err.message}`);
+      return;
+    }
+    // Older server without the bulk endpoint — fall back to sequential
+    // per-ticket moves so a single failure doesn't get drowned in noise.
+    for (const id of ids) {
+      try { await moveTicket(id, targetStatus); moved += 1; }
+      catch (e) { failures.push({ id, error: e.message }); }
+    }
   }
-  showToast(`Moved ${ok} ticket${ok === 1 ? '' : 's'}${fail ? ` (${fail} failed)` : ''}`);
+  failures.slice(0, MAX_ERROR_TOASTS).forEach(f => showToast(`Move ${f.id}: ${f.error}`));
+  if (failures.length > MAX_ERROR_TOASTS) {
+    showToast(`…and ${failures.length - MAX_ERROR_TOASTS} more moves failed`);
+  }
+  showToast(`Moved ${moved} ticket${moved === 1 ? '' : 's'}${failures.length ? ` (${failures.length} failed)` : ''}`);
   clearSelection();
 }
 

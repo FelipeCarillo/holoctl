@@ -1,3 +1,4 @@
-{# Inline boot script: applies the saved theme before first paint to avoid
-   the dark→light flash on navigation. #}
-<script>(function(){try{var t=localStorage.getItem('holoctl-theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
+{# Inline boot script: applies the theme before first paint to avoid the
+   dark→light flash on navigation. Mirrors theme.js: saved 'holoctl-theme'
+   wins, else the OS prefers-color-scheme; falls back to 'light' on error. #}
+<script>(function(){var t='light';try{t=localStorage.getItem('holoctl-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){t='light';}document.documentElement.setAttribute('data-theme',t);})();</script>

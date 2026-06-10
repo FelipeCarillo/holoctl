@@ -31,6 +31,30 @@ export async function moveTicket(id, status) {
   return resp.json();
 }
 
+/**
+ * Move many tickets to one status in a single request.
+ *
+ * Resolves with the server's batch result —
+ * `{moved: [...], errors: [{id, error}, ...], count}` — which is 200 even on
+ * partial failure. Throws an Error with `.status` set to the HTTP status on
+ * request-level failure (404/405 → older server without the endpoint).
+ */
+export async function bulkMoveTickets(ids, status) {
+  const alias = projectAliasOrThrow();
+  const resp = await fetch(`/api/project/${encodeURIComponent(alias)}/tickets/bulk-move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, status }),
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    const err = new Error(data.detail || `bulk move failed (${resp.status})`);
+    err.status = resp.status;
+    throw err;
+  }
+  return resp.json();
+}
+
 /** Patch a single ticket field (priority / sprint / tags / agent / projects). */
 export async function patchTicket(id, field, value) {
   const alias = projectAliasOrThrow();
