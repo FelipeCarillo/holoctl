@@ -2,12 +2,12 @@
 //
 // Scope is intentionally small: a correctness net (undefined vars, unused vars,
 // strict equality) for vanilla ES modules running in the browser. It is NOT a
-// style formatter. Run with:  npx --yes eslint holoctl/server/static/js
+// style formatter. Run with:  npx --yes eslint@9 holoctl/server/static/js
+// (pinned to the same major the CI job uses — see .github/workflows/ci.yml).
 //
-// NOTE: the JS modules currently reference each other's functions as globals,
-// which trips `no-undef`. That is fixed on a separate frontend branch, so the
-// CI job that runs this is `continue-on-error: true` (non-blocking) until that
-// branch merges — see .github/workflows/ci.yml.
+// The CI `eslint` job runs this as a BLOCKING check: the cross-module-global
+// references that used to trip `no-undef` were fixed by the shared-module
+// refactor (api.js / dom.js / util.js / popover.js) in the same branch.
 export default [
   {
     files: ["holoctl/server/static/js/**/*.js"],

@@ -141,8 +141,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      # Major pinned: an unpinned `npx eslint` fetches latest on every run, so
+      # an ESLint major release would break this job out of nowhere.
       - name: Lint — eslint (flat config)
-        run: npx --yes eslint holoctl/server/static/js
+        run: npx --yes eslint@9 holoctl/server/static/js
 
   build:
     name: Build wheel + sdist
