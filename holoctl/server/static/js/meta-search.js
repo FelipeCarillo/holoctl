@@ -1,19 +1,7 @@
 // meta-search.js — client-side text filter for agents / commands lists.
 // Filters .agent-card elements by their text content.
 
-/**
- * Debounce a function by `delay` ms.
- * @param {Function} fn
- * @param {number} delay
- * @returns {Function}
- */
-function debounce(fn, delay) {
-  let timer;
-  return function (...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), delay);
-  };
-}
+import { debounce } from './util.js';
 
 /**
  * Initialise the meta search bar if [data-meta-search] is present on this page.

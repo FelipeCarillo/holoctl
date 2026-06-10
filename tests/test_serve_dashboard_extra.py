@@ -1,22 +1,15 @@
-"""F12 — the dashboard web stack is an optional extra, not part of the lean core.
+"""CLI import hygiene for the dashboard web stack.
 
-Two guarantees:
-  1. Importing the CLI must NOT pull fastapi / uvicorn / jinja2 / starlette —
-     a CLI/MCP-only install stays lightweight. A future eager import regresses
-     this loudly.
-  2. `hctl serve` (dashboard) prints an actionable install hint and exits
-     non-zero when the extra is missing, instead of an opaque ImportError.
-     `hctl serve --mcp` stays dependency-free.
+The web stack (fastapi/uvicorn/jinja2) ships with the base install — there is
+no `[dashboard]` extra to forget anymore — but it must stay a LAZY import:
+importing the CLI (`holoctl.__main__`) must NOT pull fastapi / uvicorn /
+jinja2 / starlette into the process. Every `hctl board ls` would otherwise pay
+~100ms of web-stack import cost. A future eager import regresses this loudly.
 """
 from __future__ import annotations
 
 import subprocess
 import sys
-
-from typer.testing import CliRunner
-
-from holoctl.cli import serve as serve_mod
-from holoctl.cli.serve import app as serve_app
 
 
 def test_cli_import_does_not_pull_web_stack():
@@ -33,17 +26,3 @@ def test_cli_import_does_not_pull_web_stack():
         f"importing the CLI pulled the web stack: {result.stdout} {result.stderr}"
     )
     assert "clean" in result.stdout
-
-
-def test_serve_dashboard_missing_extra_prints_hint(monkeypatch):
-    """When a dashboard module is absent, serve must exit 1 with an install hint."""
-    monkeypatch.setattr(serve_mod, "_missing_dashboard_dep", lambda: "uvicorn")
-    result = CliRunner().invoke(serve_app, [])
-    assert result.exit_code == 1, result.output
-    assert "holoctl[dashboard]" in result.output
-    assert "uvicorn" in result.output
-
-
-def test_missing_dashboard_dep_returns_none_when_all_present():
-    # In the dev environment the extra is installed, so nothing is missing.
-    assert serve_mod._missing_dashboard_dep() is None

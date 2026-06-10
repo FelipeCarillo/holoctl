@@ -2,10 +2,12 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import Callable
 
 from fastapi import FastAPI, HTTPException, Body, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 from ..lib.board import Board
 from .paths import safe_resolve as _safe_resolve
@@ -153,6 +155,36 @@ def api_ticket_move(alias: str, ticket_id: str, payload: dict = Body(...)):
     return JSONResponse(content=result)
 
 
+@app.post("/api/project/{alias}/tickets/bulk-move")
+def api_ticket_bulk_move(alias: str, payload: dict = Body(...)):
+    """Move many tickets to one status in a single request.
+
+    Body: `{"ids": ["TST-001", ...], "status": "doing"}`. Delegates to
+    `Board.batch_move`, which is atomic per-ticket: it moves what it can
+    and reports the rest. Returns the board's batch result verbatim —
+    `{"moved": [...], "errors": [{"id", "error"}, ...], "count": N}` —
+    so the caller sees per-id success/failure. The endpoint itself
+    returns 200 even on partial failure (mirrors the MCP batch_move
+    contract); only project-level / validation problems are 4xx.
+    """
+    project = _get_project(alias)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="ids must be a non-empty list")
+    if not all(isinstance(i, str) for i in ids):
+        raise HTTPException(status_code=400, detail="ids must be a list of strings")
+    new_status = (payload.get("status") or "").strip()
+    if not new_status:
+        raise HTTPException(status_code=400, detail="status is required")
+    board = Board(Path(project["path"]), project["config"])
+    result = board.batch_move(ids, new_status)
+    return JSONResponse(content=result)
+
+
 @app.get("/api/project/{alias}/context/tree")
 def api_context_tree(alias: str, path: str = Query(default="")):
     """Return one directory level of `.holoctl/context/<path>`.
@@ -172,42 +204,132 @@ def api_context_tree(alias: str, path: str = Query(default="")):
     return {"entries": [{"name": e["name"], "type": "dir" if e["isDir"] else "file"} for e in entries]}
 
 
+# Cap concurrent SSE streams. Each connection holds an event-loop task that
+# polls a file every 2s forever; without a bound, a handful of stuck browser
+# tabs (or a trivial DoS) can pin the loop and the threadpool. 32 is generous
+# for a localhost-first dashboard while still being a hard ceiling.
+#
+# Plain int, not a semaphore: the reservation happens synchronously inside the
+# async handler (no await between check and increment), which is atomic on the
+# event loop — a connect burst can't slip past the cap and queue inside the
+# generator the way the old `.locked()` fast-path + acquire-in-generator did.
+_SSE_MAX_CONNECTIONS = 32
+_sse_connections = 0
+
+
+def _sse_take_slot() -> Callable[[], None] | None:
+    """Reserve one SSE slot; returns an idempotent release, or None when full.
+
+    Only called from the event loop thread, synchronously — so check+increment
+    has no TOCTOU window. The release is wired to BOTH the stream generator's
+    ``finally`` and the response's background task: whichever path runs (clean
+    close, client disconnect before the first chunk, generator exception)
+    decrements exactly once.
+    """
+    global _sse_connections
+    if _sse_connections >= _SSE_MAX_CONNECTIONS:
+        return None
+    _sse_connections += 1
+    released = False
+
+    def _release() -> None:
+        nonlocal released
+        global _sse_connections
+        if not released:
+            released = True
+            _sse_connections -= 1
+
+    return _release
+
+# Poll cadence for the board index, and how often to emit an SSE heartbeat
+# comment so proxies / browsers don't treat an idle stream as dead.
+_SSE_POLL_SECONDS = 2
+_SSE_HEARTBEAT_SECONDS = 25
+
+
+def _read_index_snapshot(
+    index_path: Path, last_mtime: float | None = None
+) -> tuple[float, str | None] | None:
+    """Read + compact the board index for the SSE payload.
+
+    Stat-first: when *last_mtime* is given and the file's mtime hasn't moved,
+    returns ``(mtime, None)`` after the stat alone — no read, no JSON parse.
+    This runs every poll tick (2s) per connection, so skipping the full
+    read+parse for the (overwhelmingly common) idle case matters.
+
+    Returns ``None`` if the file is absent, ``(mtime, None)`` if unchanged
+    since *last_mtime*, or ``(mtime, single_line_json)`` with fresh content.
+    Runs blocking filesystem I/O, so callers invoke it via
+    `asyncio.to_thread` to keep the event loop free.
+    """
+    if not index_path.exists():
+        return None
+    mtime = index_path.stat().st_mtime
+    if last_mtime is not None and mtime == last_mtime:
+        return mtime, None
+    # The on-disk index.json is pretty-printed (indent="\t"), but the SSE
+    # protocol treats every newline inside the `data:` field as a record
+    # terminator — the browser would only see "{" before the first newline.
+    # Compact it onto a single line so e.data is the full JSON.
+    raw = index_path.read_text(encoding="utf-8")
+    try:
+        # `ensure_ascii=False`: preserve accented titles in the SSE payload so
+        # DevTools / Network tab show readable text, not `é` escapes.
+        data = json.dumps(json.loads(raw), separators=(",", ":"), ensure_ascii=False)
+    except (json.JSONDecodeError, ValueError):
+        data = raw.replace("\n", " ").replace("\r", "")
+    return mtime, data
+
+
 @app.get("/api/project/{alias}/events")
 async def api_events(alias: str):
     project = _get_project(alias)
     if not project:
         raise HTTPException(status_code=404, detail="Not found")
 
+    # Reserve the slot before streaming starts — fail fast rather than
+    # queueing a new poller when all slots are taken.
+    release_slot = _sse_take_slot()
+    if release_slot is None:
+        raise HTTPException(status_code=503, detail="Too many live connections")
+
     index_path = Path(project["path"]) / ".holoctl" / "board" / "index.json"
 
     async def event_stream():
-        last_mtime = None
-        while True:
-            try:
-                if index_path.exists():
-                    mtime = index_path.stat().st_mtime
-                    if mtime != last_mtime:
-                        last_mtime = mtime
-                        # The on-disk index.json is pretty-printed (indent="\t"),
-                        # but the SSE protocol treats every newline inside the
-                        # `data:` field as a record terminator — the browser
-                        # would only see "{" before the first newline. Compact
-                        # it onto a single line so e.data is the full JSON.
-                        raw = index_path.read_text(encoding="utf-8")
-                        try:
-                            # `ensure_ascii=False`: preserve accented titles
-                            # in the SSE payload so DevTools / Network tab
-                            # show readable text, not `é` escapes.
-                            data = json.dumps(
-                                json.loads(raw),
-                                separators=(",", ":"),
-                                ensure_ascii=False,
-                            )
-                        except (json.JSONDecodeError, ValueError):
-                            data = raw.replace("\n", " ").replace("\r", "")
-                        yield f"event: board-update\ndata: {data}\n\n"
-            except Exception:
-                pass
-            await asyncio.sleep(2)
+        try:
+            last_mtime = None
+            since_heartbeat = 0.0
+            while True:
+                try:
+                    # File I/O off the event loop so blocking stat()/read_text()
+                    # can't stall every other request sharing this worker.
+                    # Stat-first: `data is None` means unchanged since last_mtime.
+                    snapshot = await asyncio.to_thread(
+                        _read_index_snapshot, index_path, last_mtime
+                    )
+                    if snapshot is not None:
+                        mtime, data = snapshot
+                        if data is not None:
+                            last_mtime = mtime
+                            yield f"event: board-update\ndata: {data}\n\n"
+                            since_heartbeat = 0.0
+                except Exception:
+                    pass
+                # Keepalive comment (ignored by EventSource) so idle streams
+                # aren't reaped by proxies/browsers between board updates.
+                since_heartbeat += _SSE_POLL_SECONDS
+                if since_heartbeat >= _SSE_HEARTBEAT_SECONDS:
+                    since_heartbeat = 0.0
+                    yield ": keepalive\n\n"
+                await asyncio.sleep(_SSE_POLL_SECONDS)
+        finally:
+            release_slot()
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    # `background=` covers the path where the generator never starts (client
+    # gone before the first chunk): Starlette runs it after the response
+    # teardown either way, and release is idempotent with the finally above.
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        background=BackgroundTask(release_slot),
+    )

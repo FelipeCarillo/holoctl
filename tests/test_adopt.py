@@ -26,10 +26,8 @@ from holoctl.lib.config import load_config
 from holoctl.lib.ecosystem import scan_unmanaged
 from holoctl.lib.markdown import parse_frontmatter
 
-runner = CliRunner()
 
-
-def _init() -> None:
+def _init(runner: CliRunner) -> None:
     res = runner.invoke(
         app, ["init", "--name", "AdoptTest", "--prefix", "AT", "--targets", "agents,claude"]
     )
@@ -107,9 +105,9 @@ def test_reverse_model():
 # ---------------------------------------------------------------------------
 
 
-def test_scan_unmanaged_classifies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_scan_unmanaged_classifies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner):
     monkeypatch.chdir(tmp_path)
-    _init()
+    _init(cli_runner)
 
     _write_foreign_agent(tmp_path)
     _write_foreign_command(tmp_path)
@@ -145,15 +143,15 @@ def test_scan_unmanaged_robust_to_missing_dirs(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_adopt_preview_adopts_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_adopt_preview_adopts_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner):
     monkeypatch.chdir(tmp_path)
-    _init()
+    _init(cli_runner)
     _write_foreign_agent(tmp_path)
 
     manifest_before = manifest.load(tmp_path)["files"]
     holoctl_agents_before = sorted((tmp_path / ".holoctl" / "agents").glob("*.md"))
 
-    res = runner.invoke(app, ["adopt"])
+    res = cli_runner.invoke(app, ["adopt"])
     assert res.exit_code == 0, res.output
     assert "preview" in res.output.lower()
     assert "handmade" in res.output
@@ -169,13 +167,13 @@ def test_adopt_preview_adopts_nothing(tmp_path: Path, monkeypatch: pytest.Monkey
 # ---------------------------------------------------------------------------
 
 
-def test_adopt_agent_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_adopt_agent_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner):
     monkeypatch.chdir(tmp_path)
-    _init()
+    _init(cli_runner)
     foreign = _write_foreign_agent(tmp_path)
     foreign_before = foreign.read_text(encoding="utf-8")
 
-    res = runner.invoke(app, ["adopt", "--type", "agent", "--name", "handmade"])
+    res = cli_runner.invoke(app, ["adopt", "--type", "agent", "--name", "handmade"])
     assert res.exit_code == 0, res.output
     assert "adopted" in res.output.lower()
 
@@ -220,12 +218,12 @@ def test_adopt_agent_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 # ---------------------------------------------------------------------------
 
 
-def test_adopt_skill_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_adopt_skill_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner):
     monkeypatch.chdir(tmp_path)
-    _init()
+    _init(cli_runner)
     _write_foreign_skill(tmp_path)
 
-    res = runner.invoke(app, ["adopt", "--type", "skill", "--name", "myskill"])
+    res = cli_runner.invoke(app, ["adopt", "--type", "skill", "--name", "myskill"])
     assert res.exit_code == 0, res.output
 
     # Copied into .holoctl/skills/myskill/.
@@ -248,13 +246,13 @@ def test_adopt_skill_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert support_rel not in skipped_paths
 
 
-def test_adopt_command_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_adopt_command_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner):
     monkeypatch.chdir(tmp_path)
-    _init()
+    _init(cli_runner)
     _write_foreign_command(tmp_path, "mycmd")
     foreign_before = (tmp_path / ".claude" / "commands" / "mycmd.md").read_text(encoding="utf-8")
 
-    res = runner.invoke(app, ["adopt", "--type", "command"])
+    res = cli_runner.invoke(app, ["adopt", "--type", "command"])
     assert res.exit_code == 0, res.output
 
     src = tmp_path / ".holoctl" / "commands" / "mycmd.md"
@@ -278,9 +276,9 @@ def test_adopt_command_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 # ---------------------------------------------------------------------------
 
 
-def test_adopt_refuses_existing_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_adopt_refuses_existing_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner):
     monkeypatch.chdir(tmp_path)
-    _init()
+    _init(cli_runner)
     _write_foreign_agent(tmp_path)
 
     # Pre-create a .holoctl source so adoption must refuse.
@@ -288,7 +286,7 @@ def test_adopt_refuses_existing_source(tmp_path: Path, monkeypatch: pytest.Monke
     existing.write_text("---\nname: handmade\n---\n# pre-existing\n", encoding="utf-8")
     before = existing.read_text(encoding="utf-8")
 
-    res = runner.invoke(app, ["adopt", "--type", "agent", "--name", "handmade"])
+    res = cli_runner.invoke(app, ["adopt", "--type", "agent", "--name", "handmade"])
     assert res.exit_code == 0, res.output
     assert "skip" in res.output.lower()
     # Source untouched.
@@ -297,20 +295,20 @@ def test_adopt_refuses_existing_source(tmp_path: Path, monkeypatch: pytest.Monke
     assert ".claude/agents/handmade.md" not in manifest.load(tmp_path)["files"]
 
     # With --force, it adopts (clobbers source).
-    res2 = runner.invoke(app, ["adopt", "--type", "agent", "--name", "handmade", "--force"])
+    res2 = cli_runner.invoke(app, ["adopt", "--type", "agent", "--name", "handmade", "--force"])
     assert res2.exit_code == 0, res2.output
     assert "adopted" in res2.output.lower()
     assert ".claude/agents/handmade.md" in manifest.load(tmp_path)["files"]
 
 
-def test_adopt_all(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_adopt_all(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner):
     monkeypatch.chdir(tmp_path)
-    _init()
+    _init(cli_runner)
     _write_foreign_agent(tmp_path)
     _write_foreign_command(tmp_path)
     _write_foreign_skill(tmp_path)
 
-    res = runner.invoke(app, ["adopt", "--all"])
+    res = cli_runner.invoke(app, ["adopt", "--all"])
     assert res.exit_code == 0, res.output
     assert (tmp_path / ".holoctl" / "agents" / "handmade.md").exists()
     assert (tmp_path / ".holoctl" / "commands" / "mycmd.md").exists()

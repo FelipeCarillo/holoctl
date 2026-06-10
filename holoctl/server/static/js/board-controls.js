@@ -1,5 +1,8 @@
 // ── Board controls: search, filter chips, sort, group ──
 
+import { esc } from './dom.js';
+import { debounce } from './util.js';
+
 // Per-workspace state in localStorage. Bumped to v2 because the schema
 // changed (added .search, .filter shape preserved). Old v1 state is left
 // alone — agents who had it just see defaults until they touch a control.
@@ -40,7 +43,7 @@ function bcLoad() {
       sort: saved.sort || BC_DEFAULT.sort,
       group: saved.group || BC_DEFAULT.group,
     };
-  } catch (_) {
+  } catch {
     return JSON.parse(JSON.stringify(BC_DEFAULT));
   }
 }
@@ -195,19 +198,22 @@ function bcApplyGroupKanban(state, kanban) {
   const sortedKeys = bcSortBucketKeys(buckets.keys());
   kanban.innerHTML = sortedKeys.map(k => {
     const cards = buckets.get(k);
-    return `<div class="kanban-col" data-bucket="${k.replace(/"/g, '&quot;')}">
+    return `<div class="kanban-col" data-bucket="${esc(k)}">
       <div class="kanban-col-header">
-        <span class="col-label">${k}</span>
+        <span class="col-label">${esc(k)}</span>
         <span class="count">${cards.length}</span>
       </div>
       <div class="kanban-cards"></div>
     </div>`;
   }).join('');
-  sortedKeys.forEach(k => {
-    const col = kanban.querySelector(`.kanban-col[data-bucket="${k.replace(/"/g, '&quot;')}"] .kanban-cards`);
-    buckets.get(k).forEach(card => {
-      col.appendChild(card.cloneNode(true));
-    });
+  // Append cards by column index (positional) rather than re-querying by an
+  // escaped attribute selector — the DOM attribute value is the *unescaped*
+  // key, so a selector built from esc(k) would miss keys containing markup.
+  const cols = kanban.querySelectorAll('.kanban-col .kanban-cards');
+  sortedKeys.forEach((k, i) => {
+    const target = cols[i];
+    if (!target) return;
+    buckets.get(k).forEach(card => target.appendChild(card.cloneNode(true)));
   });
 }
 
@@ -251,19 +257,21 @@ function bcApplyGroupList(state, listView) {
   });
   const orderedKeys = sortKeys([...buckets.keys()]);
   body.innerHTML = orderedKeys.map(k => {
-    const safe = String(k).replace(/"/g, '&quot;');
+    const safe = esc(k);
     return `<div class="list-group" data-bucket="${safe}">
       <div class="list-group-header" data-status="${safe}" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle ${safe} group">
         <span class="lg-toggle" aria-hidden="true">▾</span>
-        <span class="lg-label">${k}</span>
+        <span class="lg-label">${safe}</span>
         <span class="lg-count">${buckets.get(k).length}</span>
       </div>
       <div class="list-group-rows"></div>
     </div>`;
   }).join('');
-  orderedKeys.forEach(k => {
-    const safe = String(k).replace(/"/g, '&quot;');
-    const rowsEl = body.querySelector(`.list-group[data-bucket="${safe}"] .list-group-rows`);
+  // Positional append (see bcApplyGroupKanban) — avoids escaped-selector mismatch.
+  const groupRows = body.querySelectorAll('.list-group .list-group-rows');
+  orderedKeys.forEach((k, i) => {
+    const rowsEl = groupRows[i];
+    if (!rowsEl) return;
     buckets.get(k).forEach(row => rowsEl.appendChild(row.cloneNode(true)));
   });
 }
@@ -275,12 +283,13 @@ function bcRenderChips(state, panel) {
   const entries = Object.entries(state.filter).filter(([, v]) => v);
   chips.innerHTML = entries.map(([axis, value]) => {
     const label = (BC_AXIS[axis] && BC_AXIS[axis].label) || axis;
-    const safeAxis = String(axis).replace(/"/g, '&quot;');
-    const safeVal = String(value).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const safeAxis = esc(axis);
+    const safeVal = esc(value);
+    const safeLabel = esc(label);
     return `<span class="bc-chip" data-axis="${safeAxis}">
-      <span class="bc-chip-axis">${label}:</span>
+      <span class="bc-chip-axis">${safeLabel}:</span>
       <span class="bc-chip-value">${safeVal}</span>
-      <button type="button" class="bc-chip-remove" data-bc-chip-remove="${safeAxis}" aria-label="Remove ${label} filter">&times;</button>
+      <button type="button" class="bc-chip-remove" data-bc-chip-remove="${safeAxis}" aria-label="Remove ${safeLabel} filter">&times;</button>
     </span>`;
   }).join('');
 }
@@ -326,20 +335,12 @@ function bcShowAxisValues(panel, axis) {
     list.innerHTML = '<div class="bc-popover-value-empty">No values available</div>';
   } else {
     list.innerHTML = opts.map(v =>
-      `<button type="button" class="bc-popover-value" data-value="${String(v).replace(/"/g, '&quot;')}">${String(v).replace(/</g, '&lt;')}</button>`
+      `<button type="button" class="bc-popover-value" data-value="${esc(v)}">${esc(v)}</button>`
     ).join('');
   }
   pop.querySelector('[data-step="axis"]').hidden = true;
   pop.querySelector('[data-step="value"]').hidden = false;
   pop.setAttribute('data-axis', axis);
-}
-
-function debounce(fn, wait) {
-  let t = null;
-  return function (...args) {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => fn.apply(this, args), wait);
-  };
 }
 
 export function initBoardControls() {

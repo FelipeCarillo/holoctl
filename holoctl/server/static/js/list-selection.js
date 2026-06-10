@@ -1,4 +1,5 @@
 import { showToast } from './toast.js';
+import { moveTicket } from './api.js';
 
 // ── List-view multi-select + bulk action bar ──
 
@@ -48,40 +49,6 @@ function clearSelection() {
   updateBulkBar();
 }
 
-function projectAliasOrThrow() {
-  const a = projectAlias();
-  if (!a) throw new Error('No project alias on this page');
-  return a;
-}
-
-async function moveTicket(id, status) {
-  const alias = projectAliasOrThrow();
-  const resp = await fetch(`/api/project/${encodeURIComponent(alias)}/tickets/${encodeURIComponent(id)}/move`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.detail || `move failed (${resp.status})`);
-  }
-  return resp.json();
-}
-
-async function patchTicket(id, field, value) {
-  const alias = projectAliasOrThrow();
-  const resp = await fetch(`/api/project/${encodeURIComponent(alias)}/tickets/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ field, value }),
-  });
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.detail || `patch failed (${resp.status})`);
-  }
-  return resp.json();
-}
-
 async function bulkMove(targetStatus) {
   const sel = selectedRows();
   if (sel.length === 0) return;
@@ -97,6 +64,10 @@ async function bulkMove(targetStatus) {
 }
 
 export function initListSelection() {
+  // Let the SSE handler refresh the bulk bar after it re-marks selected rows
+  // on a board swap (selection is persisted/restored across the DOM replace).
+  window.__refreshBulkBar = updateBulkBar;
+
   document.addEventListener('click', (e) => {
     const cb = e.target.closest('[data-ticket-select]');
     if (cb) {

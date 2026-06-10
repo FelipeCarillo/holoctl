@@ -1,4 +1,7 @@
 import { showToast } from './toast.js';
+import { esc } from './dom.js';
+import { projectAlias, moveTicket } from './api.js';
+import { positionPopover } from './popover.js';
 
 // ── Card hover menu (⋯) ──
 
@@ -21,15 +24,18 @@ export function statusList() {
     .filter((v, i, arr) => v && arr.indexOf(v) === i);
 }
 
-function projectAlias() {
-  const m = window.location.pathname.match(/\/project\/([^/]+)\//);
-  return m ? m[1] : null;
-}
+// Trigger that opened the current menu — focus returns here on close.
+let _menuTrigger = null;
 
 function closeCardMenu() {
   document.querySelectorAll('.kc-menu-popover').forEach(p => p.remove());
-  document.querySelectorAll('.kc-menu[aria-expanded="true"]').forEach(b =>
+  document.querySelectorAll('.kc-menu[aria-expanded="true"], [data-card-menu][aria-expanded="true"]').forEach(b =>
     b.setAttribute('aria-expanded', 'false'));
+  if (_menuTrigger) {
+    const t = _menuTrigger;
+    _menuTrigger = null;
+    if (document.contains(t)) t.focus();
+  }
 }
 
 function openCardMenu(btn, card) {
@@ -44,9 +50,9 @@ function openCardMenu(btn, card) {
   const statuses = statusList();
   const moveItems = statuses
     .filter(s => s !== currentStatus && s !== 'cancelled')
-    .map(s => `<button type="button" class="kc-menu-item" data-action="move" data-status="${s}">
-      <span class="kc-menu-status-dot" data-status="${s}"></span>
-      Move to ${s}
+    .map(s => `<button type="button" class="kc-menu-item" data-action="move" data-status="${esc(s)}">
+      <span class="kc-menu-status-dot" data-status="${esc(s)}"></span>
+      Move to ${esc(s)}
     </button>`).join('');
 
   const pop = document.createElement('div');
@@ -66,15 +72,27 @@ function openCardMenu(btn, card) {
   `;
   document.body.appendChild(pop);
   btn.setAttribute('aria-expanded', 'true');
+  _menuTrigger = btn;
 
-  // Position below the button. Flip above if too close to viewport bottom.
-  const r = btn.getBoundingClientRect();
-  pop.style.top = (window.scrollY + r.bottom + 4) + 'px';
-  const desiredLeft = window.scrollX + r.right - pop.offsetWidth;
-  pop.style.left = Math.max(8, desiredLeft) + 'px';
-  if (r.bottom + pop.offsetHeight + 8 > window.innerHeight) {
-    pop.style.top = (window.scrollY + r.top - pop.offsetHeight - 4) + 'px';
-  }
+  // Position below the button, right-aligned; flip above near viewport bottom.
+  positionPopover(pop, btn, { align: 'right' });
+
+  // Focus the first menu item on open.
+  const items = [...pop.querySelectorAll('.kc-menu-item')];
+  if (items.length) items[0].focus();
+
+  // ArrowUp/ArrowDown roving focus between items.
+  pop.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const focusables = [...pop.querySelectorAll('.kc-menu-item')];
+    if (!focusables.length) return;
+    const idx = focusables.indexOf(document.activeElement);
+    const next = e.key === 'ArrowDown'
+      ? (idx + 1) % focusables.length
+      : (idx - 1 + focusables.length) % focusables.length;
+    focusables[next].focus();
+  });
 
   pop.addEventListener('click', async (e) => {
     const item = e.target.closest('.kc-menu-item');
@@ -93,17 +111,8 @@ function openCardMenu(btn, card) {
       if (!target) return;
       item.disabled = true;
       try {
-        const resp = await fetch(`/api/project/${encodeURIComponent(alias)}/tickets/${encodeURIComponent(id)}/move`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: target }),
-        });
-        if (!resp.ok) {
-          const data = await resp.json().catch(() => ({}));
-          showToast(`Move failed: ${data.detail || resp.status}`);
-        } else {
-          showToast(`Moved to ${target}`);
-        }
+        await moveTicket(id, target);
+        showToast(`Moved to ${target}`);
       } catch (err) {
         showToast(`Move failed: ${err.message || 'network'}`);
       } finally {

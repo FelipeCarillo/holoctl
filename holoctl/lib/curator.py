@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -248,7 +249,14 @@ def run_curator(
         try:
             raw.extend(rule(ctx))
         except Exception:
-            # A rule failure must not crash the whole curator run.
+            # A rule failure must not crash the whole curator run, but it must
+            # be observable — a silently-swallowed exception here means a rule
+            # quietly stops producing suggestions with no signal.
+            logging.getLogger(__name__).warning(
+                "curator rule %r failed; skipping",
+                getattr(rule, "__name__", rule),
+                exc_info=True,
+            )
             continue
 
     # Deduplicate against silenced + open tickets.

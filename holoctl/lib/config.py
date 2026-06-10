@@ -220,12 +220,17 @@ def get_defaults() -> dict:
 
 
 def _deep_merge(target: dict, source: dict) -> dict:
+    """Return a new dict that is ``target`` deep-merged with ``source``.
+
+    Pure: neither argument is mutated (both are deep-copied internally), so
+    callers can't be surprised by an in-place rewrite of the dict they passed.
+    Nested dicts are merged recursively; for any non-dict value (or a type
+    mismatch) ``source`` wins.
+    """
+    result = copy.deepcopy(target)
     for key, val in source.items():
-        if (
-            isinstance(val, dict)
-            and isinstance(target.get(key), dict)
-        ):
-            _deep_merge(target[key], val)
+        if isinstance(val, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], val)
         else:
-            target[key] = val
-    return target
+            result[key] = copy.deepcopy(val)
+    return result

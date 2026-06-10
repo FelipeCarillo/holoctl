@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "holoctl"
-version = "0.20.4"
+version = "0.21.0"
 description = "Project operating system for Claude Code, with a portable bootstrap for other AI assistants"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -31,20 +31,23 @@ dependencies = [
     "typer>=0.12",
     "rich>=13",
     "pyyaml>=6",
-]
-
-[project.optional-dependencies]
-dashboard = [
-    # The HTTP dashboard (`hctl serve`). Kept out of the lean core so a
-    # CLI-only / MCP-only install (the common case) doesn't pull the whole
-    # web stack (fastapi → pydantic → starlette, plus uvicorn + jinja2).
-    # `hctl serve` prints an install hint when this extra is absent.
+    # The HTTP dashboard (`hctl serve`) ships with the base install — no extra
+    # to remember. The web stack is only IMPORTED when the dashboard actually
+    # starts (uvicorn loads holoctl.server.app by string reference), so CLI /
+    # MCP cold-start stays lean; tests/test_serve_dashboard_extra.py guards
+    # that importing the CLI never pulls fastapi/uvicorn/jinja2/starlette.
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "jinja2>=3.1",
     "markdown-it-py>=3.0",
     "mdit-py-plugins>=0.4",
 ]
+
+[project.optional-dependencies]
+# Deprecated no-op kept for compatibility: the dashboard deps moved into the
+# base dependencies, but `pip install 'holoctl[dashboard]'` (older docs,
+# scripts, muscle memory) must keep working instead of warning/failing.
+dashboard = []
 ml = [
     # Optional embeddings backend for the curator's repeated-prompt rule.
     # Without this extra the curator falls back to token-hash matching
@@ -85,15 +88,18 @@ package = true
 [dependency-groups]
 dev = [
     "pytest>=8",
+    # Parallel test execution (`pytest -n auto`) — the suite is CPU-light and
+    # filesystem-isolated (each test gets its own tmp_path), so it parallelizes
+    # cleanly with a large speedup.
+    "pytest-xdist>=3.5",
+    # Coverage reporting (`--cov=holoctl`). No fail-under gate yet — measuring first.
+    "pytest-cov>=5",
+    # Per-test timeout guard so a hung test fails loudly instead of stalling CI.
+    "pytest-timeout>=2.1",
     # Required by fastapi.testclient (used by tests/test_dashboard.py).
+    # The web stack itself (fastapi/uvicorn/jinja2/markdown-it) now comes with
+    # the base dependencies — no dev-group duplication needed.
     "httpx>=0.27",
-    # The dashboard moved to the optional `[dashboard]` extra; the dev env
-    # still needs it so tests/test_dashboard.py can import + exercise it.
-    "fastapi>=0.115",
-    "uvicorn>=0.30",
-    "jinja2>=3.1",
-    "markdown-it-py>=3.0",
-    "mdit-py-plugins>=0.4",
     # Linter + type checker (correctness nets — see [tool.ruff] / [tool.mypy]).
     "ruff>=0.6",
     "mypy>=1.11",
@@ -103,11 +109,29 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-q"
+# --timeout=60: no single test may run longer than 60s (catches hangs/deadlocks).
+# --durations=10: report the 10 slowest tests so we can keep the suite fast.
+addopts = "-q --timeout=60 --durations=10"
+markers = [
+    # Opt-in marker for tests that must NOT run in parallel (shared global state,
+    # port binding, etc.). Apply with `@pytest.mark.serial` and run those under
+    # `-p no:xdist` or `--dist no` if a future test needs strict serialization.
+    # No test currently needs it — the suite passes cleanly under `-n auto`.
+    "serial: mark a test that must run serially (not under pytest-xdist parallelism)",
+]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.format]
+# Match the linter's line-length and the project's existing style. Enabled as a
+# CI *warning* (non-blocking) for now — the existing tree is not yet formatted,
+# and a repo-wide reformat is deferred to avoid churn/merge conflicts. New code
+# is auto-formatted via the pre-commit hook.
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
 
 [tool.ruff.lint]
 # Focused, high-signal set: pyflakes (dead code, bad f-strings) + bugbear

@@ -18,7 +18,14 @@ _PLACEHOLDER_PATTERNS = (
     re.compile(r"^<!--.*-->\s*$"),                            # `<!-- HTML comment hint -->`
 )
 
-_md = MarkdownIt("gfm-like", {"linkify": False}).use(tasklists_plugin, enabled=True)
+# `html: False` is a security control, not a style choice: ticket bodies can
+# come from external/untrusted sources (e.g. `/spec` imports) and the rendered
+# HTML is injected into templates with `| safe`, so raw HTML in the source must
+# be escaped rather than passed through (otherwise `<img src=x onerror=...>`
+# executes — a confirmed XSS). Disabling it makes markdown_it escape any raw
+# HTML tags while still rendering all normal markdown (headings, lists, tables,
+# code, task lists). See tests/test_markdown_xss.py.
+_md = MarkdownIt("gfm-like", {"html": False, "linkify": False}).use(tasklists_plugin, enabled=True)
 
 
 def _is_placeholder_only(content: str) -> bool:

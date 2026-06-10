@@ -16,9 +16,6 @@ from pathlib import Path
 
 import pytest
 
-# The dashboard is an optional extra (`holoctl[dashboard]`); skip this whole
-# module cleanly when the web stack isn't installed rather than erroring out.
-pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 import json
@@ -2895,3 +2892,181 @@ class TestWorkspaceMetricsTimeInStatus:
         r = client.get("/metrics")
         assert r.status_code == 200
         assert "mtis-chart" in r.text or "metrics-time-in-status" in r.text
+
+
+# ── Routes: POST /tickets/bulk-move ───────────────────────────────────────────
+
+
+class TestApiTicketBulkMove:
+    def test_moves_many_in_one_call(self, client: TestClient, alias: str, workspace: Path, workspace_config: dict):
+        a = client.post(f"/api/project/{alias}/tickets", json={"title": "A"}).json()
+        b = client.post(f"/api/project/{alias}/tickets", json={"title": "B"}).json()
+        r = client.post(
+            f"/api/project/{alias}/tickets/bulk-move",
+            json={"ids": [a["id"], b["id"]], "status": "doing"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["count"] == 2
+        assert body["errors"] == []
+        moved_ids = {m["id"] for m in body["moved"]}
+        assert moved_ids == {a["id"], b["id"]}
+        # Persisted.
+        board = Board(workspace, workspace_config)
+        assert board.stat()["doing"] == 2
+
+    def test_partial_success_reports_per_id_errors(self, client: TestClient, alias: str):
+        a = client.post(f"/api/project/{alias}/tickets", json={"title": "A"}).json()
+        r = client.post(
+            f"/api/project/{alias}/tickets/bulk-move",
+            json={"ids": [a["id"], "TST-999"], "status": "doing"},
+        )
+        # Endpoint stays 200 on partial failure; per-id results carry the detail.
+        assert r.status_code == 200
+        body = r.json()
+        assert body["count"] == 1
+        assert [e["id"] for e in body["errors"]] == ["TST-999"]
+
+    def test_invalid_status_reported_per_id(self, client: TestClient, alias: str):
+        a = client.post(f"/api/project/{alias}/tickets", json={"title": "A"}).json()
+        r = client.post(
+            f"/api/project/{alias}/tickets/bulk-move",
+            json={"ids": [a["id"]], "status": "elsewhere"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["count"] == 0
+        assert body["errors"][0]["id"] == a["id"]
+
+    def test_missing_status_400(self, client: TestClient, alias: str):
+        a = client.post(f"/api/project/{alias}/tickets", json={"title": "A"}).json()
+        r = client.post(
+            f"/api/project/{alias}/tickets/bulk-move",
+            json={"ids": [a["id"]]},
+        )
+        assert r.status_code == 400
+
+    def test_empty_ids_400(self, client: TestClient, alias: str):
+        r = client.post(
+            f"/api/project/{alias}/tickets/bulk-move",
+            json={"ids": [], "status": "doing"},
+        )
+        assert r.status_code == 400
+
+    def test_ids_not_a_list_400(self, client: TestClient, alias: str):
+        r = client.post(
+            f"/api/project/{alias}/tickets/bulk-move",
+            json={"ids": "TST-001", "status": "doing"},
+        )
+        assert r.status_code == 400
+
+    def test_unknown_project_404(self, client: TestClient):
+        r = client.post(
+            "/api/project/no-such/tickets/bulk-move",
+            json={"ids": ["TST-001"], "status": "doing"},
+        )
+        assert r.status_code == 404
+
+
+# ── Routes: SSE event stream ──────────────────────────────────────────────────
+
+
+class TestApiEventsStream:
+    """The stream itself polls forever, so we don't consume it over HTTP (that
+    would hang the test client). Instead we cover the handshake (404 vs. the
+    streaming response) and exercise the snapshot helper + connection cap
+    directly — those carry the async-safety and bounding fixes."""
+
+    def test_unknown_project_404(self, client: TestClient):
+        r = client.get("/api/project/no-such/events")
+        assert r.status_code == 404
+
+    def test_snapshot_helper_compacts_index_to_single_line(self, client: TestClient, alias: str, workspace: Path):
+        from holoctl.server.app import _read_index_snapshot
+
+        client.post(f"/api/project/{alias}/tickets", json={"title": "Snap"})
+        index_path = workspace / ".holoctl" / "board" / "index.json"
+        snap = _read_index_snapshot(index_path)
+        assert snap is not None
+        mtime, data = snap
+        assert isinstance(mtime, float)
+        # Compacted: no newlines, parses back to the board dict, title present.
+        assert "\n" not in data
+        parsed = json.loads(data)
+        assert any(t["title"] == "Snap" for t in parsed.get("tickets", []))
+
+    def test_snapshot_helper_returns_none_when_index_absent(self, tmp_path: Path):
+        from holoctl.server.app import _read_index_snapshot
+
+        assert _read_index_snapshot(tmp_path / "nope" / "index.json") is None
+
+    def test_snapshot_helper_is_stat_first_when_mtime_unchanged(
+        self, client: TestClient, alias: str, workspace: Path, monkeypatch
+    ):
+        """With `last_mtime` given and the file unchanged, the helper must
+        return early on the stat alone — no read, no JSON parse. This runs
+        every 2s per connection, so the read-every-poll version did the full
+        parse work ~30×/min/connection for an idle board."""
+        from holoctl.server.app import _read_index_snapshot
+
+        client.post(f"/api/project/{alias}/tickets", json={"title": "Snap"})
+        index_path = workspace / ".holoctl" / "board" / "index.json"
+        first = _read_index_snapshot(index_path)
+        assert first is not None and first[1] is not None
+        mtime = first[0]
+
+        calls = {"n": 0}
+        orig_read_text = Path.read_text
+
+        def counting_read_text(self, *args, **kwargs):
+            if self == index_path:
+                calls["n"] += 1
+            return orig_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", counting_read_text)
+        again = _read_index_snapshot(index_path, last_mtime=mtime)
+        assert again == (mtime, None), "unchanged file must short-circuit to (mtime, None)"
+        assert calls["n"] == 0, "stat-first path must not read the file"
+
+        # A real change is still picked up (fresh read, data present).
+        client.post(f"/api/project/{alias}/tickets", json={"title": "Snap2"})
+        changed = _read_index_snapshot(index_path, last_mtime=mtime)
+        assert changed is not None and changed[1] is not None
+        assert "Snap2" in changed[1]
+
+    def test_returns_503_when_connection_cap_reached(
+        self, client: TestClient, alias: str, monkeypatch
+    ):
+        # Saturate the live-connection counter so the route's 503 fires
+        # without us having to open 32 real long-lived streams.
+        from holoctl.server import app as app_module
+
+        monkeypatch.setattr(
+            app_module, "_sse_connections", app_module._SSE_MAX_CONNECTIONS
+        )
+        r = client.get(f"/api/project/{alias}/events")
+        assert r.status_code == 503
+
+    def test_sse_slot_take_and_release_accounting(self):
+        """The slot reservation happens synchronously in the handler (no await
+        between check and increment → no TOCTOU among concurrent connects),
+        and release is idempotent — it runs from both the generator's finally
+        and the response's background task, whichever fires, exactly once."""
+        from holoctl.server import app as app_module
+
+        before = app_module._sse_connections
+        release = app_module._sse_take_slot()
+        assert release is not None
+        assert app_module._sse_connections == before + 1
+        release()
+        assert app_module._sse_connections == before
+        release()  # idempotent — second call must not double-decrement
+        assert app_module._sse_connections == before
+
+    def test_sse_slot_denied_when_full(self, monkeypatch):
+        from holoctl.server import app as app_module
+
+        monkeypatch.setattr(
+            app_module, "_sse_connections", app_module._SSE_MAX_CONNECTIONS
+        )
+        assert app_module._sse_take_slot() is None

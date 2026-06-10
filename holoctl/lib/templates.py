@@ -3,24 +3,41 @@ from __future__ import annotations
 from .agent_library import materialize_agent
 
 
-# Template-managed, non-agent files refreshed by `hctl sync`, `hctl upgrade`,
-# and re-`hctl init`. Single source of truth: the three call sites import this
-# so a newly added template file can't drift out of one of them. (That drift is
-# exactly why `/spec` and `/agent-new` used to go stale after an upgrade — they
-# were produced by get_templates() but missing from every sync list.) Agent
-# personas are synced separately: opt-in on `sync --agents`, always on `upgrade`.
-SYNC_TARGETS = frozenset({
-    ".holoctl/commands/status.md",
-    ".holoctl/commands/ticket.md",
-    ".holoctl/commands/spec.md",
-    ".holoctl/commands/agent-new.md",
-    ".holoctl/commands/board.md",
-    ".holoctl/commands/sprint.md",
-    ".holoctl/commands/decision.md",
-    ".holoctl/commands/close.md",
-    ".holoctl/board/WORKFLOW.md",
-    ".holoctl/board/tickets/_template.md",
+# Files that `get_templates()` produces but which are **user-authored** after
+# init and must therefore NOT be refreshed by `hctl sync` / `upgrade` / re-init.
+# Everything else `get_templates()` emits is template-managed and belongs in the
+# sync allow-list. Agent personas are synced separately (opt-in on
+# `sync --agents`, always on `upgrade`), so they are excluded here too.
+#   - `.holoctl/context/*`        → user fills these in (objective/arch/conventions)
+#   - `.holoctl/instructions.md`  → user-editable project memory (CLAUDE.md source)
+#   - `.holoctl/agents/*`         → personas, synced via the agent path
+_SYNC_EXCLUDE_PREFIXES = (
+    ".holoctl/context/",
+    ".holoctl/agents/",
+)
+_SYNC_EXCLUDE_FILES = frozenset({
+    ".holoctl/instructions.md",
 })
+
+
+def _derive_sync_targets() -> frozenset[str]:
+    """Derive the sync allow-list from ``get_templates()`` keys.
+
+    Single source of truth: a newly added template file is picked up
+    automatically (no hand-maintained list to drift out of — exactly the drift
+    that left `/spec` and `/agent-new` stale after an upgrade). User-authored
+    outputs (context/, instructions.md) and personas (agents/) are excluded so
+    sync never clobbers hand-written content.
+    """
+    from .config import get_defaults
+
+    keys = get_templates(get_defaults()).keys()
+    return frozenset(
+        k
+        for k in keys
+        if k not in _SYNC_EXCLUDE_FILES
+        and not k.startswith(_SYNC_EXCLUDE_PREFIXES)
+    )
 
 
 def get_templates(config: dict) -> dict[str, str]:
@@ -675,3 +692,10 @@ def _instructions_md(config: dict) -> str:
 
 (esta seção é populada à medida que ADRs são criados em `.holoctl/context/decisions/`)
 """
+
+
+# Template-managed, non-agent files refreshed by `hctl sync`, `hctl upgrade`,
+# and re-`hctl init`. Single source of truth: derived from `get_templates()`
+# (see `_derive_sync_targets`) so the three call sites and the template producer
+# can never drift apart. Defined at module-bottom so `get_templates` exists.
+SYNC_TARGETS = _derive_sync_targets()

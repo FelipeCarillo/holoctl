@@ -13,7 +13,7 @@
 </div>
 <div class="topbar-actions">
   {{ actions | safe }}
-  <button class="icon-btn" onclick="__toggleTheme()" title="Toggle theme">
+  <button class="icon-btn" type="button" data-action="toggle-theme" title="Toggle theme">
     <span class="theme-icon-dark">{% include "icons/moon.svg" %}</span>
     <span class="theme-icon-light">{% include "icons/sun.svg" %}</span>
   </button>
