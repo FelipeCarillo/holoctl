@@ -17,7 +17,6 @@ import { initViewSwitcher } from './view-switcher.js';
 import { initListSelection } from './list-selection.js';
 import { initInlineEdit } from './inline-edit.js';
 import { initMetaSearch } from './meta-search.js';
-import { initProjectFilter } from './project-filter.js';
 
 // Keyboard activation for elements with role="button". Native <button>/<a>
 // already handle Enter/Space; this covers the few <div role="button">
@@ -48,6 +47,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initListSelection();
   initInlineEdit();
   initMetaSearch();
-  initProjectFilter();
   initRoleButtonKeys();
 });
