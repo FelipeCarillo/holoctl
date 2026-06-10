@@ -1,4 +1,5 @@
 ﻿from __future__ import annotations
+import copy
 import json
 import os
 import re
@@ -129,6 +130,20 @@ class Board:
             _INDEX_CACHE[key] = (st.st_mtime_ns, st.st_size, data)
             return data
         raise PermissionError(f"could not read {self._index_path} after {attempts} attempts")
+
+    def _load_mut(self) -> dict:
+        """Deep copy of the index for a mutation critical section.
+
+        ``_load()`` returns the SHARED cached object — concurrent readers in
+        other threads (e.g. dashboard GET handlers in FastAPI's threadpool)
+        may be iterating it at any moment. Mutators therefore work on a
+        private deep copy and republish it via ``_save``; a published cache
+        entry is never mutated in place, so a reader can never observe a
+        half-applied mutation (or a list resized mid-iteration). Callers of
+        mutators must still treat returned ticket rows as read-only — they
+        alias the freshly published object.
+        """
+        return copy.deepcopy(self._load())
 
     def _save(self, data: dict) -> None:
         self._board_dir.mkdir(parents=True, exist_ok=True)
@@ -442,7 +457,7 @@ class Board:
         saves only if something changed.
         """
         with self._locked():
-            data = self._load()
+            data = self._load_mut()
             changed = False
             for c in data["tickets"]:
                 if c.get("parent") != parent_id:
@@ -498,7 +513,7 @@ class Board:
         # Hold the board lock across load→mutate→save so a concurrent CLI +
         # MCP-server writer can't clobber this mutation (last-write-wins).
         with self._locked():
-            data = self._load()
+            data = self._load_mut()
             ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
@@ -574,7 +589,7 @@ class Board:
             self._validate_priority(value)
 
         with self._locked():
-            data = self._load()
+            data = self._load_mut()
             ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
@@ -678,7 +693,7 @@ class Board:
         acc_total, acc_done = _count_acceptance(self._resolve_body(body))
 
         with self._locked():
-            data = self._load()
+            data = self._load_mut()
             next_num = data["meta"]["nextId"]
             ticket_id = self._generate_id(next_num)
             slug = self._slugify(title)
@@ -757,7 +772,7 @@ class Board:
         is truly stale. The id is **not** reused — `nextId` keeps incrementing.
         """
         with self._locked():
-            data = self._load()
+            data = self._load_mut()
             ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
@@ -843,7 +858,7 @@ class Board:
         checkboxes in the file in document order.
         """
         with self._locked():
-            data = self._load()
+            data = self._load_mut()
             ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
@@ -893,7 +908,7 @@ class Board:
         if not text or not text.strip():
             raise ValueError("Note text is empty.")
         with self._locked():
-            data = self._load()
+            data = self._load_mut()
             ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
@@ -933,7 +948,7 @@ class Board:
     def set_body(self, ticket_id: str, body: str) -> dict:
         """Replace the body of a ticket .md, preserving frontmatter."""
         with self._locked():
-            data = self._load()
+            data = self._load_mut()
             ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")

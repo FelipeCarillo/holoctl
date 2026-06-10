@@ -59,6 +59,30 @@ def test_save_invalidates_then_refreshes_cache(workspace: Path, workspace_config
     assert after["tickets"][0]["status"] == "doing"
 
 
+def test_mutation_never_mutates_published_cache_object(workspace: Path, workspace_config: dict):
+    """Concurrent-reader isolation: a reader thread (e.g. a dashboard GET
+    handler) holding the dict returned by `_load()` must never observe a
+    mutator's intermediate or final state on THAT object. Mutators work on a
+    private deep copy and republish via `_save` — the published object is
+    frozen at publication."""
+    board = Board(workspace, workspace_config)
+    t = board.add({"title": "X"})
+    snapshot = board._load()  # what a concurrent reader would be holding
+    status_before = snapshot["tickets"][0]["status"]
+    count_before = len(snapshot["tickets"])
+
+    board.move(t["id"], "doing")
+    board.add({"title": "Y"})
+
+    # The reader's object is unchanged...
+    assert snapshot["tickets"][0]["status"] == status_before
+    assert len(snapshot["tickets"]) == count_before
+    # ...while a fresh load sees both mutations.
+    fresh = board._load()
+    assert fresh["tickets"][0]["status"] == "doing"
+    assert len(fresh["tickets"]) == 2
+
+
 def test_external_write_invalidates_cache(workspace: Path, workspace_config: dict):
     board = Board(workspace, workspace_config)
     board.add({"title": "X"})
