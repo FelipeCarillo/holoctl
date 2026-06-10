@@ -1,13 +1,25 @@
 """Ticket mutations: status moves, field sets, deletes, DoD/notes/body edits.
 
-Extracted from the former ``holoctl/lib/board.py`` god module (item 5.3).
 ``BoardTicketOps`` is a mixin over :class:`.store.BoardIndexStore`; the
-public :class:`holoctl.lib.board.Board` facade composes it.
+public :class:`holoctl.lib.board.Board` facade composes it (split out of the
+former board.py god module, item 5.3). Invariants:
 
-The curator done-hook coupling lives here: ``move`` calls the injectable
-``self._on_meta_curate_done`` callback (constructor arg on ``Board``), whose
-default — :func:`_default_meta_curate_done` — preserves the original lazy
-soft-import of ``holoctl.lib.curator.apply_curator_action``.
+- **State machine**: valid statuses come from ``config["board"]["statuses"]``
+  — never a hardcoded set. Entering ``done`` stamps ``completed``; leaving
+  ``done`` clears it. A no-op move only touches ``updated`` and logs nothing.
+- **Dual-write order**: every mutation runs under the board lock. Frontmatter
+  mutations (``move`` / ``set``, and create in ``.create``) save
+  ``index.json`` FIRST, then patch the ticket ``.md``; body mutations
+  (``ack`` / ``note`` / ``set_body``) write the ``.md`` FIRST, then refresh
+  the index's denormalized fields. A crash between the two writes is
+  recoverable either way because the ``.md`` is the source of truth —
+  ``rebuild_index()`` reconciles.
+- **Log last**: the ``activity.jsonl`` entry is emitted only AFTER both
+  writes completed, so the log never records a change that didn't persist.
+- **Curator seam**: ``move`` fires ``self._on_meta_curate_done`` when a
+  ``meta:curate`` ticket enters ``done``. The hook is injected by
+  ``Board.__init__``; the default (:func:`_default_meta_curate_done`) keeps
+  the curator a lazy soft-import, not a hard dependency of the board.
 """
 from __future__ import annotations
 

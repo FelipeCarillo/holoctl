@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -18,6 +19,7 @@ from ..filters import (
 )
 from ...lib import metrics as _m
 from ...lib.metrics import read_activity_events
+from ...lib.ticket import Ticket
 
 router = APIRouter()
 
@@ -29,7 +31,7 @@ def _workspace_breadcrumbs() -> list[dict]:
     ]
 
 
-def _by_workspace_project(all_tickets: list[dict]) -> list[dict]:
+def _by_workspace_project(all_tickets: list[Ticket]) -> list[dict]:
     """Per-source-project breakdown for the cross-project comparison block.
 
     Each ticket carries a ``_source_alias`` field injected by the route to
@@ -85,7 +87,7 @@ def workspace_metrics(request: Request):
     projects = get_projects(with_git=False)
 
     # Union tickets from every project, stamping _source_alias on each.
-    all_tickets: list[dict] = []
+    all_tickets: list[Ticket] = []
     for p in projects:
         try:
             board = Board(Path(p["path"]), p["config"])
@@ -114,8 +116,11 @@ def workspace_metrics(request: Request):
         except Exception:
             pass
 
-    ctx = metrics_context(  # type: ignore[arg-type]
-        tickets,
+    # Ticket is a TypedDict (a plain dict at runtime); metrics_context wraps
+    # holoctl.lib.metrics which is typed `list[dict]`, and `list` invariance
+    # blocks the direct pass — bridge the seam with a no-op cast.
+    ctx = metrics_context(
+        cast("list[dict]", tickets),
         since_days=f.get("since_days", 30),
         since_preset=f.get("since_preset"),
         activity_events=all_activity_events,

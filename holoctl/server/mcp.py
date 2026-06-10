@@ -1,35 +1,27 @@
 """Minimal MCP (Model Context Protocol) server over stdio.
 
-Implements just enough of the JSON-RPC over stdio protocol for the
-holoctl tools to be discoverable and callable from any MCP-aware client
-(Claude Code, Copilot, Codex, and other MCP-aware assistants).
+Hand-rolled JSON-RPC 2.0 — deliberately no dependency on the ``mcp``
+package (5MB+ install for ~150 lines of protocol). Any MCP-aware client
+(Claude Code, Copilot, Codex, ...) can discover and call the holoctl
+tools. Invariants:
 
-We don't depend on the `mcp` Python package because:
-  1. Adds a 5MB+ install footprint for ~150 lines of protocol logic.
-  2. The MCP spec is intentionally small — JSON-RPC 2.0 with three
-     standard methods (`initialize`, `tools/list`, `tools/call`) plus
-     a few notifications.
-  3. Cold-start latency matters: each MCP call spawns a new Python
-     process via stdio, so import-cheap matters.
-
-Tool surface (write tools land in `permissions.ask` per item 2A of the
-multi-assistant plan):
-
-  Read tools (auto-approved by clients):
-    holoctl.board_list, holoctl.board_get
-    holoctl.memory_list_topics, holoctl.memory_read_topic, holoctl.memory_search
-    holoctl.journal_recent
-    holoctl.agent_list_available
-    holoctl.curate_suggestions
-
-  Write tools (require user approval):
-    holoctl.board_create, holoctl.board_move, holoctl.board_set
-    holoctl.memory_add
-    holoctl.agent_add
-    holoctl.curate_silence
-
-All tool outputs are JSON-stringified per item 4 of the plan; clients
-parse and render natively.
+- **Lifecycle**: the client spawns one short-lived process per session and
+  drives ``initialize`` → ``notifications/initialized`` → ``tools/list`` →
+  N× ``tools/call`` as line-delimited JSON over stdin/stdout. ``ping`` and
+  ``shutdown`` return empty results. A notification (message without ``id``)
+  must NEVER receive a response — answering one violates JSON-RPC and
+  confuses strict clients.
+- **Cold start**: every holoctl-lib import happens inside the tool handlers
+  (see ``_board()``), never at module top. Each assistant call pays a fresh
+  process spawn, so importing this module must stay near-instant.
+- **Tool registry**: ``TOOLS`` is declarative — name, description, JSON
+  schema, handler, ``write`` flag. ``write: True`` tools are routed into the
+  client's ``permissions.ask`` gate at compile time; every result is
+  JSON-stringified into a single text content block.
+- **Concurrency**: the stdio loop is single-threaded, one request at a time
+  per process. Cross-process safety against the CLI / dashboard / other MCP
+  processes is delegated to the board's ``index.json.lock`` (taken inside
+  ``Board`` mutators) — this server holds no lock of its own.
 """
 from __future__ import annotations
 

@@ -154,7 +154,11 @@ ignore = [
 [tool.mypy]
 python_version = "3.11"
 # Lenient by design: a cheap regression net for obvious type errors, not a
-# strict gate. CI runs it on the core (`holoctl/lib`, `holoctl/cli`); the
-# FastAPI dashboard (`holoctl/server/app.py` + routes/views) is dynamically
-# typed and intentionally out of scope (it's only reachable via a lazy import).
+# strict gate. CI runs it on the whole package (`holoctl/` = lib + cli +
+# server); the FastAPI dashboard (`holoctl/server`) joined the net in Wave 2
+# once the typed Ticket schema gave its data flow real types.
 ignore_missing_imports = true
+# `holoctl/__main__.py` is pure typer wiring with a pre-existing quirky
+# `ctx: typer.Context = typer.Context` callback default; it stays out of
+# scope until that CLI surface is touched on its own.
+exclude = "holoctl/__main__\\.py"

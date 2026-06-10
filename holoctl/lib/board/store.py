@@ -1,10 +1,24 @@
 """Board index persistence: load / save / cache / lock / rebuild.
 
-Extracted from the former ``holoctl/lib/board.py`` god module (item 5.3).
 ``BoardIndexStore`` is a mixin — :class:`holoctl.lib.board.Board` inherits it
-and supplies the ``_root`` / ``_board_dir`` / ``_index_path`` / ``_lock_path``
-attributes from its constructor. Also home to the board's activity-log
-appender, the other persistence primitive board mutations rely on.
+and supplies ``_root`` / ``_board_dir`` / ``_index_path`` / ``_lock_path``
+from its constructor (split out of the former board.py god module, item 5.3).
+Also home to the activity-log appender. Invariants:
+
+- **Source of truth**: the per-ticket ``.md`` files. ``index.json`` is a
+  denormalized projection — ``rebuild_index()`` regenerates it from the
+  markdown, so a lost or corrupt index is recoverable by design.
+- **Cache key contract**: ``_INDEX_CACHE`` maps the resolved index path to
+  ``(mtime_ns, size, data)``. ``_load()`` re-stats on every read and serves
+  the cached object only when BOTH mtime_ns and size match.
+- **Torn-read defense**: ``_save()`` stages to a same-directory temp file,
+  fsyncs, then ``os.replace``s — atomic on POSIX and Windows. The replace
+  changes the file's stat, so the revalidation above guarantees a reader
+  sees either the old projection or the new one, never a mix or a stale hit.
+- **Lock ordering**: mutators must hold ``_locked()`` (the cross-process
+  ``index.json.lock``) across the entire load→mutate→save window, and must
+  mutate a ``_load_mut()`` deep copy — a published cache entry is never
+  mutated in place. Plain readers (``_load()``) take no lock.
 """
 from __future__ import annotations
 

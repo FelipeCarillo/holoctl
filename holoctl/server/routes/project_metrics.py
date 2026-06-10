@@ -1,6 +1,7 @@
 """Per-project Metrics tab route."""
 from __future__ import annotations
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -63,8 +64,11 @@ def project_metrics(alias: str, request: Request):
     # Load activity events for time-in-status / flow-efficiency surfaces.
     activity_events = read_activity_events(Path(project["path"]))
 
-    ctx = metrics_context(  # type: ignore[arg-type]
-        tickets,
+    # Ticket is a TypedDict (a plain dict at runtime); metrics_context wraps
+    # holoctl.lib.metrics which is typed `list[dict]`, and `list` invariance
+    # blocks the direct pass — bridge the seam with a no-op cast.
+    ctx = metrics_context(
+        cast("list[dict]", tickets),
         since_days=f.get("since_days", 30),
         since_preset=f.get("since_preset"),
         activity_events=activity_events,

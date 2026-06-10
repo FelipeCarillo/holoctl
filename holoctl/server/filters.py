@@ -22,8 +22,11 @@ Filter semantics
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 from urllib.parse import urlencode
+
+if TYPE_CHECKING:
+    from ..lib.ticket import Ticket
 
 
 # ── Filter model ─────────────────────────────────────────────────────────────
@@ -200,11 +203,11 @@ def parse_filter_from_query(
 
 
 def apply_filter(
-    tickets: list[dict],
+    tickets: list[Ticket],
     f: MetricsFilter,
     *,
     now: datetime | None = None,
-) -> list[dict]:
+) -> list[Ticket]:
     """Return the subset of *tickets* that match every active filter criterion.
 
     Date filter
@@ -240,7 +243,7 @@ def apply_filter(
     sprints: set[str] = f.get("sprints", set())  # type: ignore[assignment]
     priorities: set[str] = f.get("priorities", set())  # type: ignore[assignment]
 
-    out: list[dict] = []
+    out: list[Ticket] = []
     for t in tickets:
         # ── Date range on `created` ──────────────────────────────────────────
         if since is not None or until is not None:
@@ -388,7 +391,7 @@ def build_preset_urls(f: MetricsFilter) -> dict[str, str]:
     }
 
 
-def available_filter_options(tickets: list[dict]) -> dict[str, list[str]]:
+def available_filter_options(tickets: list[Ticket]) -> dict[str, list[str]]:
     """Return sorted unique values present in *tickets* for each filterable field.
 
     Returns a dict with keys: ``tags``, ``kinds``, ``statuses``, ``agents``,

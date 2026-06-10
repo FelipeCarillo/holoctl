@@ -39,7 +39,7 @@ jobs:
         run: uv run ruff format --check holoctl/ tests/ || true
 
       - name: Type check — mypy
-        run: uv run mypy holoctl/lib holoctl/cli
+        run: uv run mypy holoctl/
 
       # Version consistency: pyproject [project].version must equal the latest
       # released `## [X.Y.Z]` header in holoctl/CHANGELOG.md. Read-only check.
