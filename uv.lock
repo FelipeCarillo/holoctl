@@ -421,30 +421,24 @@ name = "holoctl"
 version = "0.20.4"
 source = { editable = "." }
 dependencies = [
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-dashboard = [
     { name = "fastapi" },
     { name = "jinja2" },
     { name = "markdown-it-py" },
     { name = "mdit-py-plugins" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "typer" },
     { name = "uvicorn" },
 ]
+
+[package.optional-dependencies]
 ml = [
     { name = "fastembed" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "fastapi" },
     { name = "httpx" },
-    { name = "jinja2" },
-    { name = "markdown-it-py" },
-    { name = "mdit-py-plugins" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -452,30 +446,25 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "types-pyyaml" },
-    { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", marker = "extra == 'dashboard'", specifier = ">=0.115" },
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "fastembed", marker = "extra == 'ml'", specifier = ">=0.4" },
-    { name = "jinja2", marker = "extra == 'dashboard'", specifier = ">=3.1" },
-    { name = "markdown-it-py", marker = "extra == 'dashboard'", specifier = ">=3.0" },
-    { name = "mdit-py-plugins", marker = "extra == 'dashboard'", specifier = ">=0.4" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "markdown-it-py", specifier = ">=3.0" },
+    { name = "mdit-py-plugins", specifier = ">=0.4" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "rich", specifier = ">=13" },
     { name = "typer", specifier = ">=0.12" },
-    { name = "uvicorn", marker = "extra == 'dashboard'", specifier = ">=0.30" },
+    { name = "uvicorn", specifier = ">=0.30" },
 ]
 provides-extras = ["dashboard", "ml"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "jinja2", specifier = ">=3.1" },
-    { name = "markdown-it-py", specifier = ">=3.0" },
-    { name = "mdit-py-plugins", specifier = ">=0.4" },
     { name = "mypy", specifier = ">=1.11" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-cov", specifier = ">=5" },
@@ -483,7 +472,6 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.5" },
     { name = "ruff", specifier = ">=0.6" },
     { name = "types-pyyaml", specifier = ">=6" },
-    { name = "uvicorn", specifier = ">=0.30" },
 ]
 
 [[package]]

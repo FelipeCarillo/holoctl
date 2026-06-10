@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
-pytest.importorskip("markdown_it")
-
 from holoctl.server.markdown import render_markdown, strip_empty_sections
 
 

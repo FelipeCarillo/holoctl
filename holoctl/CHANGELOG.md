@@ -4,6 +4,10 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+### Changed
+
+- **The dashboard now installs with the base package** — `pip install holoctl` brings the full web stack; no `holoctl[dashboard]` extra to remember. The extra is kept as an empty no-op so existing `pip install 'holoctl[dashboard]'` instructions keep working. The web stack remains a lazy import: CLI/MCP cold-start still never loads fastapi/uvicorn/jinja2 (guarded by `test_cli_import_does_not_pull_web_stack`); `hctl serve` no longer needs (or prints) an install hint.
+
 ## [0.20.4] — 2026-05-28
 
 Doc + help refresh: bring README and a few stale `--help` strings in

@@ -16,9 +16,6 @@ from pathlib import Path
 
 import pytest
 
-# The dashboard is an optional extra (`holoctl[dashboard]`); skip this whole
-# module cleanly when the web stack isn't installed rather than erroring out.
-pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 import json
