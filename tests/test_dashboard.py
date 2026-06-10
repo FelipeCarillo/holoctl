@@ -3037,21 +3037,39 @@ class TestApiEventsStream:
         assert changed is not None and changed[1] is not None
         assert "Snap2" in changed[1]
 
-    def test_returns_503_when_connection_cap_reached(self, client: TestClient, alias: str):
-        # Simulate a fully-saturated semaphore so the route's fast-path 503
-        # fires without us having to open 32 real long-lived streams.
-        import asyncio as _asyncio
-
+    def test_returns_503_when_connection_cap_reached(
+        self, client: TestClient, alias: str, monkeypatch
+    ):
+        # Saturate the live-connection counter so the route's 503 fires
+        # without us having to open 32 real long-lived streams.
         from holoctl.server import app as app_module
 
-        original = app_module._sse_semaphore
-        app_module._sse_semaphore = _asyncio.Semaphore(1)
-        # Drain the single slot so `.locked()` is True for the request.
-        loop = _asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(app_module._sse_semaphore.acquire())
-            r = client.get(f"/api/project/{alias}/events")
-            assert r.status_code == 503
-        finally:
-            loop.close()
-            app_module._sse_semaphore = original
+        monkeypatch.setattr(
+            app_module, "_sse_connections", app_module._SSE_MAX_CONNECTIONS
+        )
+        r = client.get(f"/api/project/{alias}/events")
+        assert r.status_code == 503
+
+    def test_sse_slot_take_and_release_accounting(self):
+        """The slot reservation happens synchronously in the handler (no await
+        between check and increment → no TOCTOU among concurrent connects),
+        and release is idempotent — it runs from both the generator's finally
+        and the response's background task, whichever fires, exactly once."""
+        from holoctl.server import app as app_module
+
+        before = app_module._sse_connections
+        release = app_module._sse_take_slot()
+        assert release is not None
+        assert app_module._sse_connections == before + 1
+        release()
+        assert app_module._sse_connections == before
+        release()  # idempotent — second call must not double-decrement
+        assert app_module._sse_connections == before
+
+    def test_sse_slot_denied_when_full(self, monkeypatch):
+        from holoctl.server import app as app_module
+
+        monkeypatch.setattr(
+            app_module, "_sse_connections", app_module._SSE_MAX_CONNECTIONS
+        )
+        assert app_module._sse_take_slot() is None
