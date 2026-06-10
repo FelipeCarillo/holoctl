@@ -4,9 +4,40 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-06-10
+
+Code-review follow-up release (PR #48): board integrity under concurrent
+writers, a dashboard XSS fix, frontend repairs, compiler strictness with
+escape hatches, DX tooling — and the dashboard now ships with the base
+install.
+
+### Security
+
+- **Markdown XSS in ticket bodies fixed** — the dashboard's markdown parser is built with `html: False`, so raw HTML from untrusted ticket bodies (e.g. `/spec` imports) is escaped instead of rendered (`<img onerror=...>` no longer executes). Normal markdown (headings, lists, tables, code, task lists) renders unchanged. Frontend hardening to match: shared `esc()` on every dynamic `innerHTML`, toasts via `textContent`.
+
+### Added
+
+- **Bulk move endpoint** — `POST /api/project/{alias}/tickets/bulk-move` (`{ids, status}` → per-id results; 200 on partial failure, mirroring the MCP `batch_move` contract).
+- Denormalized `acceptance_total`/`acceptance_done` per ticket in `index.json` (transparent backfill — child DoD progress no longer re-reads every `.md`).
+- Strict-template escape hatches: `${{ ... }}` (GitHub Actions / shell templating) passes through untouched; `\{{...}}` emits literal braces.
+- Foreign-assistant drift guard: the `holoctl-foreign-bootstrap` skill records generated-file hashes in `.holoctl/.foreign-compiled.json` and warns before overwriting hand-edits.
+- DX tooling: `pytest-xdist` (`-n auto`), `pytest-cov`, `pytest-timeout`; ESLint flat config as a **blocking** CI job (pinned major); `scripts/validate_changelog.py` keeps pyproject ↔ CHANGELOG in sync in CI; shared `seed_workspace`/`cli_runner` fixtures.
+
 ### Changed
 
 - **The dashboard now installs with the base package** — `pip install holoctl` brings the full web stack; no `holoctl[dashboard]` extra to remember. The extra is kept as an empty no-op so existing `pip install 'holoctl[dashboard]'` instructions keep working. The web stack remains a lazy import: CLI/MCP cold-start still never loads fastapi/uvicorn/jinja2 (guarded by `test_cli_import_does_not_pull_web_stack`); `hctl serve` no longer needs (or prints) an install hint.
+- **Compile resolves templates in strict mode** — an unresolved `{{placeholder}}` (typo or stray prose) now fails the compile with an actionable error naming the key, instead of leaking literal braces into generated files. Use the escape hatches above for intentional literals; a present-but-null config key gets its own message.
+- Incremental compile: unchanged outputs are not rewritten (stable mtimes, no git churn); `/holoctl` + `/hctl-upgrade` bootstraps are ledger-tracked (doctor/prune manage them); `SYNC_TARGETS` is derived from `get_templates()` so the sync list can't drift.
+- SSE stream: file I/O off the event loop (`asyncio.to_thread`), stat-first polls (idle ticks cost one `stat()`), 32-connection hard cap with a TOCTOU-free counter (503 when saturated), `: keepalive` every ~25s.
+- `__version__` comes solely from `importlib.metadata` (fallback `0.0.0+unknown`) — no hardcoded version string to drift.
+
+### Fixed
+
+- **Board concurrency** — every load→mutate→save holds a cross-process lock (sidecar `index.json.lock`) and `_save` is atomic (temp file + `os.replace`): concurrent CLI × MCP × dashboard writers no longer last-write-wins. Mutators work on a deep copy, so readers never observe half-applied state; transient Windows `PermissionError` (sharing violations) is retried on both the writer and reader sides; a lock-acquisition timeout now logs a warning instead of degrading silently.
+- Frontmatter patches go through parse→mutate→serialize (no more per-field regex that could clobber body lines); values with colons, quotes, and commas round-trip correctly.
+- Three broken dashboard flows — kanban "+ Add ticket", bulk move/archive, inline detail edits — repaired by extracting shared `api.js`/`dom.js`/`util.js`/`popover.js` modules (the cross-module `ReferenceError`s are gone, and ESLint now guards them).
+- Dashboard UX/a11y: popover focus management + arrow-key navigation, toast `role="status"`, in-place updates instead of forced reloads, selection survives SSE board swaps, `prefers-color-scheme` honored, stagger/grouping selector bugs fixed; dead `project-filter.js` removed.
+- Curator rule failures are logged (no longer swallowed); `_deep_merge` is pure; `HOLOCTL_LOCK_TIMEOUT` env var tunes lock acquisition.
 
 ## [0.20.4] — 2026-05-28
 
