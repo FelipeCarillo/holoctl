@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .dates import format_iso_datetime
 from ..markdown import render_markdown
+from ...lib.ticket import Ticket
 
 
 _TYPE_RANK = {
@@ -53,9 +54,9 @@ def read_ticket_activity(project_root: Path, ticket_id: str) -> list[dict]:
     return out
 
 
-def detail_context(ticket: dict, body: str, alias: str,
+def detail_context(ticket: Ticket, body: str, alias: str,
                    *,
-                   all_tickets: list[dict] | None = None,
+                   all_tickets: list[Ticket] | None = None,
                    project_root: Path | None = None,
                    statuses: list[str] | None = None) -> dict:
 
@@ -67,7 +68,7 @@ def detail_context(ticket: dict, body: str, alias: str,
     parent_id = ticket.get("parent") or ""
     kind = ticket.get("kind") or "task"
 
-    children_list: list[dict] = []
+    children_list: list[Ticket] = []
     blocks_list: list[str] = []
     if all_tickets is not None:
         ours = ticket.get("id")

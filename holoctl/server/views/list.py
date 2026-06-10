@@ -2,11 +2,12 @@
 dense table template."""
 from __future__ import annotations
 
+from ...lib.ticket import Ticket
 from .card import card_context
 from .dates import format_relative_date
 
 
-def _row_context(t: dict, alias: str) -> dict:
+def _row_context(t: Ticket, alias: str) -> dict:
     """Card context + the list-specific updated-date display string."""
     c = card_context(t, alias)
     upd_disp, upd_full = format_relative_date(t.get("updated", ""))
@@ -15,11 +16,11 @@ def _row_context(t: dict, alias: str) -> dict:
     return c
 
 
-def list_context(tickets: list[dict], statuses: list[str], alias: str) -> dict:
+def list_context(tickets: list[Ticket], statuses: list[str], alias: str) -> dict:
     """Group tickets by status, in config order. Anything off-config sinks
     into an `(unsorted)` bucket so it still renders."""
-    grouped: dict[str, list[dict]] = {s: [] for s in statuses}
-    extras: list[dict] = []
+    grouped: dict[str, list[Ticket]] = {s: [] for s in statuses}
+    extras: list[Ticket] = []
     for t in tickets:
         s = t.get("status", "")
         (grouped[s] if s in grouped else extras).append(t)

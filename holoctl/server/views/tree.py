@@ -1,13 +1,14 @@
 """Tree view presenter: hierarchical ticket layout by parent/child."""
 from __future__ import annotations
 
+from ...lib.ticket import Ticket
 from .card import card_context
 
 
-def tree_context(tickets: list[dict], alias: str) -> dict:
+def tree_context(tickets: list[Ticket], alias: str) -> dict:
     """Flatten tickets into a depth-first sequence with the glyph-state each
     row needs to draw its part of the connector tree (├─ / └─)."""
-    by_id: dict[str, dict] = {t["id"]: t for t in tickets}
+    by_id: dict[str, Ticket] = {t["id"]: t for t in tickets}
     kids: dict[str | None, list[str]] = {}
     for t in tickets:
         p = t.get("parent") or None

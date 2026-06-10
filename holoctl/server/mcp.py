@@ -37,7 +37,12 @@ import json
 import sys
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # Type-only import: at runtime the board module is loaded lazily inside
+    # `_board()` to keep the MCP server's cold-start cheap (module docstring).
+    from ..lib.board import Board
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "holoctl"
@@ -60,7 +65,7 @@ def _project_root() -> Path:
     return root
 
 
-def _board() -> Any:
+def _board() -> "Board":
     """Build a Board for the current workspace.
 
     Collapses the `import Board, load_config; instantiate` preamble repeated

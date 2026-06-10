@@ -2,10 +2,11 @@
 from __future__ import annotations
 from pathlib import Path
 
+from ...lib.ticket import Ticket
 from .card import card_context
 
 
-def board_context(project: dict, tickets: list[dict], config: dict,
+def board_context(project: dict, tickets: list[Ticket], config: dict,
                   view: str = "kanban") -> dict:
     """Prep the board page context: header, controls, columns (for kanban view)."""
     alias = project["alias"]

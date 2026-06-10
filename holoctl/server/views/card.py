@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ..markdown import strip_empty_sections
 from ...lib.markdown import parse_frontmatter
+from ...lib.ticket import Ticket
 
 
 def format_due(due_iso: str) -> str:
@@ -29,7 +30,7 @@ def format_due(due_iso: str) -> str:
         return ""
 
 
-def ticket_preview(project_root: Path, ticket: dict, max_chars: int = 80) -> str:
+def ticket_preview(project_root: Path, ticket: Ticket, max_chars: int = 80) -> str:
     """First non-trivial prose line from a ticket .md, for the kanban card preview.
 
     Strips frontmatter, drops empty/placeholder sections, then walks the body
@@ -92,7 +93,7 @@ def ticket_preview(project_root: Path, ticket: dict, max_chars: int = 80) -> str
     return ""
 
 
-def card_context(t: dict, alias: str, *, project_root: Path | None = None) -> dict:
+def card_context(t: Ticket, alias: str, *, project_root: Path | None = None) -> dict:
     """Normalize a ticket dict for the card macros.
 
     Pre-computes CSV variants used by `data-*` attributes (so the template

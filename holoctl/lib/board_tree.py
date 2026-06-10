@@ -7,9 +7,11 @@ ancestor-keep expansion, deterministic DFS) lives apart from the data layer.
 """
 from __future__ import annotations
 
+from .ticket import Ticket
+
 
 def render_tree(
-    all_tickets: list[dict],
+    all_tickets: list[Ticket],
     matched_ids: set[str],
     root: str | None = None,
 ) -> list[dict]:
@@ -26,7 +28,7 @@ def render_tree(
 
     ``root`` restricts the result to the subtree rooted at that id.
     """
-    by_id: dict[str, dict] = {t["id"]: t for t in all_tickets}
+    by_id: dict[str, Ticket] = {t["id"]: t for t in all_tickets}
 
     # Expand the matched set with every ancestor — keeps the tree readable.
     keep: set[str] = set()

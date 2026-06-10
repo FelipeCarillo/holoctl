@@ -7,11 +7,13 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 from .board_body import build_body
 from .board_tree import render_tree
 from .jsonl import file_lock
 from .markdown import parse_frontmatter, serialize_frontmatter
+from .ticket import TICKET_LIST_FIELDS, TICKET_SOURCE_FIELDS, Ticket
 
 # Process-wide cache of parsed index.json, keyed by absolute index path.
 # Each entry is (mtime_ns, size, data). Validated on every read against the
@@ -196,7 +198,7 @@ class Board:
             dir=str(self._board_dir), prefix=".index.", suffix=".tmp"
         )
 
-    def _recount(self, tickets: list[dict]) -> dict:
+    def _recount(self, tickets: list[Ticket]) -> dict:
         counts: dict = {s: 0 for s in self._config["board"]["statuses"]}
         for t in tickets:
             counts[t["status"]] = counts.get(t["status"], 0) + 1
@@ -287,7 +289,7 @@ class Board:
             )
 
     def _validate_parent_change(
-        self, tickets: list[dict], child_id: str, new_parent: object
+        self, tickets: list[Ticket], child_id: str, new_parent: object
     ) -> str | None:
         """Reject self-parenting, missing parents, and cycles.
 
@@ -304,7 +306,7 @@ class Board:
             raise ValueError(
                 f"Refusing to set parent: ticket {child_id} cannot be its own parent (cycle)."
             )
-        by_id = {t["id"]: t for t in tickets}
+        by_id: dict[str, Ticket] = {t["id"]: t for t in tickets}
         if parent_id not in by_id:
             raise KeyError(
                 f"Parent ticket {parent_id} not found. "
@@ -336,13 +338,13 @@ class Board:
         data = self._load()
         return {**data["meta"]["counts"], "nextId": data["meta"]["nextId"]}
 
-    def get(self, ticket_id: str) -> dict | None:
+    def get(self, ticket_id: str) -> Ticket | None:
         data = self._load()
         return next((t for t in data["tickets"] if t["id"] == ticket_id), None)
 
-    def ls(self, filters: dict | None = None) -> list[dict]:
+    def ls(self, filters: dict | None = None) -> list[Ticket]:
         data = self._load()
-        tickets = data["tickets"]
+        tickets: list[Ticket] = data["tickets"]
         f = filters or {}
 
         if f.get("sprint"):
@@ -384,7 +386,7 @@ class Board:
         ``root`` restricts the result to the subtree rooted at that id.
         """
         data = self._load()
-        all_tickets: list[dict] = data["tickets"]
+        all_tickets: list[Ticket] = data["tickets"]
         if filters:
             matched_ids = {t["id"] for t in self.ls(filters)}
         else:
@@ -402,10 +404,12 @@ class Board:
           - by_status: counts of children per status
         """
         data = self._load()
-        parent = next((t for t in data["tickets"] if t["id"] == parent_id), None)
+        parent: Ticket | None = next(
+            (t for t in data["tickets"] if t["id"] == parent_id), None
+        )
         if not parent:
             raise KeyError(f"Ticket {parent_id} not found")
-        children = [t for t in data["tickets"] if t.get("parent") == parent_id]
+        children: list[Ticket] = [t for t in data["tickets"] if t.get("parent") == parent_id]
         # Aggregate DoD progress from the denormalized counts stored in the
         # index (task 4.3) — no longer reads every child .md per view. For an
         # old index that predates these fields, fall back to reading the body
@@ -440,7 +444,7 @@ class Board:
             "by_status": by_status,
         }
 
-    def _backfill_acceptance(self, ticket: dict) -> tuple[int, int]:
+    def _backfill_acceptance(self, ticket: Ticket) -> tuple[int, int]:
         """Read a ticket's .md body and return ``(total, done)`` DoD counts.
 
         Used as the backward-compat fallback when an index entry predates the
@@ -478,7 +482,7 @@ class Board:
 
     def _apply_status_change(
         self,
-        ticket: dict,
+        ticket: Ticket,
         old_status: str,
         new_status: str,
         now: str,
@@ -511,6 +515,7 @@ class Board:
         return patches
 
     def move(self, ticket_id: str, new_status: str) -> dict:
+        # NOTE: returns a result envelope (id/from/to[/curator_*]), not a Ticket.
         valid = self._config["board"]["statuses"]
         if new_status not in valid:
             raise ValueError(f"Invalid status: {new_status}. Valid: {'|'.join(valid)}")
@@ -519,7 +524,9 @@ class Board:
         # MCP-server writer can't clobber this mutation (last-write-wins).
         with self._locked():
             data = self._load_mut()
-            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            ticket: Ticket | None = next(
+                (t for t in data["tickets"] if t["id"] == ticket_id), None
+            )
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
 
@@ -560,7 +567,7 @@ class Board:
         # to `done`, the curator action stored in the parallel metadata file
         # is applied. Reversible (e.g. `hctl agent remove` undoes agent_add).
         # Soft-import so curator is not a hard dependency of the board.
-        result = {"id": ticket_id, "from": old_status, "to": new_status}
+        result: dict = {"id": ticket_id, "from": old_status, "to": new_status}
         if (
             new_status == "done"
             and old_status != new_status
@@ -568,7 +575,9 @@ class Board:
         ):
             try:
                 from .curator import apply_curator_action
-                applied = apply_curator_action(self._root, ticket)
+                # cast: apply_curator_action takes a plain dict; a Ticket IS one
+                # at runtime (TypedDict), the cast only bridges the annotation.
+                applied = apply_curator_action(self._root, cast(dict, ticket))
                 if applied is not None:
                     result["curator_applied"] = applied
             except Exception as exc:
@@ -650,7 +659,7 @@ class Board:
 
         return {"id": ticket_id, "field": field, "value": parsed}
 
-    def add(self, patch: dict) -> dict:
+    def add(self, patch: dict) -> Ticket:
         title = (patch.get("title") or "").strip()
         if not title:
             raise ValueError(
@@ -730,7 +739,7 @@ class Board:
             source_url = patch.get("source_url")
             source_label = patch.get("source_label")
 
-            ticket: dict = {
+            ticket: Ticket = {
                 "id": ticket_id,
                 "title": title,
                 "kind": kind,
@@ -778,7 +787,9 @@ class Board:
         """
         with self._locked():
             data = self._load_mut()
-            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            ticket: Ticket | None = next(
+                (t for t in data["tickets"] if t["id"] == ticket_id), None
+            )
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
 
@@ -838,7 +849,9 @@ class Board:
         for ticket inspection — used by `/board <ID>` and `mcp__holoctl__board_show`.
         """
         data = self._load()
-        ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+        ticket: Ticket | None = next(
+            (t for t in data["tickets"] if t["id"] == ticket_id), None
+        )
         if not ticket:
             raise KeyError(f"Ticket {ticket_id} not found")
         if not ticket.get("file"):
@@ -864,7 +877,9 @@ class Board:
         """
         with self._locked():
             data = self._load_mut()
-            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            ticket: Ticket | None = next(
+                (t for t in data["tickets"] if t["id"] == ticket_id), None
+            )
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
             if not ticket.get("file"):
@@ -914,7 +929,9 @@ class Board:
             raise ValueError("Note text is empty.")
         with self._locked():
             data = self._load_mut()
-            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            ticket: Ticket | None = next(
+                (t for t in data["tickets"] if t["id"] == ticket_id), None
+            )
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
             if not ticket.get("file"):
@@ -954,7 +971,9 @@ class Board:
         """Replace the body of a ticket .md, preserving frontmatter."""
         with self._locked():
             data = self._load_mut()
-            ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
+            ticket: Ticket | None = next(
+                (t for t in data["tickets"] if t["id"] == ticket_id), None
+            )
             if not ticket:
                 raise KeyError(f"Ticket {ticket_id} not found")
 
@@ -1018,9 +1037,9 @@ class Board:
             m = {**(shared or {})}
             # Per-ticket fields win over shared.
             m.update(t)
-            # Merge array fields (tags / projects / depends / files / agent)
+            # Merge array fields (agent / projects / files / depends / tags)
             # additively — shared defaults + per-ticket extras.
-            for key in ("tags", "projects", "depends", "files", "agent"):
+            for key in TICKET_LIST_FIELDS:
                 shared_val = _normalize_array((shared or {}).get(key))
                 ticket_val = _normalize_array(t.get(key))
                 merged_arr = list(dict.fromkeys(shared_val + ticket_val))  # dedupe, keep order
@@ -1031,10 +1050,7 @@ class Board:
             # that makes "boardmaster decomposes a spec into N tasks" — the
             # shared.parent = SPEC_ID + shared.source_* = spec's origin
             # gets inherited by all children for free.
-            for key in (
-                "parent", "kind",
-                "source_provider", "source_ref", "source_url", "source_label",
-            ):
+            for key in ("parent", "kind", *TICKET_SOURCE_FIELDS):
                 if key not in t and (shared or {}).get(key) is not None:
                     m[key] = (shared or {})[key]
             merged.append(m)
@@ -1055,7 +1071,7 @@ class Board:
             self._validate_agents(agents)
 
         # All clear — create.
-        created = [self.add(m) for m in merged]
+        created: list[Ticket] = [self.add(m) for m in merged]
         return {"count": len(created), "tickets": created}
 
     def _validate_batch_parallelism(self, tickets: list[dict]) -> None:
@@ -1097,7 +1113,7 @@ class Board:
     def rebuild_index(self) -> dict:
         self._tickets_dir.mkdir(parents=True, exist_ok=True)
         files = sorted(self._tickets_dir.glob("*.md"))
-        tickets = []
+        tickets: list[Ticket] = []
         now = _now()
 
         for f in files:
@@ -1179,7 +1195,7 @@ class Board:
             "# Execution notes\n\n(Agent fills during work)\n"
         )
 
-    def _create_ticket_md(self, ticket: dict, body: str | None = None) -> None:
+    def _create_ticket_md(self, ticket: Ticket, body: str | None = None) -> None:
         md_path = self._board_dir / ticket["file"]
         md_path.parent.mkdir(parents=True, exist_ok=True)
 

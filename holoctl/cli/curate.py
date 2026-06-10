@@ -135,7 +135,10 @@ def curate_apply(
     if ticket is None:
         console.print(f"[red]Ticket {ticket_id} not found[/red]")
         raise typer.Exit(1)
-    result = apply_curator_action(root, ticket)
+    # cast: apply_curator_action takes a plain dict; a Ticket IS one at
+    # runtime (TypedDict), the cast only bridges the annotation.
+    from typing import cast
+    result = apply_curator_action(root, cast(dict, ticket))
     if result is None:
         console.print(
             f"[yellow]Ticket {ticket_id} has no curator metadata — nothing to apply.[/yellow]"
