@@ -215,16 +215,26 @@ _SSE_POLL_SECONDS = 2
 _SSE_HEARTBEAT_SECONDS = 25
 
 
-def _read_index_snapshot(index_path: Path) -> tuple[float, str] | None:
+def _read_index_snapshot(
+    index_path: Path, last_mtime: float | None = None
+) -> tuple[float, str | None] | None:
     """Read + compact the board index for the SSE payload.
 
-    Returns `(mtime, single_line_json)` or None if the file is absent.
+    Stat-first: when *last_mtime* is given and the file's mtime hasn't moved,
+    returns ``(mtime, None)`` after the stat alone — no read, no JSON parse.
+    This runs every poll tick (2s) per connection, so skipping the full
+    read+parse for the (overwhelmingly common) idle case matters.
+
+    Returns ``None`` if the file is absent, ``(mtime, None)`` if unchanged
+    since *last_mtime*, or ``(mtime, single_line_json)`` with fresh content.
     Runs blocking filesystem I/O, so callers invoke it via
     `asyncio.to_thread` to keep the event loop free.
     """
     if not index_path.exists():
         return None
     mtime = index_path.stat().st_mtime
+    if last_mtime is not None and mtime == last_mtime:
+        return mtime, None
     # The on-disk index.json is pretty-printed (indent="\t"), but the SSE
     # protocol treats every newline inside the `data:` field as a record
     # terminator — the browser would only see "{" before the first newline.
@@ -259,10 +269,13 @@ async def api_events(alias: str):
                 try:
                     # File I/O off the event loop so blocking stat()/read_text()
                     # can't stall every other request sharing this worker.
-                    snapshot = await asyncio.to_thread(_read_index_snapshot, index_path)
+                    # Stat-first: `data is None` means unchanged since last_mtime.
+                    snapshot = await asyncio.to_thread(
+                        _read_index_snapshot, index_path, last_mtime
+                    )
                     if snapshot is not None:
                         mtime, data = snapshot
-                        if mtime != last_mtime:
+                        if data is not None:
                             last_mtime = mtime
                             yield f"event: board-update\ndata: {data}\n\n"
                             since_heartbeat = 0.0

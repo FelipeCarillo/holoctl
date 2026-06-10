@@ -3003,6 +3003,40 @@ class TestApiEventsStream:
 
         assert _read_index_snapshot(tmp_path / "nope" / "index.json") is None
 
+    def test_snapshot_helper_is_stat_first_when_mtime_unchanged(
+        self, client: TestClient, alias: str, workspace: Path, monkeypatch
+    ):
+        """With `last_mtime` given and the file unchanged, the helper must
+        return early on the stat alone — no read, no JSON parse. This runs
+        every 2s per connection, so the read-every-poll version did the full
+        parse work ~30×/min/connection for an idle board."""
+        from holoctl.server.app import _read_index_snapshot
+
+        client.post(f"/api/project/{alias}/tickets", json={"title": "Snap"})
+        index_path = workspace / ".holoctl" / "board" / "index.json"
+        first = _read_index_snapshot(index_path)
+        assert first is not None and first[1] is not None
+        mtime = first[0]
+
+        calls = {"n": 0}
+        orig_read_text = Path.read_text
+
+        def counting_read_text(self, *args, **kwargs):
+            if self == index_path:
+                calls["n"] += 1
+            return orig_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", counting_read_text)
+        again = _read_index_snapshot(index_path, last_mtime=mtime)
+        assert again == (mtime, None), "unchanged file must short-circuit to (mtime, None)"
+        assert calls["n"] == 0, "stat-first path must not read the file"
+
+        # A real change is still picked up (fresh read, data present).
+        client.post(f"/api/project/{alias}/tickets", json={"title": "Snap2"})
+        changed = _read_index_snapshot(index_path, last_mtime=mtime)
+        assert changed is not None and changed[1] is not None
+        assert "Snap2" in changed[1]
+
     def test_returns_503_when_connection_cap_reached(self, client: TestClient, alias: str):
         # Simulate a fully-saturated semaphore so the route's fast-path 503
         # fires without us having to open 32 real long-lived streams.
