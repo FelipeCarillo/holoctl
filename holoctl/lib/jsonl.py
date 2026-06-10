@@ -19,6 +19,7 @@ separate sidecar lock file rather than appending to a JSONL.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -149,6 +150,19 @@ def file_lock(lock_path: Path) -> Iterator:
     _have_lock = False
     try:
         _have_lock = _os_lock(f)
+        if not _have_lock:
+            # Proceeding without the OS lock reopens the last-write-wins window
+            # this lock exists to close — callers' mutations may clobber a
+            # concurrent writer. Unlike locked_append (where an unlocked small
+            # append is still atomic), here silence would hide real corruption
+            # risk, so make the degradation observable.
+            logging.getLogger(__name__).warning(
+                "file_lock: could not acquire OS lock on %s (timeout %.1fs); "
+                "proceeding without cross-process serialization — a concurrent "
+                "writer may clobber this mutation",
+                lock_path,
+                _lock_timeout(),
+            )
         yield
         if _have_lock:
             _os_unlock(f)
