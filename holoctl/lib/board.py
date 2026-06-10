@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,8 +31,6 @@ def _replace_with_retry(src: str, dst: "Path | str", attempts: int = 20) -> None
     open for the duration of a single ``read_text``, so a few millisecond
     retries are enough. POSIX renames never take this path.
     """
-    import time
-
     for attempt in range(attempts):
         try:
             os.replace(src, dst)
@@ -94,23 +93,42 @@ class Board:
         return str(self._index_path.resolve())
 
     def _load(self) -> dict:
-        if not self._index_path.exists():
-            return {
-                "meta": {"version": 1, "updated": _now(), "nextId": 1, "counts": {}},
-                "tickets": [],
-            }
-        # In-memory cache keyed by (path, mtime_ns, size). We re-stat on every
-        # read and only serve the cached object when both mtime AND size match,
-        # so a concurrent writer's os.replace (which changes the inode's stat)
-        # always forces a fresh parse — never a torn read.
-        st = self._index_path.stat()
-        key = self._cache_key()
-        cached = _INDEX_CACHE.get(key)
-        if cached is not None and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
-            return cached[2]
-        data = json.loads(self._index_path.read_text(encoding="utf-8"))
-        _INDEX_CACHE[key] = (st.st_mtime_ns, st.st_size, data)
-        return data
+        # Reader-side mirror of `_replace_with_retry`: on Windows, opening the
+        # index while a concurrent writer's os.replace is in flight fails with
+        # a transient PermissionError (sharing violation). Retry briefly so
+        # unlocked readers (dashboard GETs, CLI list) don't surface a 500 /
+        # crash for a millisecond-scale race; a *persistent* error (real ACL
+        # problem) still raises after the bounded attempts.
+        attempts = 20
+        for attempt in range(attempts):
+            if not self._index_path.exists():
+                return {
+                    "meta": {"version": 1, "updated": _now(), "nextId": 1, "counts": {}},
+                    "tickets": [],
+                }
+            # In-memory cache keyed by (path, mtime_ns, size). We re-stat on
+            # every read and only serve the cached object when both mtime AND
+            # size match, so a concurrent writer's os.replace (which changes
+            # the inode's stat) always forces a fresh parse — never a torn read.
+            key = self._cache_key()
+            try:
+                st = self._index_path.stat()
+                cached = _INDEX_CACHE.get(key)
+                if cached is not None and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+                    return cached[2]
+                data = json.loads(self._index_path.read_text(encoding="utf-8"))
+            except PermissionError:
+                if attempt == attempts - 1:
+                    raise
+                time.sleep(0.005 * (attempt + 1))
+                continue
+            except FileNotFoundError:
+                # Deleted/replaced between exists() and open — re-evaluate from
+                # the top (next iteration returns the empty default if gone).
+                continue
+            _INDEX_CACHE[key] = (st.st_mtime_ns, st.st_size, data)
+            return data
+        raise PermissionError(f"could not read {self._index_path} after {attempts} attempts")
 
     def _save(self, data: dict) -> None:
         self._board_dir.mkdir(parents=True, exist_ok=True)

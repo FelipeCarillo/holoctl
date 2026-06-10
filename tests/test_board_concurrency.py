@@ -91,6 +91,14 @@ def test_save_is_atomic_no_torn_read(workspace: Path, workspace_config: dict):
                 _read_index(workspace)
             except json.JSONDecodeError as e:
                 read_errors.append(e)
+            except PermissionError:
+                # Windows: a raw open can hit a sharing violation while the
+                # writer's os.replace is in flight. That's not a torn read —
+                # the contract under test is "never parse a half-written
+                # file" — so skip and re-read. Without this the thread died
+                # on the first hit (leaking an unhandled-thread-exception
+                # warning) and silently stopped exercising reads mid-test.
+                continue
 
     rt = threading.Thread(target=reader)
     rt.start()
@@ -104,6 +112,58 @@ def test_save_is_atomic_no_torn_read(workspace: Path, workspace_config: dict):
         rt.join()
 
     assert not read_errors, read_errors
+
+
+def test_load_retries_transient_permission_error(
+    workspace: Path, workspace_config: dict, monkeypatch
+):
+    """On Windows a reader's open can race a concurrent writer's os.replace
+    and fail with a sharing violation (the writer side already retries — see
+    _replace_with_retry). `_load` must absorb a transient PermissionError with
+    a short bounded retry instead of surfacing a 500/CLI crash."""
+    board = Board(workspace, workspace_config)
+    board.add({"title": "X"})
+    _INDEX_CACHE.clear()  # force the next _load to hit the disk
+
+    index_path = workspace / ".holoctl" / "board" / "index.json"
+    orig_read_text = Path.read_text
+    fails = {"n": 3}
+
+    def flaky_read_text(self, *args, **kwargs):
+        if self == index_path and fails["n"] > 0:
+            fails["n"] -= 1
+            raise PermissionError(13, "sharing violation (simulated)")
+        return orig_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    data = board._load()
+    assert [t["title"] for t in data["tickets"]] == ["X"]
+    assert fails["n"] == 0, "retry path was not exercised"
+
+
+def test_load_raises_after_persistent_permission_error(
+    workspace: Path, workspace_config: dict, monkeypatch
+):
+    """A *persistent* PermissionError (real ACL problem, not a transient
+    sharing violation) must still surface after the bounded retries."""
+    import time as _time
+
+    board = Board(workspace, workspace_config)
+    board.add({"title": "X"})
+    _INDEX_CACHE.clear()
+
+    index_path = workspace / ".holoctl" / "board" / "index.json"
+    orig_read_text = Path.read_text
+
+    def always_denied(self, *args, **kwargs):
+        if self == index_path:
+            raise PermissionError(13, "access denied (simulated)")
+        return orig_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", always_denied)
+    monkeypatch.setattr(_time, "sleep", lambda _s: None)  # keep the test fast
+    with pytest.raises(PermissionError):
+        board._load()
 
 
 def _proc_worker(args):
