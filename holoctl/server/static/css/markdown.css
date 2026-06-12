@@ -142,3 +142,14 @@
 .detail-section-body li.task-list-item input[type="checkbox"]:checked + * {
   color: var(--text-2);
 }
+
+/* Mermaid diagrams (```mermaid fences → <pre class="mermaid"> rendered
+   client-side by static/js/mermaid-init.js). */
+.detail-section-body pre.mermaid,
+pre.mermaid {
+  background: transparent;
+  border: none;
+  text-align: center;
+  overflow-x: auto;
+}
+pre.mermaid svg { max-width: 100%; height: auto; }

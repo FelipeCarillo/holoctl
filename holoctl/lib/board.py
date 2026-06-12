@@ -60,6 +60,32 @@ def _count_acceptance(body: str | None) -> tuple[int, int]:
     return total, done
 
 
+def _replace_section(body: str, heading: str, content: str) -> tuple[str, bool]:
+    """Replace the content under ``# {heading}`` in a markdown body.
+
+    Returns ``(new_body, replaced)`` — ``replaced`` is False when the
+    section was absent and got appended instead. Only H1 headings split
+    sections (same convention as the dashboard renderer), so `##`+ inside
+    a section is preserved as section content.
+    """
+    want = heading.strip().lstrip("#").strip()
+    block = content.strip()
+    parts = re.split(r"^(# .+)$", body, flags=re.MULTILINE)
+    for i in range(1, len(parts), 2):
+        title = parts[i][2:].strip()
+        if title.lower() != want.lower():
+            continue
+        # parts[i + 1] is everything until the next H1 (or EOF).
+        if i + 1 < len(parts):
+            parts[i + 1] = f"\n\n{block}\n\n" if block else "\n\n"
+        else:
+            parts.append(f"\n\n{block}\n\n" if block else "\n\n")
+        return "".join(parts).rstrip("\n") + "\n", True
+    base = body.rstrip("\n")
+    section = f"# {want}\n\n{block}\n" if block else f"# {want}\n"
+    return (f"{base}\n\n{section}" if base.strip() else section), False
+
+
 def _now() -> str:
     """ISO 8601 UTC timestamp with `Z` suffix, e.g. `2026-05-06T13:42:18Z`.
 
@@ -950,8 +976,13 @@ class Board:
         _log_activity(self._root, {"type": "ticket.note", "ticket": ticket_id, "actor": "cli"})
         return {"id": ticket_id, "note": clean, "ts": now}
 
-    def set_body(self, ticket_id: str, body: str) -> dict:
-        """Replace the body of a ticket .md, preserving frontmatter."""
+    def _apply_body(self, ticket_id: str, make_body) -> None:
+        """Rewrite a ticket body via make_body(old_body), preserving frontmatter.
+
+        Shared write path for set_body/update_section: refreshes the
+        denormalized DoD counts in the index (the new body can change the
+        checkbox set) and bumps `updated` timestamps.
+        """
         with self._locked():
             data = self._load_mut()
             ticket = next((t for t in data["tickets"] if t["id"] == ticket_id), None)
@@ -966,14 +997,13 @@ class Board:
                 raise FileNotFoundError(f"Ticket file missing: {full_path}")
 
             existing = full_path.read_text(encoding="utf-8")
-            fm, _ = parse_frontmatter(existing)
+            fm, old_body = parse_frontmatter(existing)
+            new_body = make_body(old_body)
             now = _now()
             fm["updated"] = now
-            full_path.write_text(serialize_frontmatter(fm, body), encoding="utf-8")
+            full_path.write_text(serialize_frontmatter(fm, new_body), encoding="utf-8")
 
-            # Replacing the body can change the DoD checkbox set — refresh the
-            # denormalized counts in the index.
-            acc_total, acc_done = _count_acceptance(body)
+            acc_total, acc_done = _count_acceptance(new_body)
             ticket["acceptance_total"] = acc_total
             ticket["acceptance_done"] = acc_done
             ticket["updated"] = now
@@ -981,7 +1011,31 @@ class Board:
             self._save(data)
         _log_activity(self._root, {"type": "ticket.body_updated", "ticket": ticket_id, "actor": "cli"})
 
+    def set_body(self, ticket_id: str, body: str) -> dict:
+        """Replace the body of a ticket .md, preserving frontmatter."""
+        self._apply_body(ticket_id, lambda _old: body)
         return {"id": ticket_id, "bytes": len(body)}
+
+    def update_section(self, ticket_id: str, heading: str, content: str) -> dict:
+        """Replace the content of one `# H1` section of the body.
+
+        Appends `# {heading}` at the end when the section doesn't exist yet.
+        The H1-only split mirrors the dashboard's section handling, so the
+        live-spec section convention round-trips cleanly. Heading match is
+        case-insensitive and ignores surrounding whitespace.
+        """
+        if not heading or not heading.strip().lstrip("#").strip():
+            raise ValueError("Section heading is empty.")
+        replaced = {}
+
+        def make(old_body: str) -> str:
+            new_body, did_replace = _replace_section(old_body, heading, content)
+            replaced["value"] = did_replace
+            return new_body
+
+        self._apply_body(ticket_id, make)
+        clean = heading.strip().lstrip("#").strip()
+        return {"id": ticket_id, "heading": clean, "replaced": replaced["value"]}
 
     def next_id(self) -> str:
         data = self._load()

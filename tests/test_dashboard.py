@@ -3070,3 +3070,54 @@ class TestApiEventsStream:
             app_module, "_sse_connections", app_module._SSE_MAX_CONNECTIONS
         )
         assert app_module._sse_take_slot() is None
+
+
+# ── TestDetailHtmlFragment: SSE swap fragment for the live detail page ────────
+
+
+class TestDetailHtmlFragment:
+    def test_returns_header_description_and_rail(self, client: TestClient, alias: str,
+                                                 workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "Live plan", "kind": "spec", "agent": "developer", "priority": "p1"})
+        b.set_body(ticket["id"], "# Context\n\nlive ctx\n")
+        r = client.get(f"/api/project/{alias}/board/{ticket['id']}/detail-html")
+        assert r.status_code == 200
+        assert ticket["id"] in r.text
+        assert "live ctx" in r.text
+        assert 'class="detail-header"' in r.text
+        assert 'class="detail-section-body"' in r.text
+        assert 'class="detail-rail"' in r.text
+        # The toolbar stays OUTSIDE the swap (its listeners must survive).
+        assert 'class="detail-toolbar"' not in r.text
+
+    def test_404_for_missing_ticket(self, client: TestClient, alias: str):
+        r = client.get(f"/api/project/{alias}/board/TST-999/detail-html")
+        assert r.status_code == 404
+
+    def test_404_for_missing_project(self, client: TestClient):
+        r = client.get("/api/project/nope/board/TST-001/detail-html")
+        assert r.status_code == 404
+
+    def test_detail_page_wraps_swappable_content(self, client: TestClient, alias: str,
+                                                 workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "Live plan", "kind": "spec", "agent": "developer", "priority": "p1"})
+        r = client.get(f"/project/{alias}/board/{ticket['id']}")
+        assert r.status_code == 200
+        # detail-sse.js anchors on this wrapper to swap fragments in place.
+        assert 'id="detail-content"' in r.text
+        assert f'data-ticket-id="{ticket["id"]}"' in r.text
+        assert "data-updated=" in r.text
+
+    def test_mermaid_body_xss_neutralized_end_to_end(self, client: TestClient, alias: str,
+                                                     workspace: Path, workspace_config: dict):
+        b = Board(workspace, workspace_config)
+        ticket = b.add({"title": "Live plan", "kind": "spec", "agent": "developer", "priority": "p1"})
+        b.set_body(ticket["id"], "# Diagrams\n\n```mermaid\ngraph TD\n  <img src=x onerror=alert(1)>\n```\n")
+        for url in (f"/project/{alias}/board/{ticket['id']}",
+                    f"/api/project/{alias}/board/{ticket['id']}/detail-html"):
+            html = client.get(url).text
+            assert '<pre class="mermaid">' in html
+            assert "<img" not in html
+            assert "&lt;img" in html

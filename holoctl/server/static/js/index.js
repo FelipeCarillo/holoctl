@@ -17,6 +17,8 @@ import { initViewSwitcher } from './view-switcher.js';
 import { initListSelection } from './list-selection.js';
 import { initInlineEdit } from './inline-edit.js';
 import { initMetaSearch } from './meta-search.js';
+import { initMermaid } from './mermaid-init.js';
+import { initDetailSSE } from './detail-sse.js';
 
 // Keyboard activation for elements with role="button". Native <button>/<a>
 // already handle Enter/Space; this covers the few <div role="button">
@@ -48,4 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initInlineEdit();
   initMetaSearch();
   initRoleButtonKeys();
+  initMermaid();
+  initDetailSSE();
 });

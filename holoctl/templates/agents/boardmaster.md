@@ -136,7 +136,7 @@ mcp__holoctl__board_batch({
 
 ## Spec-Driven hand-off (when invoked from /spec)
 
-When the orchestrator calls you from the `/spec` flow, you receive `parent: <SPEC_ID>` already set. Your job: decompose the spec's `acceptance` into N independently-deliverable child tasks. Each child:
+When the orchestrator calls you from the `/spec` flow, you receive `parent: <SPEC_ID>` already set. Your job: decompose the spec into N independently-deliverable child tasks — read the spec's `acceptance` and, when present, its `# Proposed ticket breakdown` body section (`board_show`), which the live-authoring flow drafts during discussion. Each child:
 
 - `kind = "task"` (inherited from `shared`)
 - `parent = <SPEC_ID>` (inherited)

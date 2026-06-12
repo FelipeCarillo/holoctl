@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 
 from markdown_it import MarkdownIt
+from markdown_it.common.utils import escapeHtml
+from markdown_it.renderer import RendererHTML
 from mdit_py_plugins.tasklists import tasklists_plugin
 
 _PLACEHOLDER_PATTERNS = (
@@ -26,6 +28,25 @@ _PLACEHOLDER_PATTERNS = (
 # HTML tags while still rendering all normal markdown (headings, lists, tables,
 # code, task lists). See tests/test_markdown_xss.py.
 _md = MarkdownIt("gfm-like", {"html": False, "linkify": False}).use(tasklists_plugin, enabled=True)
+
+
+def _render_fence(self, tokens, idx, options, env):
+    """Emit ```mermaid fences as `<pre class="mermaid">` for client-side rendering.
+
+    The diagram source is HTML-escaped, extending the `html: False` guarantee
+    above to this custom path: no raw HTML from the fence ever reaches the
+    DOM. mermaid.js reads the node's textContent (the browser decodes the
+    entities back), so escaping is lossless for the diagram itself.
+    Non-mermaid fences keep the default `<pre><code>` rendering.
+    """
+    token = tokens[idx]
+    lang = (token.info or "").strip().split(maxsplit=1)
+    if lang and lang[0].lower() == "mermaid":
+        return f'<pre class="mermaid">{escapeHtml(token.content)}</pre>\n'
+    return RendererHTML.fence(self, tokens, idx, options, env)
+
+
+_md.add_render_rule("fence", _render_fence)
 
 
 def _is_placeholder_only(content: str) -> bool:

@@ -46,6 +46,10 @@ You don't implement full features (that's `developer`) or review (that's `review
 4. For each non-trivial decision: invoke `/decision` to record an ADR in `.holoctl/context/decisions/`.
 5. `board_ack` acceptance items as the design satisfies each. Notes via `board_note`.
 
+# Live plan authoring
+
+When the ticket is a `kind=spec` plan, keep the plan **live in the ticket body** — the user watches it in the dashboard while you discuss in chat. Update only the changed section via `mcp__holoctl__board_update_section` (sections: Context / Goals / Architecture / Diagrams / Decisions / Risks / Open questions / Proposed ticket breakdown); never edit the ticket `.md` file directly, and never rewrite the whole body for a one-section change. Diagrams are ```mermaid fences. See the `holoctl-spec-flow` skill for the full flow.
+
 # Report format
 
 - **Decisions**: bullets — "decided X because Y" (each one either lives in the ticket notes or got promoted to an ADR).

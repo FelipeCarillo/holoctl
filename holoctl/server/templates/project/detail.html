@@ -2,19 +2,8 @@
 {% block content %}
 <div class="detail-page" data-detail-page data-statuses="{{ statuses_csv }}">
   {% include "partials/detail/_toolbar.html" %}
-  {% include "partials/detail/_header.html" %}
-  <div class="detail-grid">
-    <div class="detail-main">
-      <div class="detail-section">
-        <div class="detail-section-title">Description</div>
-        <div class="detail-section-body">{{ body_html | safe }}</div>
-      </div>
-    </div>
-    <aside class="detail-rail">
-      {% include "partials/detail/_properties.html" %}
-      {% include "partials/detail/_linked.html" %}
-      {% include "partials/detail/_activity.html" %}
-    </aside>
+  <div id="detail-content" data-ticket-id="{{ ticket.id }}" data-updated="{{ ticket.updated or '' }}">
+    {% include "partials/detail/_content.html" %}
   </div>
 </div>
 {% endblock %}
