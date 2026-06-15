@@ -4,6 +4,8 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-06-15
+
 ### Added
 
 - **Live spec authoring ("plano vivo no board")** — a `kind=spec` ticket body now works as a live plan document: the agent authors it from chat while the user watches the dashboard detail page update in real time; approval and status changes stay in chat (`board_move`).
