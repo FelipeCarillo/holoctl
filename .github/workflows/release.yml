@@ -1,87 +1,81 @@
 name: Release
 
-# Triggers when a `v*` tag is pushed (e.g. `v0.15.0`).
+# Publishes when CI ("test") succeeds on main, or on manual dispatch. The
+# version comes from pyproject.toml; the workflow creates the v<version> tag
+# and GitHub Release itself, so no tag push is required. A guard skips
+# versions that are already released (idempotent on every green CI run).
 #
-# This workflow uses **PyPI Trusted Publishers** (OIDC) — no API token in
-# repo secrets. Configure the trusted publisher once at
-# https://pypi.org/manage/account/publishing/ pointing to:
-#   - PyPI Project Name: holoctl
-#   - Owner: FelipeCarillo
-#   - Repository name: holoctl
-#   - Workflow name: release.yml
-#   - Environment name: pypi  (matches the `environment:` key below)
-#
-# After that, `git tag v0.15.0 && git push --tags` is the entire publish
-# ritual. CI re-runs the same checks as the PR, builds wheel + sdist,
-# uploads to PyPI, and creates a GitHub Release with the matching
-# CHANGELOG slice.
+# PyPI uses Trusted Publishers (OIDC) pinned to this workflow filename
+# (release.yml) and the `pypi` environment — keep both stable.
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
 
 permissions:
-  contents: write    # needed to create the GitHub Release
-  id-token: write    # needed for PyPI OIDC
+  contents: write    # create the tag + GitHub Release
+  id-token: write    # PyPI OIDC
 
 jobs:
-  # Re-run the full test matrix that the PR ran. Even though main is
-  # already green, tests on the exact tagged commit are the actual
-  # release contract.
-  test:
-    name: Test ${{ matrix.python-version }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+  gate:
+    name: Decide whether to release
+    runs-on: ubuntu-latest
+    # Only after a successful CI run from a push to main, or a manual dispatch.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.event == 'push')
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      version: ${{ steps.decide.outputs.version }}
+      sha: ${{ steps.decide.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: uv sync --frozen
-      - name: Smoke test — CLI loads
+      - name: Resolve commit
+        id: sha
         run: |
-          uv run holoctl --version
-          uv run holoctl --help
-      - name: Run pytest
-        run: uv run pytest tests/ -q
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+      - name: Resolve version + skip if already released
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          VERSION="$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=${{ steps.sha.outputs.sha }}" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "v$VERSION already released — skipping."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Will release v$VERSION."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     name: Build wheel + sdist
-    needs: test
+    needs: gate
+    if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
       - uses: astral-sh/setup-uv@v3
         with:
           python-version: "3.12"
-
-      - name: Verify tag matches pyproject version
-        shell: bash
-        run: |
-          set -e
-          TAG="${GITHUB_REF_NAME#v}"
-          PROJ="$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')"
-          if [ "$TAG" != "$PROJ" ]; then
-            echo "::error::Tag v$TAG does not match pyproject.toml version $PROJ"
-            exit 1
-          fi
-          echo "Tag v$TAG matches pyproject.toml version $PROJ"
-
-      - name: Build
-        run: uv build
-
-      - name: Validate with twine
-        run: uv tool run twine check dist/*
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - run: uv build
+      - run: uv tool run twine check dist/*
+      - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
@@ -89,59 +83,48 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: [gate, build]
+    if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/holoctl
     steps:
-      - name: Download dist
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
-
-      - name: Publish via OIDC (Trusted Publishers)
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # No password / token — OIDC handshake from this workflow
-          # against the trusted publisher configured on PyPI.
           packages-dir: dist/
-          # Verify the metadata before upload (twine check ran in `build`,
-          # this is belt-and-suspenders).
           verify-metadata: true
-          # Skip if a file with the same name already exists (idempotent
-          # re-runs after partial failure).
-          skip-existing: true
+          skip-existing: true   # idempotent re-runs
 
   github-release:
     name: Create GitHub Release
-    needs: publish-pypi
+    needs: [gate, publish-pypi]
+    if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Download dist
-        uses: actions/download-artifact@v4
+          ref: ${{ needs.gate.outputs.sha }}
+      - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
-
       - name: Extract release notes from CHANGELOG
         id: notes
-        shell: bash
         run: |
           set -e
-          VERSION="${GITHUB_REF_NAME#v}"
-          # Pull the slice between `## [VERSION]` and the next `## [`.
+          VERSION="${{ needs.gate.outputs.version }}"
+          # Slice between `## [VERSION]` and the next `## [`.
           NOTES=$(awk -v ver="$VERSION" '
             $0 ~ "^## \\[" ver "\\]" { capture=1; next }
             capture && /^## \[/ { exit }
             capture { print }
           ' holoctl/CHANGELOG.md)
           if [ -z "$NOTES" ]; then
-            echo "::warning::No CHANGELOG slice found for $VERSION; using fallback."
             NOTES="See [CHANGELOG.md](holoctl/CHANGELOG.md) for details."
           fi
           {
@@ -153,12 +136,12 @@ jobs:
             echo "Install: \`uv tool install holoctl==$VERSION\` (or \`pipx install holoctl==$VERSION\`)."
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: v${{ needs.gate.outputs.version }}
+          name: v${{ needs.gate.outputs.version }}
+          target_commitish: ${{ needs.gate.outputs.sha }}
           body: ${{ steps.notes.outputs.notes }}
           files: |
             dist/*.whl
