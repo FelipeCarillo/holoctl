@@ -248,3 +248,97 @@ def test_curate_silence_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     parsed = json.loads(resp["result"]["content"][0]["text"])
     assert parsed["silenced"] is True
     assert parsed["pattern_id"] == "abc123"
+
+
+def test_tool_call_board_set_body_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _seed_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    created = mcp.handle({
+        "jsonrpc": "2.0", "id": 30, "method": "tools/call",
+        "params": {"name": "holoctl.board_create",
+                   "arguments": {"title": "Live plan", "kind": "spec", "agent": "boardmaster"}},
+    })
+    tid = json.loads(created["result"]["content"][0]["text"])["id"]
+
+    body = "# Context\n\nnew ctx\n\n# Acceptance — Definition of Done\n\n- [x] a\n- [ ] b\n"
+    resp = mcp.handle({
+        "jsonrpc": "2.0", "id": 31, "method": "tools/call",
+        "params": {"name": "holoctl.board_set_body", "arguments": {"id": tid, "body": body}},
+    })
+    assert json.loads(resp["result"]["content"][0]["text"])["bytes"] == len(body)
+
+    shown = mcp.handle({
+        "jsonrpc": "2.0", "id": 32, "method": "tools/call",
+        "params": {"name": "holoctl.board_show", "arguments": {"id": tid}},
+    })
+    parsed = json.loads(shown["result"]["content"][0]["text"])
+    assert "new ctx" in parsed["body"]
+    # DoD checkbox counts are recalculated from the new body in the index.
+    got = mcp.handle({
+        "jsonrpc": "2.0", "id": 33, "method": "tools/call",
+        "params": {"name": "holoctl.board_get", "arguments": {"id": tid}},
+    })
+    ticket = json.loads(got["result"]["content"][0]["text"])
+    assert ticket["acceptance_total"] == 2
+    assert ticket["acceptance_done"] == 1
+
+
+def test_tool_call_board_set_body_missing_args_returns_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _seed_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    resp = mcp.handle({
+        "jsonrpc": "2.0", "id": 34, "method": "tools/call",
+        "params": {"name": "holoctl.board_set_body", "arguments": {"id": "MC-001"}},
+    })
+    assert "error" in resp
+
+
+def test_tool_call_board_update_section_replaces_and_appends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _seed_workspace(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    created = mcp.handle({
+        "jsonrpc": "2.0", "id": 35, "method": "tools/call",
+        "params": {"name": "holoctl.board_create",
+                   "arguments": {"title": "Live plan", "kind": "spec", "agent": "boardmaster"}},
+    })
+    tid = json.loads(created["result"]["content"][0]["text"])["id"]
+    mcp.handle({
+        "jsonrpc": "2.0", "id": 36, "method": "tools/call",
+        "params": {"name": "holoctl.board_set_body",
+                   "arguments": {"id": tid, "body": "# Context\n\nold ctx\n\n# Risks\n\n- r1\n"}},
+    })
+
+    # Replace an existing section (heading match is case-insensitive).
+    resp = mcp.handle({
+        "jsonrpc": "2.0", "id": 37, "method": "tools/call",
+        "params": {"name": "holoctl.board_update_section",
+                   "arguments": {"id": tid, "heading": "context", "content": "fresh ctx"}},
+    })
+    assert json.loads(resp["result"]["content"][0]["text"])["replaced"] is True
+
+    # Append a section that doesn't exist yet, with DoD checkboxes.
+    resp = mcp.handle({
+        "jsonrpc": "2.0", "id": 38, "method": "tools/call",
+        "params": {"name": "holoctl.board_update_section",
+                   "arguments": {"id": tid, "heading": "Acceptance — Definition of Done",
+                                 "content": "- [ ] c1\n- [x] c2"}},
+    })
+    assert json.loads(resp["result"]["content"][0]["text"])["replaced"] is False
+
+    shown = mcp.handle({
+        "jsonrpc": "2.0", "id": 39, "method": "tools/call",
+        "params": {"name": "holoctl.board_show", "arguments": {"id": tid}},
+    })
+    body = json.loads(shown["result"]["content"][0]["text"])["body"]
+    assert "fresh ctx" in body
+    assert "old ctx" not in body
+    assert "- r1" in body  # sibling section untouched
+    assert "# Acceptance — Definition of Done" in body
+
+    got = mcp.handle({
+        "jsonrpc": "2.0", "id": 40, "method": "tools/call",
+        "params": {"name": "holoctl.board_get", "arguments": {"id": tid}},
+    })
+    ticket = json.loads(got["result"]["content"][0]["text"])
+    assert ticket["acceptance_total"] == 2
+    assert ticket["acceptance_done"] == 1

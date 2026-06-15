@@ -133,14 +133,14 @@ def _cmd_spec_md(config: dict) -> str:
     p = config["project"]
     return f"""---
 name: spec
-description: "Spec-Driven Development entry point — turn an external board item (or a fresh idea) into a spec + child tasks ready to execute"
+description: "Spec-Driven Development entry point — turn an external board item (or a fresh idea) into a live-authored spec the user watches in the dashboard, then decompose into child tasks on approval"
 arguments: "[<external-board-url-or-ref>]"
-allowed-tools: [Bash, Read, Glob, mcp__holoctl__board_create, mcp__holoctl__board_batch, mcp__holoctl__board_show, mcp__holoctl__board_children, mcp__holoctl__board_list]
+allowed-tools: [Bash, Read, Glob, mcp__holoctl__board_create, mcp__holoctl__board_batch, mcp__holoctl__board_show, mcp__holoctl__board_children, mcp__holoctl__board_list, mcp__holoctl__board_move, mcp__holoctl__board_set_body, mcp__holoctl__board_update_section]
 ---
 
 # /spec
 
-Turn a request from an external board (Trello/Linear/Azure DevOps/Jira/GitHub/Slack — or just a pasted user story) into a structured **spec** in `.holoctl/`, then decompose it into parallel-safe child tasks ready for execution.
+Turn a request from an external board (Trello/Linear/Azure DevOps/Jira/GitHub/Slack — or just a pasted user story) into a structured **spec** in `.holoctl/`, authored **live** while you discuss it (the user watches the plan grow in the dashboard), then decompose it into parallel-safe child tasks after verbal approval in chat.
 
 ## Step 1 — Source intake
 
@@ -153,19 +153,9 @@ Turn a request from an external board (Trello/Linear/Azure DevOps/Jira/GitHub/Sl
 
 If no argument is given: assume the user is pasting a story / request in the conversation. Set `source_provider="manual"`.
 
-## Step 2 — Discuss to refine
+## Step 2 — Materialize the spec EARLY
 
-Reach agreement on (one batched question, never piecewise):
-
-- **Scope** — what's in, what's out
-- **Acceptance criteria** — 3-7 verifiable items
-- **Files / modules** — paths the work will touch (use `Glob` to confirm they exist)
-- **Edge cases** worth surfacing
-- **Risks / unknowns** worth flagging
-
-Don't ask if you can already infer from the source content. Default to executing, ask only when ambiguity is real.
-
-## Step 3 — Materialize the spec
+Create the spec with what's already known — **before** the deep discussion:
 
 ```
 mcp__holoctl__board_create({{
@@ -173,10 +163,6 @@ mcp__holoctl__board_create({{
   "kind": "spec",
   "agent": "architect",
   "priority": "<pN>",
-  "acceptance": ["<refined criterion 1>", "<refined criterion 2>", ...],
-  "context": "<consolidated discussion + scope + edge cases>",
-  "out_of_scope": "<what NOT to do>",
-  "files": ["<file 1>", "<file 2>"],
   "source_provider": "<provider or 'manual'>",
   "source_ref": "<ref or null>",
   "source_url": "<url or null>",
@@ -184,7 +170,38 @@ mcp__holoctl__board_create({{
 }})
 ```
 
-Capture the returned `SPEC_ID` ({p['prefix']}-NNN).
+Capture the returned `SPEC_ID` ({p['prefix']}-NNN). Then move it to writing state and lay down the section skeleton (hidden in the dashboard until each section is written):
+
+```
+mcp__holoctl__board_move({{"id": "<SPEC_ID>", "status": "doing"}})
+mcp__holoctl__board_set_body({{"id": "<SPEC_ID>", "body": "# Context\\n\\n# Goals\\n\\n# Architecture\\n\\n# Diagrams\\n\\n# Decisions\\n\\n# Risks\\n\\n# Open questions\\n\\n# Proposed ticket breakdown\\n"}})
+```
+
+## Step 2b — Serve the dashboard & hand over the live link
+
+1. Health check: `curl -s --max-time 2 http://127.0.0.1:4242/api/projects` (default `hctl serve` port; if the user runs a custom port, use the one that answers).
+2. No answer → start it in the background (`hctl serve` is blocking): `nohup hctl serve >/dev/null 2>&1 &`, wait ~2s, re-check.
+3. Resolve the project alias from the `/api/projects` payload (default: root directory name).
+4. Tell the user: `→ Watch the plan live: http://localhost:4242/project/<alias>/board/<SPEC_ID>`
+
+## Step 3 — Discuss & author live
+
+Discuss scope, acceptance criteria (3-7 verifiable items), files/modules (`Glob` to confirm), edge cases and risks — one batched question, never piecewise. After each **milestone** (decision closed, question answered — not every message), reflect it into the spec body, **one section at a time**:
+
+```
+mcp__holoctl__board_update_section({{"id": "<SPEC_ID>", "heading": "Architecture", "content": "<bullets>"}})
+```
+
+Authoring rules (see the `holoctl-spec-flow` skill for the full guide):
+
+- Send only the changed section — `board_set_body` is only for the skeleton or a full restructure.
+- Acceptance criteria go in the body as `- [ ]` checkboxes; bullets over paragraphs.
+- Diagrams are ```mermaid fences under `Diagrams` (≤ ~15 nodes, one diagram per concept) — the dashboard renders them live.
+- Keep `Open questions` a living list; resolved items move to `Decisions`.
+
+## Step 3b — Review gate
+
+Plan complete (no open questions, breakdown drafted) → `mcp__holoctl__board_move({{"id": "<SPEC_ID>", "status": "review"}})` and ask for **verbal approval in chat**. Changes requested → edit sections, move back to `doing`, repeat. Only proceed after approval.
 
 ## Step 4 — Hand off to boardmaster for decomposition
 

@@ -4,6 +4,16 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-06-15
+
+### Added
+
+- **Live spec authoring ("plano vivo no board")** — a `kind=spec` ticket body now works as a live plan document: the agent authors it from chat while the user watches the dashboard detail page update in real time; approval and status changes stay in chat (`board_move`).
+  - New MCP write tools: `holoctl.board_set_body` (full body replace — skeleton/restructure) and `holoctl.board_update_section` (replace/append one `# H1` section — the token-efficient default for live authoring). Both recalculate DoD checkbox counts and are listed under `permissions.ask` in the compiled Claude settings.
+  - Mermaid diagrams: ```` ```mermaid ```` fences render as SVG in the dashboard. Server side emits `<pre class="mermaid">` with the source HTML-escaped (the `html:False` XSS control extends to this path); client side lazy-loads a vendored `mermaid.min.js` (UMD v11, ~3.2MB added to the wheel — fetched only when a page actually contains a diagram) with `securityLevel:'strict'`.
+  - Ticket detail page live-updates over the existing SSE stream: header, description and activity rail swap in place (≤2s after an edit, "Plan updated" toast), diagrams re-render after the swap, and an active inline edit defers the swap. New fragment endpoint `GET /api/project/{alias}/board/{ticket_id}/detail-html`.
+  - `holoctl-spec-flow` skill + `/spec` command rewritten for the flow: materialize the spec **early** → ensure `hctl serve` is up and hand the user the live URL → update only changed sections per discussion milestone → `review` gate with verbal approval in chat → decompose via boardmaster. Includes an authoring-efficiency guide (section-level edits, telegraphic prose, ≤15-node mermaid recipes).
+
 ## [0.21.0] — 2026-06-10
 
 Code-review follow-up release (PR #48): board integrity under concurrent

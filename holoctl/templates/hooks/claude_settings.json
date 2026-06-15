@@ -43,6 +43,8 @@
       "mcp__holoctl__board_create",
       "mcp__holoctl__board_move",
       "mcp__holoctl__board_set",
+      "mcp__holoctl__board_set_body",
+      "mcp__holoctl__board_update_section",
       "mcp__holoctl__board_ack",
       "mcp__holoctl__board_note",
       "mcp__holoctl__board_delete",

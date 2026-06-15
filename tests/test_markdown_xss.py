@@ -92,3 +92,24 @@ class TestNormalMarkdownStillRenders:
     def test_link(self):
         html = render_markdown("see [docs](https://example.com)")
         assert '<a href="https://example.com"' in html
+
+
+class TestMermaidFenceNeutralized:
+    """```mermaid fences get a custom render path (<pre class="mermaid">) —
+    it must uphold the same escaping guarantee as html:False."""
+
+    def test_img_onerror_inside_mermaid_is_escaped(self):
+        out = render_markdown("```mermaid\ngraph TD\n  <img src=x onerror=alert(1)>\n```")
+        assert "<img" not in out
+        assert "&lt;img" in out
+
+    def test_script_inside_mermaid_is_escaped(self):
+        out = render_markdown("```mermaid\n<script>alert(document.cookie)</script>\n```")
+        assert "<script>" not in out
+        assert "&lt;script&gt;" in out
+
+    def test_pre_breakout_attempt_is_escaped(self):
+        # Trying to close the <pre> early and inject a live tag.
+        out = render_markdown("```mermaid\n</pre><script>alert(1)</script>\n```")
+        assert "</pre><script>" not in out
+        assert "&lt;/pre&gt;" in out

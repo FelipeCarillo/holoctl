@@ -1,0 +1,17 @@
+{# Live-swappable portion of the ticket detail page: header + description +
+   rail. Served standalone by /api/.../detail-html for the SSE swap
+   (detail-sse.js); the toolbar stays outside so its listeners survive. #}
+{% include "partials/detail/_header.html" %}
+<div class="detail-grid">
+  <div class="detail-main">
+    <div class="detail-section">
+      <div class="detail-section-title">Description</div>
+      <div class="detail-section-body">{{ body_html | safe }}</div>
+    </div>
+  </div>
+  <aside class="detail-rail">
+    {% include "partials/detail/_properties.html" %}
+    {% include "partials/detail/_linked.html" %}
+    {% include "partials/detail/_activity.html" %}
+  </aside>
+</div>

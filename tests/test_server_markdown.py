@@ -46,3 +46,28 @@ class TestRenderMarkdown:
     def test_task_list_checkbox(self):
         html = render_markdown("- [x] done\n- [ ] todo\n")
         assert "checkbox" in html or 'type="checkbox"' in html
+
+
+class TestMermaidFence:
+    def test_mermaid_fence_renders_pre_mermaid(self):
+        html = render_markdown("```mermaid\ngraph TD\n  A[Start] --> B{Done?}\n```")
+        assert '<pre class="mermaid">' in html
+        # No <code> wrapper — mermaid.js reads the <pre>'s textContent.
+        assert "<code" not in html
+        # Diagram source is HTML-escaped (browser decodes it back losslessly).
+        assert "--&gt;" in html
+        assert "-->" not in html
+
+    def test_mermaid_lang_match_is_case_insensitive(self):
+        html = render_markdown("```Mermaid\ngraph TD\n  A --> B\n```")
+        assert '<pre class="mermaid">' in html
+
+    def test_non_mermaid_fence_unchanged(self):
+        html = render_markdown("```python\nprint(1 < 2)\n```")
+        assert '<pre class="mermaid">' not in html
+        assert '<code class="language-python">' in html
+        assert "1 &lt; 2" in html
+
+    def test_plain_fence_unchanged(self):
+        html = render_markdown("```\nplain\n```")
+        assert "<pre>" in html and "<code>" in html

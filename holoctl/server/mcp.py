@@ -207,6 +207,26 @@ def _tool_board_set(args: dict) -> Any:
     return board.set(tid, field, _coerce_set_value(value))
 
 
+def _tool_board_set_body(args: dict) -> Any:
+    board = _board()
+    tid = args.get("id")
+    body = args.get("body")
+    # An empty body is a valid replacement — only reject a missing arg.
+    if not tid or body is None:
+        raise ValueError("missing required args: id, body")
+    return board.set_body(tid, str(body))
+
+
+def _tool_board_update_section(args: dict) -> Any:
+    board = _board()
+    tid = args.get("id")
+    heading = args.get("heading")
+    content = args.get("content")
+    if not tid or not heading or content is None:
+        raise ValueError("missing required args: id, heading, content")
+    return board.update_section(tid, str(heading), str(content))
+
+
 def _tool_memory_list_topics(args: dict) -> Any:
     from ..lib.memory import Memory
     mem = Memory(_project_root())
@@ -681,6 +701,45 @@ TOOLS: list[dict] = [
             "required": ["id", "field"],
         },
         "handler": _tool_board_set,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_set_body",
+        "description": (
+            "Replace the full markdown body of a ticket, preserving frontmatter. "
+            "Use for the initial section skeleton or a full restructure; for a "
+            "single-section edit prefer board_update_section (cheaper). "
+            "Acceptance checkbox counts are recalculated from the new body."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "body": {"type": "string", "description": "full new markdown body (no frontmatter)"},
+            },
+            "required": ["id", "body"],
+        },
+        "handler": _tool_board_set_body,
+        "write": True,
+    },
+    {
+        "name": "holoctl.board_update_section",
+        "description": (
+            "Replace the content of one `# H1` section of a ticket body "
+            "(case-insensitive heading match); appends the section when absent. "
+            "Primary tool for live spec authoring: send only the changed section, "
+            "not the whole document."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "heading": {"type": "string", "description": "H1 title without the leading '# '"},
+                "content": {"type": "string", "description": "new markdown content for the section"},
+            },
+            "required": ["id", "heading", "content"],
+        },
+        "handler": _tool_board_update_section,
         "write": True,
     },
     {

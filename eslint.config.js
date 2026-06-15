@@ -10,6 +10,10 @@
 // refactor (api.js / dom.js / util.js / popover.js) in the same branch.
 export default [
   {
+    // Third-party minified bundles (mermaid.min.js) are not ours to lint.
+    ignores: ["holoctl/server/static/js/vendor/**"],
+  },
+  {
     files: ["holoctl/server/static/js/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
