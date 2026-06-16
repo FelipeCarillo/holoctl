@@ -4,6 +4,12 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.22.2] — 2026-06-16
+
+### Fixed
+
+- **Focused ticket page scroll, properly this time** — the 0.22.1 fix made the SSE swap wrapper (`#detail-content`) a nested flex column. That still left `.detail-header`/`.detail-grid` one level removed from the `[data-detail-page]` flex column, so vertical scroll stayed broken, and the extra flex nesting let wide content trigger a spurious *horizontal* scrollbar. The wrapper now uses `display: contents`, so its children lay out as direct flex children of `[data-detail-page]` — exactly the layout from before the wrapper was introduced. The grid reclaims the remaining height, `.detail-main`/`.detail-rail` scroll vertically and independently again, and there is no horizontal scroll. The element stays in the DOM so the live-update SSE swap is unaffected (#52).
+
 ## [0.22.1] — 2026-06-16
 
 ### Fixed
