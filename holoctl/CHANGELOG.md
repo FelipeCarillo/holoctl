@@ -4,6 +4,13 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.22.3] — 2026-06-16
+
+### Fixed
+
+- **Focused ticket page: real vertical scroll + contained description.** The previous attempts (0.22.1/0.22.2) kept the page pinned to the viewport height and relied on each grid column scrolling independently — a scheme whose flex height chain kept breaking, so the page never scrolled vertically and wide content forced a horizontal scrollbar. The ticket detail page now scrolls vertically as one, inside `.content-body` (its normal `overflow-y: auto`), like every other page; the bounded-height `overflow: hidden` override and per-column scroll are gone. The right rail (properties/activity) is `position: sticky` so it stays in view while a long description scrolls.
+- **Description content no longer escapes its card.** Long unbreakable tokens (URLs, inline code, paths) now wrap (`overflow-wrap: break-word`) instead of widening the column, and wide tables scroll inside their own box (`display: block; overflow-x: auto`) rather than pushing the layout wider — so no element leaks past the description card and no horizontal scrollbar is needed. (Code blocks already scrolled internally.) (#53)
+
 ## [0.22.2] — 2026-06-16
 
 ### Fixed
