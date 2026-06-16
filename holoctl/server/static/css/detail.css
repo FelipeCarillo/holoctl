@@ -114,48 +114,33 @@
 .detail-empty { color: var(--text-3); font-style: italic; font-size: 12px; }
 
 /* ── Ticket detail page (Phase-4 redesign) ───────────────────────────────────
-   Wrapper for /project/{alias}/board/{ticket_id}. Fills the content area's
-   remaining height; toolbar + header are flex-shrink:0, the grid fills the
-   rest, and each grid column scrolls independently — long descriptions
-   don't push the activity log off-screen and vice versa.
+   Wrapper for /project/{alias}/board/{ticket_id}. The page scrolls vertically
+   inside .content-body (its default `overflow-y: auto`), like every other
+   non-board page: toolbar, header and grid stack at natural height and scroll
+   as one. The right rail is sticky so the ticket's properties/activity stay in
+   view while a long description scrolls past.
+
+   An earlier revision tried to pin the page to the viewport height and scroll
+   each grid column independently. That depended on an unbroken flex height
+   chain which the SSE swap wrapper (#detail-content) and content wider than its
+   column kept breaking — symptoms were no vertical scroll plus a stray
+   horizontal scrollbar. Page-level scroll here, plus content containment in
+   markdown.css, is the robust replacement.
 
    Scoped via `[data-detail-page]` so the doc detail pages
    (/agents/{slug}, /commands/{slug}) keep their existing layout. */
 
-/* Detail page manages its own height via the flex children below; the
-   parent must be flex column for `[data-detail-page] { flex: 1; min-height: 0 }`
-   to actually claim the remaining space. Without this, .content-body falls
-   back to its block layout, the detail page renders at natural height, and
-   anything past the viewport is silently clipped — the user-visible bug
-   was "no vertical scroll on the card detail page". */
-.content-body:has(> [data-detail-page]) {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
 [data-detail-page] {
   max-width: none;
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-/* The SSE swap target (#detail-content) was inserted between [data-detail-page]
-   and the grid so detail-sse.js can replace its innerHTML on live updates. As
-   a real box it breaks the flex height chain: .detail-header and .detail-grid
-   are no longer direct flex children of the [data-detail-page] column, so the
-   grid's `flex: 1; min-height: 0` can't bound its height and the columns'
-   overflow-y:auto never engages — no vertical scroll, and the extra flex
-   nesting also let wide content force a horizontal scrollbar.
-
-   `display: contents` removes the wrapper's box entirely: .detail-header and
-   .detail-grid lay out as direct flex children of [data-detail-page] again —
-   byte-for-byte the layout from before the wrapper existed — while the element
-   stays in the DOM (id, data-* attrs, innerHTML swap) so the SSE JS is
-   untouched. Spacing comes from [data-detail-page]'s own `gap: 14px`. */
+/* #detail-content is the SSE swap target (detail-sse.js replaces its innerHTML
+   on live updates). `display: contents` removes its box so .detail-header and
+   .detail-grid lay out as direct children of [data-detail-page] and pick up its
+   `gap: 14px`, while the element stays in the DOM for the swap. */
 [data-detail-page] > #detail-content {
   display: contents;
 }
@@ -211,18 +196,16 @@
 }
 
 [data-detail-page] .detail-grid {
-  flex: 1;
-  min-height: 0;
   grid-template-columns: 1fr 300px;
   gap: 20px;
-  align-items: stretch;
+  /* Columns size to their own content; the rail can then go sticky instead of
+     being stretched to the (taller) description column's height. */
+  align-items: start;
 }
 
 [data-detail-page] .detail-main {
-  min-height: 0;
-  overflow-y: auto;
-  /* Symmetric inset: right keeps content off the scrollbar; left stops the
-     card box-shadow from being clipped by the computed overflow-x. */
+  /* min-width:0 (base .detail-main rule) lets the 1fr track shrink so wide
+     content stays contained; left inset keeps the card box-shadow unclipped. */
   padding-inline: 4px;
 }
 
@@ -236,11 +219,14 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 0;
-  /* Independent vertical scroll, parallel to .detail-main. */
-  overflow-y: auto;
-  /* Symmetric inset: right keeps content off the scrollbar; left stops the
-     card box-shadow from being clipped by the computed overflow-x. */
+  /* Sticky so properties/activity stay in view while a long description scrolls
+     the page. align-self:start keeps the box at its natural height (not
+     stretched by the grid row) so sticky has room to travel; if the rail is
+     ever taller than the viewport it just scrolls with the page. */
+  position: sticky;
+  top: 4px;
+  align-self: start;
+  /* Left inset stops the card box-shadow from being clipped. */
   padding-inline: 4px;
 }
 

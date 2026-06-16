@@ -5,6 +5,15 @@
    (`--accent`) only appears on links and the blockquote rule — body text stays
    neutral and editorial. */
 
+/* Keep rendered content inside its card. Long unbreakable tokens (URLs, inline
+   code, paths) wrap instead of widening the column and forcing a horizontal
+   scrollbar; min-width:0 lets the body shrink inside the grid track. Block-level
+   wide content (pre, tables, images) is handled by the rules further down. */
+.detail-section-body {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
 /* Headings — Fraunces serif to match the page titles, with airy spacing.
    First-child heading sheds its top margin so the section starts flush. */
 .detail-section-body h1,
@@ -95,9 +104,13 @@
 }
 .detail-section-body blockquote p:last-child { margin-bottom: 0; }
 
-/* Tables — hairline borders, subtle header band. */
+/* Tables — hairline borders, subtle header band. `display: block` + overflow-x
+   lets a wide table scroll inside its own box (capped at the column width)
+   instead of pushing the whole page wider. */
 .detail-section-body table {
-  width: 100%;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
   margin: 0 0 0.85em;
   font-size: 12px;
