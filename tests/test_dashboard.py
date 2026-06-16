@@ -1233,39 +1233,60 @@ class TestDependsChip:
 
 
 class TestDetailPageScrollContainment:
-    """Regression for "card detail has no vertical scroll".
+    """Regression for the focused ticket page scroll/overflow saga.
 
-    `.content-body:has(> [data-detail-page])` was set to `overflow:
-    hidden` but not `display: flex; flex-direction: column`, so the
-    detail page's `flex: 1; min-height: 0` failed (parent wasn't flex).
-    Page rendered at natural height and anything past the viewport got
-    clipped silently. Independent column scrolls inside `.detail-main`
-    and `.detail-rail` couldn't even start.
+    Earlier revisions pinned the page to the viewport height and scrolled each
+    grid column independently (`.content-body:has(> [data-detail-page])` →
+    `overflow: hidden`, plus `overflow-y: auto` on `.detail-main`/`.detail-rail`).
+    That flex height chain kept breaking — no vertical scroll, and wide content
+    forced a horizontal scrollbar. The page now scrolls vertically as one inside
+    `.content-body` (its normal `overflow-y: auto`); the rail is sticky; and
+    rendered content is contained so nothing escapes its card.
     """
 
-    def test_content_body_becomes_flex_column_for_detail(self, dashboard_css: str):
-        # Find the rule and assert it carries both overflow:hidden and the
-        # flex-column setup. Without flex column on the parent, the
-        # detail-page's flex children don't get sized correctly.
-        m = re.search(
-            r"\.content-body:has\(> \[data-detail-page\]\)\s*\{[^}]*\}",
-            dashboard_css,
+    def test_detail_page_scrolls_at_page_level(self, dashboard_css: str):
+        # The page must NOT re-clip itself: the bounded-height override that
+        # broke vertical scroll is gone, so .content-body keeps its default
+        # vertical page scroll.
+        assert ".content-body:has(> [data-detail-page])" not in dashboard_css, (
+            "the overflow:hidden bounded-height override must stay removed — "
+            "the detail page scrolls at page level via .content-body"
         )
-        assert m, "content-body :has(detail-page) rule must exist"
-        block = m.group(0)
-        assert "overflow: hidden" in block
-        assert "display: flex" in block
-        assert "flex-direction: column" in block
+        m = re.search(r"\.content-body\s*\{[^}]*\}", dashboard_css)
+        assert m and "overflow-y: auto" in m.group(0)
 
-    def test_detail_main_and_rail_scroll_independently(self, dashboard_css: str):
-        # Sanity: each column still has its own overflow-y: auto so the
-        # parent flex chain actually delivers usable scroll.
+    def test_columns_do_not_scroll_independently(self, dashboard_css: str):
+        # Page-level scroll: the columns no longer carry their own
+        # overflow-y:auto (which, paired with the broken height chain, never
+        # engaged and computed overflow-x:auto → stray horizontal scrollbar).
         m_main = re.search(
             r"\[data-detail-page\]\s*\.detail-main\s*\{[^}]*\}", dashboard_css,
         )
-        assert m_main and "overflow-y: auto" in m_main.group(0)
+        assert m_main and "overflow-y: auto" not in m_main.group(0)
         m_rail = re.search(r"\.detail-rail\s*\{[^}]*\}", dashboard_css)
-        assert m_rail and "overflow-y: auto" in m_rail.group(0)
+        assert m_rail and "overflow-y: auto" not in m_rail.group(0)
+
+    def test_rail_is_sticky(self, dashboard_css: str):
+        # The rail stays in view while a long description scrolls past.
+        m_rail = re.search(r"\.detail-rail\s*\{[^}]*\}", dashboard_css)
+        assert m_rail and "position: sticky" in m_rail.group(0)
+
+    def test_description_content_is_contained(self, dashboard_css: str):
+        # Long unbreakable tokens wrap instead of widening the column. (There
+        # are a few `.detail-section-body { }` blocks across modules; the
+        # containment rule only needs to live in one of them.)
+        body_blocks = re.findall(
+            r"\.detail-section-body\s*\{[^}]*\}", dashboard_css,
+        )
+        assert any(
+            "overflow-wrap: break-word" in b for b in body_blocks
+        ), "description body must wrap long tokens (overflow-wrap: break-word)"
+        # ...and wide tables scroll inside their own box rather than pushing the
+        # layout wider (no page-level horizontal scrollbar).
+        m_table = re.search(
+            r"\.detail-section-body\s+table\s*\{[^}]*\}", dashboard_css,
+        )
+        assert m_table and "overflow-x: auto" in m_table.group(0)
 
 
 # ── Editorial visual token system ─────────────────────────────────────────────
