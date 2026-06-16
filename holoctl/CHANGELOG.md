@@ -4,6 +4,12 @@ All notable changes to holoctl follow [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+## [0.22.1] — 2026-06-16
+
+### Fixed
+
+- **Vertical scroll restored on the focused ticket page** — the SSE swap wrapper (`#detail-content`) introduced with live spec authoring sat between `[data-detail-page]` and `.detail-grid`, breaking the flex height chain: as a plain block it had natural height, so `.detail-grid` never got a bounded height and `overflow-y:auto` on `.detail-main`/`.detail-rail` never engaged — long descriptions and activity logs were silently clipped with no scroll. `#detail-content` is now a growing flex column, so the grid reclaims the remaining height and the columns scroll independently again (#51).
+
 ## [0.22.0] — 2026-06-15
 
 ### Added
