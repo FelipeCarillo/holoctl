@@ -143,19 +143,21 @@
   gap: 14px;
 }
 
-/* The SSE swap target (#detail-content) sits between [data-detail-page] and
-   the grid (detail-sse.js replaces its innerHTML on live updates). It must
-   grow as a flex item AND be a flex column itself, so .detail-grid below it
-   reclaims the remaining height and .detail-main/.detail-rail scroll. Without
-   this the wrapper is a natural-height block, the grid never gets a bounded
-   height, and overflow-y:auto on the columns never engages — no vertical
-   scroll on the focused ticket page. */
+/* The SSE swap target (#detail-content) was inserted between [data-detail-page]
+   and the grid so detail-sse.js can replace its innerHTML on live updates. As
+   a real box it breaks the flex height chain: .detail-header and .detail-grid
+   are no longer direct flex children of the [data-detail-page] column, so the
+   grid's `flex: 1; min-height: 0` can't bound its height and the columns'
+   overflow-y:auto never engages — no vertical scroll, and the extra flex
+   nesting also let wide content force a horizontal scrollbar.
+
+   `display: contents` removes the wrapper's box entirely: .detail-header and
+   .detail-grid lay out as direct flex children of [data-detail-page] again —
+   byte-for-byte the layout from before the wrapper existed — while the element
+   stays in the DOM (id, data-* attrs, innerHTML swap) so the SSE JS is
+   untouched. Spacing comes from [data-detail-page]'s own `gap: 14px`. */
 [data-detail-page] > #detail-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  display: contents;
 }
 
 .detail-toolbar {
